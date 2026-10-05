@@ -1,0 +1,16 @@
+campus:
+  jwt:
+    secret: test-jwt-secret-key-for-integration-tests-32b
+    access-token-expiration: 1800
+    refresh-token-expiration: 604800
+
+springdoc:
+  api-docs:
+    enabled: false
+knife4j:
+  enable: false
+
+logging:
+  level:
+    root: warn
+    com.campus: info

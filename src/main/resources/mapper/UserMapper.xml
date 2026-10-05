@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.campus.user.mapper.UserMapper">
+
+    <select id="selectByUsername" resultType="com.campus.user.entity.User">
+        SELECT id, username, password, nickname, avatar, status, created_at, updated_at
+        FROM sys_user
+        WHERE username = #{username}
+        LIMIT 1
+    </select>
+
+    <select id="selectById" resultType="com.campus.user.entity.User">
+        SELECT id, username, password, nickname, avatar, status, created_at, updated_at
+        FROM sys_user
+        WHERE id = #{id}
+        LIMIT 1
+    </select>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO sys_user (username, password, nickname, avatar, status, created_at, updated_at)
+        VALUES (#{username}, #{password}, #{nickname}, #{avatar}, #{status}, NOW(), NOW())
+    </insert>
+
+    <update id="updateById">
+        UPDATE sys_user
+        <set>
+            <if test="password != null">password = #{password},</if>
+            <if test="nickname != null">nickname = #{nickname},</if>
+            <if test="avatar != null">avatar = #{avatar},</if>
+            <if test="status != null">status = #{status},</if>
+            updated_at = NOW()
+        </set>
+        WHERE id = #{id}
+    </update>
+
+    <insert id="insertUserRole">
+        INSERT INTO sys_user_role (user_id, role_id)
+        VALUES (#{userId}, #{roleId})
+    </insert>
+
+    <select id="selectRoleIdByCode" resultType="long">
+        SELECT id FROM sys_role WHERE code = #{code} LIMIT 1
+    </select>
+</mapper>
