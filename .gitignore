@@ -1,4 +1,10 @@
+campus-web/.env
+node_modules/
+campus-web/dist/
 target/
+.mimosa/
+.cursor/
+.zcode/
 .idea/
 *.iml
 .classpath

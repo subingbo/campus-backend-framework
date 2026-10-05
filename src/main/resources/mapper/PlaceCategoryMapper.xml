@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.campus.place.mapper.PlaceCategoryMapper">
+
+    <select id="selectActiveAll" resultType="com.campus.place.entity.PlaceCategory">
+        SELECT id, name, icon, sort, status
+        FROM place_category
+        WHERE status = 1
+        ORDER BY sort ASC, id ASC
+    </select>
+
+    <select id="selectById" resultType="com.campus.place.entity.PlaceCategory">
+        SELECT id, name, icon, sort, status
+        FROM place_category
+        WHERE id = #{id}
+        LIMIT 1
+    </select>
+</mapper>

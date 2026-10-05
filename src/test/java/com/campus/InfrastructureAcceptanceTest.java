@@ -4,6 +4,7 @@ import com.campus.auth.dto.LoginRequest;
 import com.campus.auth.dto.RefreshRequest;
 import com.campus.auth.dto.RegisterRequest;
 import com.campus.auth.dto.TokenResponse;
+import com.campus.post.dto.CreatePostRequest;
 import com.campus.security.jwt.JwtTokenProvider;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -186,16 +187,48 @@ class InfrastructureAcceptanceTest {
         String username = "user_" + System.nanoTime();
         registerUser(username);
         TokenResponse tokens = login(username, "password1");
+        long placeId = createPlace(tokens.getAccessToken());
 
         for (int i = 0; i < 10; i++) {
+            CreatePostRequest postRequest = new CreatePostRequest();
+            postRequest.setPlaceId(placeId);
+            postRequest.setContent("限流测试 " + i);
             mockMvc.perform(post("/api/posts")
-                            .header("Authorization", "Bearer " + tokens.getAccessToken()))
+                            .header("Authorization", "Bearer " + tokens.getAccessToken())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(postRequest)))
                     .andExpect(status().isOk());
         }
+        CreatePostRequest overflow = new CreatePostRequest();
+        overflow.setPlaceId(placeId);
+        overflow.setContent("第 11 条");
         mockMvc.perform(post("/api/posts")
-                        .header("Authorization", "Bearer " + tokens.getAccessToken()))
+                        .header("Authorization", "Bearer " + tokens.getAccessToken())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(overflow)))
                 .andExpect(status().isTooManyRequests())
                 .andExpect(jsonPath("$.code").value(429));
+    }
+
+    private long createPlace(String accessToken) throws Exception {
+        String body = """
+                {
+                  "name": "限流测试地点",
+                  "categoryId": 3,
+                  "longitude": 113.3840280,
+                  "latitude": 23.0456780,
+                  "confirmNew": true
+                }
+                """;
+        MvcResult result = mockMvc.perform(post("/api/places")
+                        .header("Authorization", "Bearer " + accessToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200))
+                .andReturn();
+        JsonNode data = objectMapper.readTree(result.getResponse().getContentAsString()).path("data");
+        return data.path("place").path("id").asLong();
     }
 
     private void registerUser(String username) throws Exception {

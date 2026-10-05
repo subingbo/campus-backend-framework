@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.campus.map.mapper.SharedMapMapper">
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO shared_map (group_id, name, description, cover_image, created_at, updated_at)
+        VALUES (#{groupId}, #{name}, #{description}, #{coverImage}, NOW(), NOW())
+    </insert>
+
+    <select id="selectById" resultType="com.campus.map.entity.SharedMap">
+        SELECT id, group_id, name, description, cover_image, created_at, updated_at
+        FROM shared_map
+        WHERE id = #{id}
+        LIMIT 1
+    </select>
+
+    <select id="selectByGroupId" resultType="com.campus.map.entity.SharedMap">
+        SELECT id, group_id, name, description, cover_image, created_at, updated_at
+        FROM shared_map
+        WHERE group_id = #{groupId}
+        LIMIT 1
+    </select>
+
+    <select id="selectByUserId" resultType="com.campus.map.dto.MapListItemResponse">
+        SELECT sm.id,
+               sm.name,
+               sm.description,
+               sm.cover_image AS coverImage,
+               cg.visibility,
+               mm.role AS myRole,
+               (SELECT COUNT(*) FROM map_member WHERE map_id = sm.id) AS memberCount,
+               (SELECT COUNT(*) FROM map_place WHERE map_id = sm.id) AS placeCount,
+               sm.created_at AS createdAt
+        FROM shared_map sm
+        INNER JOIN map_member mm ON mm.map_id = sm.id AND mm.user_id = #{userId}
+        INNER JOIN campus_group cg ON cg.id = sm.group_id
+        ORDER BY sm.updated_at DESC
+    </select>
+
+    <select id="countMembers" resultType="int">
+        SELECT COUNT(*) FROM map_member WHERE map_id = #{mapId}
+    </select>
+
+    <select id="countPlaces" resultType="int">
+        SELECT COUNT(*) FROM map_place WHERE map_id = #{mapId}
+    </select>
+</mapper>

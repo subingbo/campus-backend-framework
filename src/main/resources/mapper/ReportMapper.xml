@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.campus.report.mapper.ReportMapper">
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO report (reporter_id, target_type, target_id, reason, status, created_at)
+        VALUES (#{reporterId}, #{targetType}, #{targetId}, #{reason}, 0, NOW())
+    </insert>
+
+    <select id="selectById" resultType="com.campus.report.entity.Report">
+        SELECT id, reporter_id, target_type, target_id, reason, status, handler_id, handle_action, created_at, handled_at
+        FROM report
+        WHERE id = #{id}
+        LIMIT 1
+    </select>
+
+    <select id="selectPage" resultType="com.campus.report.entity.Report">
+        SELECT id, reporter_id, target_type, target_id, reason, status, handler_id, handle_action, created_at, handled_at
+        FROM report
+        <where>
+            <if test="status != null">status = #{status}</if>
+        </where>
+        ORDER BY created_at DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="count" resultType="long">
+        SELECT COUNT(*) FROM report
+        <where>
+            <if test="status != null">status = #{status}</if>
+        </where>
+    </select>
+
+    <update id="updateHandled">
+        UPDATE report
+        SET status = #{status},
+            handler_id = #{handlerId},
+            handle_action = #{handleAction},
+            handled_at = NOW()
+        WHERE id = #{id} AND status = 0
+    </update>
+</mapper>

@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.campus.map.mapper.MapPlaceMapper">
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO map_place (map_id, place_id, created_by, created_at)
+        VALUES (#{mapId}, #{placeId}, #{createdBy}, NOW())
+    </insert>
+
+    <select id="selectByMapAndPlace" resultType="com.campus.map.entity.MapPlace">
+        SELECT id, map_id, place_id, created_by, created_at
+        FROM map_place
+        WHERE map_id = #{mapId} AND place_id = #{placeId}
+        LIMIT 1
+    </select>
+
+    <delete id="deleteByMapAndPlace">
+        DELETE FROM map_place WHERE map_id = #{mapId} AND place_id = #{placeId}
+    </delete>
+
+    <select id="selectPlacesByMapId" resultType="com.campus.place.entity.Place">
+        SELECT p.id, p.name, p.description, p.category_id, p.longitude, p.latitude,
+               p.address, p.creator_id, p.status, p.created_at, p.updated_at
+        FROM place p
+        INNER JOIN map_place mp ON mp.place_id = p.id AND mp.map_id = #{mapId}
+        WHERE p.status = 1
+        ORDER BY mp.id DESC
+    </select>
+
+    <select id="selectPlacesOnMapInBoundingBox" resultType="com.campus.place.entity.Place">
+        SELECT p.id, p.name, p.description, p.category_id, p.longitude, p.latitude,
+               p.address, p.creator_id, p.status, p.created_at, p.updated_at
+        FROM place p
+        INNER JOIN map_place mp ON mp.place_id = p.id AND mp.map_id = #{mapId}
+        WHERE p.status = 1
+          AND p.latitude BETWEEN #{minLat} AND #{maxLat}
+          AND p.longitude BETWEEN #{minLng} AND #{maxLng}
+    </select>
+
+    <select id="existsOnMap" resultType="int">
+        SELECT COUNT(*) FROM map_place WHERE map_id = #{mapId} AND place_id = #{placeId}
+    </select>
+
+    <select id="countEditableMapsForUser" resultType="int">
+        SELECT COUNT(*)
+        FROM map_member mm
+        INNER JOIN map_place mp ON mp.map_id = mm.map_id AND mp.place_id = #{placeId}
+        WHERE mm.user_id = #{userId}
+          AND mm.role IN ('OWNER', 'EDITOR')
+    </select>
+</mapper>

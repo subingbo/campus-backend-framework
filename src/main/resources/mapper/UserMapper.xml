@@ -42,4 +42,15 @@
     <select id="selectRoleIdByCode" resultType="long">
         SELECT id FROM sys_role WHERE code = #{code} LIMIT 1
     </select>
+
+    <select id="selectPage" resultType="com.campus.user.entity.User">
+        SELECT id, username, nickname, avatar, status, created_at, updated_at
+        FROM sys_user
+        ORDER BY id DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countAll" resultType="long">
+        SELECT COUNT(*) FROM sys_user
+    </select>
 </mapper>

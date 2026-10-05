@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.campus.post.mapper.PostMapper">
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO post (user_id, place_id, content, status, created_at, updated_at)
+        VALUES (#{userId}, #{placeId}, #{content}, #{status}, NOW(), NOW())
+    </insert>
+
+    <select id="selectById" resultType="com.campus.post.entity.Post">
+        SELECT id, user_id, place_id, content, status, created_at, updated_at
+        FROM post
+        WHERE id = #{id}
+        LIMIT 1
+    </select>
+
+    <select id="countByUserId" resultType="long">
+        SELECT COUNT(*) FROM post WHERE user_id = #{userId} AND status = 1
+    </select>
+
+    <select id="countByPlaceId" resultType="long">
+        SELECT COUNT(*) FROM post WHERE place_id = #{placeId} AND status = 1
+    </select>
+
+    <sql id="postListSelect">
+        SELECT p.id,
+               p.user_id AS userId,
+               u.nickname AS authorNickname,
+               u.avatar AS authorAvatar,
+               p.content,
+               (SELECT COUNT(*) FROM post_like pl WHERE pl.post_id = p.id) AS likeCount,
+               (SELECT COUNT(*) FROM post_comment pc WHERE pc.post_id = p.id) AS commentCount,
+               CASE WHEN EXISTS (
+                   SELECT 1 FROM post_like pl2 WHERE pl2.post_id = p.id AND pl2.user_id = #{currentUserId}
+               ) THEN 1 ELSE 0 END AS liked,
+               p.created_at AS createdAt
+        FROM post p
+        INNER JOIN sys_user u ON u.id = p.user_id
+        WHERE p.place_id = #{placeId} AND p.status = 1
+        ORDER BY p.created_at DESC
+    </sql>
+
+    <select id="selectPageByPlaceId" resultType="com.campus.post.dto.PostListItemResponse">
+        <include refid="postListSelect"/>
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countPageByPlaceId" resultType="long">
+        SELECT COUNT(*) FROM post WHERE place_id = #{placeId} AND status = 1
+    </select>
+
+    <select id="selectLatestByPlaceId" resultType="com.campus.post.dto.PostListItemResponse">
+        <include refid="postListSelect"/>
+        LIMIT #{limit}
+    </select>
+
+    <select id="selectItemById" resultType="com.campus.post.dto.PostListItemResponse">
+        SELECT p.id,
+               p.user_id AS userId,
+               u.nickname AS authorNickname,
+               u.avatar AS authorAvatar,
+               p.content,
+               (SELECT COUNT(*) FROM post_like pl WHERE pl.post_id = p.id) AS likeCount,
+               (SELECT COUNT(*) FROM post_comment pc WHERE pc.post_id = p.id) AS commentCount,
+               CASE WHEN EXISTS (
+                   SELECT 1 FROM post_like pl2 WHERE pl2.post_id = p.id AND pl2.user_id = #{currentUserId}
+               ) THEN 1 ELSE 0 END AS liked,
+               p.created_at AS createdAt
+        FROM post p
+        INNER JOIN sys_user u ON u.id = p.user_id
+        WHERE p.id = #{id} AND p.status = 1
+        LIMIT 1
+    </select>
+
+    <update id="updateStatus">
+        UPDATE post SET status = #{status}, updated_at = NOW() WHERE id = #{id}
+    </update>
+
+    <select id="selectAdminPage" resultType="com.campus.admin.dto.AdminPostItem">
+        SELECT id, user_id AS userId, place_id AS placeId, content, status, created_at AS createdAt
+        FROM post
+        ORDER BY id DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countAdmin" resultType="long">
+        SELECT COUNT(*) FROM post
+    </select>
+
+    <select id="selectMemberPreview" resultType="com.campus.post.dto.PlaceFeedResponse$MemberPreview">
+        SELECT u.id AS userId, u.nickname, u.avatar
+        FROM sys_user u
+        WHERE u.id IN (
+            SELECT creator_id FROM place WHERE id = #{placeId}
+            UNION
+            SELECT DISTINCT user_id FROM post WHERE place_id = #{placeId} AND status = 1
+        )
+        LIMIT #{limit}
+    </select>
+</mapper>

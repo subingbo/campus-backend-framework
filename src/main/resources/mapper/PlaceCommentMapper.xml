@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.campus.map.mapper.PlaceCommentMapper">
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO place_comment (map_id, place_id, user_id, content, created_at)
+        VALUES (#{mapId}, #{placeId}, #{userId}, #{content}, NOW())
+    </insert>
+
+    <select id="selectByMapAndPlace" resultType="com.campus.map.dto.PlaceCommentResponse">
+        SELECT pc.id,
+               pc.user_id AS userId,
+               u.nickname,
+               u.avatar,
+               pc.content,
+               pc.created_at AS createdAt
+        FROM place_comment pc
+        INNER JOIN sys_user u ON u.id = pc.user_id
+        WHERE pc.map_id = #{mapId} AND pc.place_id = #{placeId}
+        ORDER BY pc.id ASC
+    </select>
+</mapper>

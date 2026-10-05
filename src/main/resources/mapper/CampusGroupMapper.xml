@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.campus.map.mapper.CampusGroupMapper">
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO campus_group (name, description, owner_id, invite_code, visibility, created_at, updated_at)
+        VALUES (#{name}, #{description}, #{ownerId}, #{inviteCode}, #{visibility}, NOW(), NOW())
+    </insert>
+
+    <select id="selectById" resultType="com.campus.map.entity.CampusGroup">
+        SELECT id, name, description, owner_id, invite_code, visibility, created_at, updated_at
+        FROM campus_group
+        WHERE id = #{id}
+        LIMIT 1
+    </select>
+
+    <select id="selectByInviteCode" resultType="com.campus.map.entity.CampusGroup">
+        SELECT id, name, description, owner_id, invite_code, visibility, created_at, updated_at
+        FROM campus_group
+        WHERE invite_code = #{inviteCode}
+        LIMIT 1
+    </select>
+
+    <update id="updateVisibility">
+        UPDATE campus_group SET visibility = #{visibility}, updated_at = NOW() WHERE id = #{id}
+    </update>
+</mapper>

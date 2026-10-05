@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.campus.map.mapper.MapMemberMapper">
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO map_member (map_id, user_id, role, created_at)
+        VALUES (#{mapId}, #{userId}, #{role}, NOW())
+    </insert>
+
+    <select id="selectByMapAndUser" resultType="com.campus.map.entity.MapMember">
+        SELECT id, map_id, user_id, role, created_at
+        FROM map_member
+        WHERE map_id = #{mapId} AND user_id = #{userId}
+        LIMIT 1
+    </select>
+
+    <select id="selectByMapId" resultType="com.campus.map.dto.MapMemberResponse">
+        SELECT mm.user_id AS userId,
+               u.username,
+               u.nickname,
+               u.avatar,
+               mm.role,
+               mm.created_at AS joinedAt
+        FROM map_member mm
+        INNER JOIN sys_user u ON u.id = mm.user_id
+        WHERE mm.map_id = #{mapId}
+        ORDER BY FIELD(mm.role, 'OWNER', 'EDITOR', 'VIEWER'), mm.id
+    </select>
+
+    <update id="updateRole">
+        UPDATE map_member SET role = #{role} WHERE map_id = #{mapId} AND user_id = #{userId}
+    </update>
+
+    <delete id="deleteByMapAndUser">
+        DELETE FROM map_member WHERE map_id = #{mapId} AND user_id = #{userId}
+    </delete>
+</mapper>

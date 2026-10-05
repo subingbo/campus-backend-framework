@@ -20,4 +20,8 @@ public final class RedisKey {
     public static String rate(String bizKey) {
         return "rate:" + bizKey;
     }
+
+    public static String placeDetail(Long placeId) {
+        return "place:detail:" + placeId;
+    }
 }

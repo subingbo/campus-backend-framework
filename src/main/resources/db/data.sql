@@ -1,4 +1,5 @@
 USE campus;
+SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 INSERT INTO sys_role (id, name, code) VALUES
 (1, '普通用户', 'USER'),
@@ -28,3 +29,14 @@ ON DUPLICATE KEY UPDATE nickname = VALUES(nickname);
 
 INSERT INTO sys_user_role (user_id, role_id) VALUES (1, 2)
 ON DUPLICATE KEY UPDATE role_id = VALUES(role_id);
+
+INSERT INTO place_category (id, name, icon, sort, status) VALUES
+(1, '美食', NULL, 1, 1),
+(2, '学习', NULL, 2, 1),
+(3, '运动', NULL, 3, 1),
+(4, '购物', NULL, 4, 1),
+(5, '生活服务', NULL, 5, 1),
+(6, '交通', NULL, 6, 1),
+(7, '娱乐', NULL, 7, 1),
+(8, '其他', NULL, 8, 1)
+ON DUPLICATE KEY UPDATE name = VALUES(name);

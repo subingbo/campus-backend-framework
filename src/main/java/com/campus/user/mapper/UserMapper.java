@@ -4,6 +4,8 @@ import com.campus.user.entity.User;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
+import java.util.List;
+
 @Mapper
 public interface UserMapper {
 
@@ -18,4 +20,8 @@ public interface UserMapper {
     int insertUserRole(@Param("userId") Long userId, @Param("roleId") Long roleId);
 
     Long selectRoleIdByCode(@Param("code") String code);
+
+    List<User> selectPage(@Param("offset") int offset, @Param("limit") int limit);
+
+    long countAll();
 }
