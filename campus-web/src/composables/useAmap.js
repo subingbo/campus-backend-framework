@@ -223,7 +223,30 @@ export function createPlaceMarkerController(AMap, map, onMarkerClick) {
     myLocation = null
   }
 
-  return { render, focusPlace, setHighlight, setMyLocation, clearMyLocation }
+  /** 地点经纬度 → 地图容器内像素坐标，供视图锚定 UI（如手机端浮窗），不向外暴露 AMap 类型 */
+  function projectToContainer(place) {
+    const lng = Number(place?.longitude)
+    const lat = Number(place?.latitude)
+    if (!Number.isFinite(lng) || !Number.isFinite(lat)) return null
+    const pixel = map.lngLatToContainer([lng, lat])
+    const x = typeof pixel?.getX === 'function' ? pixel.getX() : pixel?.x
+    const y = typeof pixel?.getY === 'function' ? pixel.getY() : pixel?.y
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return null
+    return { x, y }
+  }
+
+  /** 视口变化（拖动/缩放）时回调，返回解绑函数 */
+  function onViewportChange(cb) {
+    const handler = () => cb()
+    map.on('mapmove', handler)
+    map.on('zoomchange', handler)
+    return () => {
+      map.off('mapmove', handler)
+      map.off('zoomchange', handler)
+    }
+  }
+
+  return { render, focusPlace, setHighlight, setMyLocation, clearMyLocation, projectToContainer, onViewportChange }
 }
 
 /** @deprecated 请使用 createPlaceMarkerController */

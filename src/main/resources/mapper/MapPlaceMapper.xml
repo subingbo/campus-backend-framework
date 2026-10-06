@@ -49,4 +49,8 @@
         WHERE mm.user_id = #{userId}
           AND mm.role IN ('OWNER', 'EDITOR')
     </select>
+
+    <select id="selectMapIdsByPlaceId" resultType="long">
+        SELECT map_id FROM map_place WHERE place_id = #{placeId}
+    </select>
 </mapper>

@@ -1,0 +1,71 @@
+/* 腾讯蓝视觉主题：白底、大留白、圆角与轻阴影。
+   引入顺序必须在 element-plus/dist/index.css 之后，覆盖才生效。 */
+
+:root {
+  /* 品牌色板 */
+  --app-page-bg: #f3f6fb;
+  --brand-blue: #0052d9;
+  --brand-blue-pressed: #003cab;
+  --brand-blue-light: #f2f3ff;
+  --app-text-primary: rgba(0, 0, 0, 0.9);
+  --app-text-secondary: rgba(0, 0, 0, 0.55);
+  --app-card-shadow: 0 2px 12px rgba(31, 56, 88, 0.06);
+  --app-card-shadow-hover: 0 8px 24px rgba(31, 56, 88, 0.1);
+
+  /* Element Plus 主色 → 腾讯蓝 */
+  --el-color-primary: #0052d9;
+  --el-color-primary-light-3: #4d86e4;
+  --el-color-primary-light-5: #80a9ec;
+  --el-color-primary-light-7: #b3cbf4;
+  --el-color-primary-light-8: #ccddf7;
+  --el-color-primary-light-9: #f2f3ff;
+  --el-color-primary-dark-2: #003cab;
+
+  /* 成功绿沿用 TDesign */
+  --el-color-success: #2ba471;
+  --el-color-success-light-3: #6bbf9c;
+  --el-color-success-light-5: #95d1b8;
+  --el-color-success-light-7: #bfe4d4;
+  --el-color-success-light-8: #d5ede3;
+  --el-color-success-light-9: #eaf6ef;
+  --el-color-success-dark-2: #22835a;
+
+  /* 字体与圆角 */
+  --el-font-family: 'PingFang SC', 'Microsoft YaHei', 'Segoe UI', system-ui, sans-serif;
+  --el-border-radius-base: 8px;
+  --el-border-radius-small: 6px;
+
+  /* 文字层级 */
+  --el-text-color-primary: rgba(0, 0, 0, 0.9);
+  --el-text-color-regular: rgba(0, 0, 0, 0.72);
+  --el-text-color-secondary: rgba(0, 0, 0, 0.55);
+}
+
+/* 主按钮轻阴影；文字/朴素按钮不加 */
+.el-button--primary:not(.is-plain):not(.is-text):not(.is-link):not(.is-disabled) {
+  box-shadow: 0 2px 8px rgba(0, 82, 217, 0.18);
+}
+
+/* 输入框聚焦时主色描边加一圈浅蓝光晕 */
+.el-input__wrapper.is-focus {
+  box-shadow: 0 0 0 1px var(--el-color-primary) inset, 0 0 0 3px rgba(0, 82, 217, 0.08);
+}
+.el-textarea__inner:focus {
+  box-shadow: 0 0 0 1px var(--el-color-primary) inset, 0 0 0 3px rgba(0, 82, 217, 0.08);
+}
+
+/* 卡片：白底、16px 圆角、极轻蓝灰阴影 */
+.el-card {
+  --el-card-border-radius: 16px;
+  --el-card-border-color: transparent;
+}
+
+/* 手机端：对话框/确认框自适应屏宽，避免固定宽度横向溢出（覆盖 el-dialog 的内联 width） */
+@media (max-width: 768px) {
+  .el-dialog {
+    width: calc(100vw - 24px) !important;
+  }
+  .el-message-box {
+    width: calc(100vw - 48px);
+  }
+}

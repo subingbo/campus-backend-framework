@@ -36,6 +36,7 @@ import com.campus.place.mapper.PlaceCategoryMapper;
 import com.campus.place.mapper.PlaceMapper;
 import com.campus.place.service.PlaceService;
 import com.campus.security.user.SecurityUtils;
+import com.campus.ws.MapEventNotifier;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -62,6 +63,7 @@ public class SharedMapServiceImpl implements SharedMapService {
     private final PlaceMapper placeMapper;
     private final PlaceCategoryMapper placeCategoryMapper;
     private final PlaceService placeService;
+    private final MapEventNotifier mapEventNotifier;
 
     @Override
     @Transactional
@@ -248,12 +250,14 @@ public class SharedMapServiceImpl implements SharedMapService {
     @Override
     @Transactional
     public void removePlaceFromMap(Long mapId, Long placeId) {
-        requireEditor(mapId, SecurityUtils.getUserId());
-        placeService.requireActivePlace(placeId);
+        Long userId = SecurityUtils.getUserId();
+        requireEditor(mapId, userId);
+        Place place = placeService.requireActivePlace(placeId);
         if (mapPlaceMapper.selectByMapAndPlace(mapId, placeId) == null) {
             throw new BusinessException(ResultCode.NOT_FOUND.getCode(), "地点不在该地图上");
         }
         mapPlaceMapper.deleteByMapAndPlace(mapId, placeId);
+        mapEventNotifier.notifyPlaceChanged(mapId, placeId, place.getName(), "移除了地点", userId);
     }
 
     @Override
@@ -276,6 +280,10 @@ public class SharedMapServiceImpl implements SharedMapService {
         comment.setUserId(userId);
         comment.setContent(request.getContent().trim());
         placeCommentMapper.insert(comment);
+
+        Place place = placeMapper.selectById(placeId);
+        mapEventNotifier.notifyPlaceChanged(mapId, placeId,
+                place != null ? place.getName() : "", "评论了地点", userId);
 
         List<PlaceCommentResponse> list = placeCommentMapper.selectByMapAndPlace(mapId, placeId);
         return list.isEmpty() ? null : list.get(list.size() - 1);
@@ -318,6 +326,10 @@ public class SharedMapServiceImpl implements SharedMapService {
         link.setPlaceId(placeId);
         link.setCreatedBy(userId);
         mapPlaceMapper.insert(link);
+        // 添加/分享/关联同走此入口：统一在此触发地图成员的实时通知
+        Place linked = placeMapper.selectById(placeId);
+        mapEventNotifier.notifyPlaceChanged(mapId, placeId,
+                linked != null ? linked.getName() : "", "把地点加进了地图", userId);
     }
 
     private List<PlaceBriefResponse> findCandidatesOnMap(Long mapId, BigDecimal longitude, BigDecimal latitude,

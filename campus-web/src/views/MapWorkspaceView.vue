@@ -66,6 +66,9 @@
       <p v-if="myLocationSummary" class="hint">我的位置：{{ myLocationSummary }}</p>
 
       <el-divider />
+      <el-button style="width: 100%" @click="openChat">聊天</el-button>
+
+      <el-divider />
       <div class="place-head">
         <strong>地点列表</strong>
         <span v-if="places.length" class="hint">{{ filteredPlaces.length }}/{{ places.length }}</span>
@@ -127,6 +130,86 @@
         show-icon
         class="map-alert"
       />
+      <!-- 手机端：锚定选中标记的小浮窗，替代全屏宽抽屉 -->
+      <div
+        v-if="isMobile && selectedPlace"
+        ref="placePopRef"
+        class="place-pop"
+        :class="{ 'place-pop--free': !popAnchored }"
+        :style="popStyle"
+      >
+        <div class="place-pop__head">
+          <span class="place-pop__name">{{ selectedPlace.name }}</span>
+          <el-tag v-if="selectedPlace.categoryName" size="small" effect="plain">
+            {{ selectedPlace.categoryName }}
+          </el-tag>
+          <button type="button" class="place-pop__close" @click="closePlacePop">×</button>
+        </div>
+        <p v-if="selectedPlace.address" class="place-pop__addr">{{ selectedPlace.address }}</p>
+        <p v-if="selectedPlace.description" class="place-pop__desc">{{ selectedPlace.description }}</p>
+        <div class="place-pop__actions">
+          <el-button size="small" :type="popCommentsOpen ? 'primary' : ''" @click="popCommentsOpen = !popCommentsOpen">
+            评论{{ comments.length ? `（${comments.length}）` : '' }}
+          </el-button>
+          <el-button v-if="canEdit" size="small" @click="openEdit">编辑</el-button>
+          <el-button v-if="canEdit" size="small" type="danger" plain @click="removeFromMap">移除</el-button>
+          <el-button size="small" @click="openPlaceChat(selectedPlace)">聊天</el-button>
+          <el-dropdown v-if="otherMaps.length" @command="shareToMap">
+            <el-button size="small">分享</el-button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item v-for="m in otherMaps" :key="m.id" :command="m.id">
+                  {{ m.name }}
+                </el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
+        </div>
+        <template v-if="popCommentsOpen">
+          <div class="place-pop__comments">
+            <p v-if="!comments.length" class="hint">还没有评论</p>
+            <div v-for="c in comments" :key="c.id" class="comment">
+              <strong>{{ c.nickname }}</strong>
+              <p>{{ c.content }}</p>
+            </div>
+          </div>
+          <div class="place-pop__input">
+            <el-input v-model="commentText" size="small" placeholder="写下评论" @keyup.enter="submitComment" />
+            <el-button type="primary" size="small" @click="submitComment">发送</el-button>
+          </div>
+        </template>
+      </div>
+
+      <!-- 聊天浮层：桌面贴右侧，手机为底部面板 -->
+      <div
+        v-if="chatVisible"
+        ref="chatFloatRef"
+        class="chat-float"
+        :class="{ 'chat-float--mobile': isMobile }"
+      >
+        <div class="chat-float__head">
+          <strong>聊天</strong>
+          <button type="button" class="chat-float__close" @click="chatVisible = false">×</button>
+        </div>
+        <el-tabs v-model="chatTab" class="chat-float__tabs">
+          <el-tab-pane label="地图群聊" name="map">
+            <ChatPanel v-if="mapConversation" :conversation="mapConversation" />
+          </el-tab-pane>
+          <el-tab-pane label="地点聊天" name="place">
+            <el-select
+              v-model="chatPlaceId"
+              filterable
+              size="small"
+              placeholder="选择地点进入聊天室"
+              style="width: 100%; margin-bottom: 8px"
+              @change="onChatPlaceChange"
+            >
+              <el-option v-for="p in places" :key="p.id" :value="p.id" :label="p.name" />
+            </el-select>
+            <ChatPanel v-if="chatPlaceConversation" :conversation="chatPlaceConversation" />
+          </el-tab-pane>
+        </el-tabs>
+      </div>
     </main>
 
     <el-drawer v-model="placeDrawer" :title="selectedPlace?.name || '地点'" size="380px">
@@ -137,6 +220,7 @@
         <div class="drawer-actions">
           <el-button v-if="canEdit" size="small" @click="openEdit">编辑</el-button>
           <el-button v-if="canEdit" size="small" type="danger" plain @click="removeFromMap">从地图移除</el-button>
+          <el-button size="small" @click="openPlaceChat(selectedPlace)">地点聊天</el-button>
           <el-dropdown v-if="otherMaps.length" @command="shareToMap">
             <el-button size="small">分享到其他地图</el-button>
             <template #dropdown>
@@ -224,12 +308,14 @@
 </template>
 
 <script setup>
-import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { createAmapLocationProvider, createPlaceMarkerController, loadAmap } from '../composables/useAmap'
 import { useLocation } from '../composables/useLocation'
-import { mapApi, placeApi } from '../api'
+import { chatApi, mapApi, placeApi } from '../api'
+import { connect, on } from '../composables/useChatSocket'
+import ChatPanel from '../components/ChatPanel.vue'
 
 const route = useRoute()
 const mapId = computed(() => Number(route.params.id))
@@ -247,6 +333,7 @@ const mapReady = ref(false)
 let amapCtx = null
 let markerController = null
 let locationProvider = null
+let offViewportChange = null
 
 const placeSearchQuery = ref('')
 const categoryFilter = ref('')
@@ -268,6 +355,26 @@ const placeDrawer = ref(false)
 const selectedPlace = ref(null)
 const comments = ref([])
 const commentText = ref('')
+
+const chatVisible = ref(false)
+const chatTab = ref('map')
+const chatPlaceId = ref(null)
+const mapConversation = ref(null)
+const chatPlaceConversation = ref(null)
+const chatFloatRef = ref(null)
+let chatRemovers = []
+
+/** 手机端（≤768px，与工作台断点一致）用锚定标记的小浮窗替代抽屉 */
+const mobileMedia = window.matchMedia('(max-width: 768px)')
+const isMobile = ref(mobileMedia.matches)
+const popCommentsOpen = ref(false)
+const popAnchored = ref(false)
+const popStyle = ref({})
+const placePopRef = ref(null)
+function onMediaChange(e) {
+  isMobile.value = e.matches
+}
+mobileMedia.addEventListener('change', onMediaChange)
 
 const dupDialog = ref(false)
 const dupCandidates = ref([])
@@ -354,6 +461,9 @@ async function initPage() {
       amapCtx = await loadAmap(mapRef.value, onMapClick)
       markerController = createPlaceMarkerController(amapCtx.AMap, amapCtx.map, openPlace)
       locationProvider = createAmapLocationProvider(amapCtx.geolocation)
+      offViewportChange = markerController.onViewportChange(() => {
+        if (isMobile.value && selectedPlace.value) updatePopPos()
+      })
       mapReady.value = true
       syncMarkers(true)
     } catch (e) {
@@ -500,9 +610,85 @@ async function confirmDuplicate() {
 async function openPlace(place) {
   selectedPlace.value = place
   markerController?.setHighlight(place.id)
-  placeDrawer.value = true
+  placeDrawer.value = !isMobile.value
   comments.value = await mapApi.listComments(mapId.value, place.id)
   scrollPlaceIntoView(place.id)
+  if (isMobile.value) {
+    // 手机端单列布局下侧栏占满首屏，选中地点后把地图（连同浮窗）带进视野
+    mapRef.value?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+  }
+}
+
+/** 浮窗锚定选中标记；地图未就绪时退化为地图区底部居中 */
+function updatePopPos() {
+  const place = selectedPlace.value
+  if (!isMobile.value || !place) return
+  const mapEl = mapRef.value
+  const pt = markerController?.projectToContainer?.(place)
+  if (!mapEl || !pt) {
+    popAnchored.value = false
+    popStyle.value = {}
+    return
+  }
+  popAnchored.value = true
+  const w = placePopRef.value?.offsetWidth || 280
+  const h = placePopRef.value?.offsetHeight || 140
+  const cw = mapEl.clientWidth
+  const ch = mapEl.clientHeight
+  // 标记锚点在点位上，上方先让出点＋标签约 48px；放不下则翻到点位下方
+  const below = pt.y - 48 - h < 8
+  const x = cw > w + 16 ? Math.min(Math.max(pt.x, w / 2 + 8), cw - w / 2 - 8) : cw / 2
+  const top = below ? Math.min(pt.y + 12, Math.max(ch - h - 8, 8)) : pt.y - 48
+  popStyle.value = {
+    left: `${Math.round(x)}px`,
+    top: `${Math.round(Math.max(top, 8))}px`,
+    transform: below ? 'translate(-50%, 0)' : 'translate(-50%, -100%)'
+  }
+}
+
+async function openChat() {
+  chatVisible.value = true
+  scrollChatIntoView()
+  if (!mapConversation.value) {
+    try {
+      mapConversation.value = await chatApi.forMap(mapId.value)
+    } catch (e) {
+      ElMessage.error(e.message)
+    }
+  }
+}
+
+async function onChatPlaceChange(placeId) {
+  await loadPlaceConversation(placeId)
+}
+
+async function loadPlaceConversation(placeId) {
+  try {
+    chatPlaceConversation.value = await chatApi.forPlace(placeId)
+  } catch (e) {
+    ElMessage.error(e.message)
+  }
+}
+
+function openPlaceChat(place) {
+  if (!place) return
+  chatVisible.value = true
+  chatTab.value = 'place'
+  chatPlaceId.value = place.id
+  scrollChatIntoView()
+  loadPlaceConversation(place.id)
+}
+
+/** 手机端单列布局时把聊天面板滚进视野 */
+function scrollChatIntoView() {
+  if (!isMobile.value) return
+  nextTick(() => chatFloatRef.value?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }))
+}
+
+function closePlacePop() {
+  selectedPlace.value = null
+  markerController?.setHighlight(null)
+  popCommentsOpen.value = false
 }
 
 function openEdit() {
@@ -576,8 +762,33 @@ function copyInvite() {
   ElMessage.success('已复制邀请码')
 }
 
-onMounted(initPage)
+watch([selectedPlace, popCommentsOpen], () => nextTick(updatePopPos))
+watch(isMobile, (mobile) => {
+  if (!selectedPlace.value) return
+  if (mobile) {
+    placeDrawer.value = false
+    nextTick(updatePopPos)
+  } else {
+    placeDrawer.value = true
+  }
+})
+
+onMounted(() => {
+  connect()
+  initPage()
+  chatRemovers = [
+    on('PLACE_CHANGED', (frame) => {
+      ElMessage.info(`${frame.actorNickname} ${frame.summary}「${frame.placeName}」`)
+      if (frame.mapId === mapId.value) {
+        refresh()
+      }
+    })
+  ]
+})
 onUnmounted(() => {
+  for (const off of chatRemovers) off()
+  mobileMedia.removeEventListener('change', onMediaChange)
+  offViewportChange?.()
   amapCtx?.map?.destroy()
 })
 </script>
@@ -585,7 +796,7 @@ onUnmounted(() => {
 <style scoped>
 .workspace {
   display: grid;
-  grid-template-columns: 280px 1fr;
+  grid-template-columns: 320px 1fr;
   min-height: 100vh;
 }
 .sidebar {
@@ -644,13 +855,13 @@ onUnmounted(() => {
   transition: border-color 0.15s, background 0.15s;
 }
 .place-item:hover {
-  border-color: #409eff;
-  background: #f0f7ff;
+  border-color: var(--el-color-primary);
+  background: var(--el-color-primary-light-9);
 }
 .place-item.active {
-  border-color: #409eff;
-  background: #ecf5ff;
-  box-shadow: 0 0 0 1px #409eff33;
+  border-color: var(--el-color-primary);
+  background: var(--el-color-primary-light-9);
+  box-shadow: 0 0 0 1px rgba(0, 82, 217, 0.2);
 }
 .place-item__name {
   font-weight: 600;
@@ -660,7 +871,7 @@ onUnmounted(() => {
 .place-item__cat {
   margin-top: 4px;
   font-size: 11px;
-  color: #409eff;
+  color: var(--el-color-primary);
 }
 .place-item__addr {
   margin-top: 2px;
@@ -682,7 +893,7 @@ onUnmounted(() => {
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  background: #409eff;
+  background: var(--el-color-primary);
   border: 2px solid #fff;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
   flex-shrink: 0;
@@ -710,8 +921,8 @@ onUnmounted(() => {
 }
 .map-container :deep(.campus-place-marker--active .campus-place-marker__label) {
   color: #fff;
-  background: #409eff;
-  border-color: #409eff;
+  background: var(--el-color-primary);
+  border-color: var(--el-color-primary);
   font-weight: 600;
 }
 .map-container :deep(.campus-my-location-marker) {
@@ -804,6 +1015,136 @@ onUnmounted(() => {
   flex-wrap: wrap;
   gap: 8px;
   margin: 12px 0;
+}
+.place-pop {
+  position: absolute;
+  z-index: 30;
+  box-sizing: border-box;
+  width: min(300px, calc(100vw - 24px));
+  padding: 10px 12px;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(31, 56, 88, 0.18);
+  font-size: 13px;
+}
+.place-pop--free {
+  right: 12px;
+  bottom: 16px;
+}
+.place-pop__head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.place-pop__name {
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.place-pop__close {
+  border: none;
+  background: none;
+  padding: 2px 4px;
+  font-size: 18px;
+  line-height: 1;
+  color: rgba(0, 0, 0, 0.45);
+  cursor: pointer;
+}
+.place-pop__addr {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: rgba(0, 0, 0, 0.55);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.place-pop__desc {
+  margin: 4px 0 0;
+  color: rgba(0, 0, 0, 0.72);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.place-pop__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.place-pop__actions .el-button + .el-button {
+  margin-left: 0;
+}
+.place-pop__comments {
+  max-height: 30vh;
+  overflow-y: auto;
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid #f0f0f0;
+}
+.place-pop__input {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: 8px;
+}
+.place-pop__input .el-input {
+  flex: 1;
+}
+.chat-float {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  bottom: 12px;
+  z-index: 31;
+  display: flex;
+  flex-direction: column;
+  width: 340px;
+  padding: 10px 12px;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(31, 56, 88, 0.18);
+}
+.chat-float--mobile {
+  top: auto;
+  left: 12px;
+  right: 12px;
+  bottom: 12px;
+  width: auto;
+  height: 62vh;
+}
+.chat-float__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 6px;
+}
+.chat-float__close {
+  border: none;
+  background: none;
+  padding: 2px 6px;
+  font-size: 18px;
+  line-height: 1;
+  color: rgba(0, 0, 0, 0.45);
+  cursor: pointer;
+}
+.chat-float__tabs {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.chat-float__tabs :deep(.el-tabs__content) {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.chat-float__tabs :deep(.el-tab-pane) {
+  height: 100%;
 }
 .comment {
   margin-bottom: 10px;

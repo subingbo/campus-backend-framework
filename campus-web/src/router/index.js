@@ -2,13 +2,15 @@ import { createRouter, createWebHistory } from 'vue-router'
 import LoginView from '../views/LoginView.vue'
 import MapListView from '../views/MapListView.vue'
 import MapWorkspaceView from '../views/MapWorkspaceView.vue'
+import FriendsView from '../views/FriendsView.vue'
 
 const router = createRouter({
   history: createWebHistory(),
   routes: [
     { path: '/login', component: LoginView },
     { path: '/', component: MapListView, meta: { auth: true } },
-    { path: '/maps/:id', component: MapWorkspaceView, meta: { auth: true } }
+    { path: '/maps/:id', component: MapWorkspaceView, meta: { auth: true } },
+    { path: '/friends', component: FriendsView, meta: { auth: true } }
   ]
 })
 

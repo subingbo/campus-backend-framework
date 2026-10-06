@@ -21,6 +21,7 @@ import com.campus.post.mapper.PostMapper;
 import com.campus.security.user.SecurityUtils;
 import com.campus.user.entity.User;
 import com.campus.user.mapper.UserMapper;
+import com.campus.ws.MapEventNotifier;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -44,6 +45,7 @@ public class PlaceServiceImpl implements PlaceService {
     private final PostLikeMapper postLikeMapper;
     private final PlaceDetailCache placeDetailCache;
     private final MapPlaceMapper mapPlaceMapper;
+    private final MapEventNotifier mapEventNotifier;
 
     @Override
     @Transactional
@@ -152,6 +154,10 @@ public class PlaceServiceImpl implements PlaceService {
         place.setAddress(request.getAddress());
         placeMapper.update(place);
         placeDetailCache.evict(id);
+        // 地点信息变更 → 推给所有包含该地点的地图的在线成员
+        for (Long mapId : mapPlaceMapper.selectMapIdsByPlaceId(id)) {
+            mapEventNotifier.notifyPlaceChanged(mapId, id, place.getName(), "修改了地点信息", userId);
+        }
         return buildDetail(id, userId);
     }
 

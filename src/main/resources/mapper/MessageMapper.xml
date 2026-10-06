@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.campus.social.mapper.MessageMapper">
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO message (conversation_id, sender_id, content, type, created_at)
+        VALUES (#{conversationId}, #{senderId}, #{content}, #{type}, NOW())
+    </insert>
+
+    <select id="selectByConversation" resultType="com.campus.social.dto.ChatMessageResponse">
+        SELECT m.id,
+               m.conversation_id AS conversationId,
+               m.sender_id AS senderId,
+               u.nickname AS senderNickname,
+               m.content,
+               m.type,
+               m.created_at AS createdAt
+        FROM message m
+        INNER JOIN sys_user u ON u.id = m.sender_id
+        WHERE m.conversation_id = #{conversationId}
+          <if test="beforeId != null">
+              AND m.id &lt; #{beforeId}
+          </if>
+        ORDER BY m.id DESC
+        LIMIT #{limit}
+    </select>
+
+    <select id="selectLastByConversation" resultType="com.campus.social.dto.ChatMessageResponse">
+        SELECT m.id,
+               m.conversation_id AS conversationId,
+               m.sender_id AS senderId,
+               u.nickname AS senderNickname,
+               m.content,
+               m.type,
+               m.created_at AS createdAt
+        FROM message m
+        INNER JOIN sys_user u ON u.id = m.sender_id
+        WHERE m.conversation_id = #{conversationId}
+        ORDER BY m.id DESC
+        LIMIT 1
+    </select>
+</mapper>

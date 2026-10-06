@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.campus.social.mapper.FriendMapper">
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO friend (user_id, friend_id, created_at)
+        VALUES (#{userId}, #{friendId}, NOW())
+    </insert>
+
+    <delete id="deleteBetween">
+        DELETE FROM friend
+        WHERE (user_id = #{userIdA} AND friend_id = #{userIdB})
+           OR (user_id = #{userIdB} AND friend_id = #{userIdA})
+    </delete>
+
+    <select id="existsBetween" resultType="int">
+        SELECT COUNT(*) FROM friend
+        WHERE user_id = #{userIdA} AND friend_id = #{userIdB}
+    </select>
+
+    <select id="selectFriends" resultType="com.campus.social.dto.FriendUserResponse">
+        SELECT u.id AS userId,
+               u.username,
+               u.nickname,
+               u.avatar
+        FROM friend f
+        INNER JOIN sys_user u ON u.id = f.friend_id
+        WHERE f.user_id = #{userId} AND u.status = 1
+        ORDER BY u.id
+    </select>
+
+    <select id="selectFriendIds" resultType="long">
+        SELECT friend_id FROM friend WHERE user_id = #{userId}
+    </select>
+</mapper>

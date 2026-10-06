@@ -192,3 +192,53 @@ CREATE TABLE IF NOT EXISTS place_comment (
     KEY idx_map_place (map_id, place_id),
     KEY idx_user_id (user_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='地图维度地点评论';
+
+CREATE TABLE IF NOT EXISTS friend_request (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '请求ID',
+    from_user_id BIGINT NOT NULL COMMENT '发起方用户ID',
+    to_user_id BIGINT NOT NULL COMMENT '接收方用户ID',
+    status TINYINT NOT NULL DEFAULT 0 COMMENT '状态：0待处理 1已接受 2已拒绝',
+    message VARCHAR(128) NULL COMMENT '验证留言',
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '发起时间',
+    handled_at DATETIME NULL COMMENT '处理时间',
+    KEY idx_to_user_status (to_user_id, status),
+    KEY idx_from_user (from_user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='好友申请';
+
+CREATE TABLE IF NOT EXISTS friend (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '记录ID',
+    user_id BIGINT NOT NULL COMMENT '用户ID',
+    friend_id BIGINT NOT NULL COMMENT '好友用户ID',
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '成为好友时间',
+    UNIQUE KEY uk_user_friend (user_id, friend_id),
+    KEY idx_friend_id (friend_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='好友关系（双向行）';
+
+CREATE TABLE IF NOT EXISTS conversation (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '会话ID',
+    type VARCHAR(16) NOT NULL COMMENT '类型：PRIVATE私聊 GROUP地图群聊 PLACE地点聊天室',
+    map_id BIGINT NULL COMMENT 'GROUP会话绑定的地图ID',
+    place_id BIGINT NULL COMMENT 'PLACE会话绑定的地点ID',
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    KEY idx_map_id (map_id),
+    KEY idx_place_id (place_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='聊天会话';
+
+CREATE TABLE IF NOT EXISTS conversation_member (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '记录ID',
+    conversation_id BIGINT NOT NULL COMMENT '会话ID',
+    user_id BIGINT NOT NULL COMMENT '用户ID',
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '加入时间',
+    UNIQUE KEY uk_conv_user (conversation_id, user_id),
+    KEY idx_user_id (user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='会话成员';
+
+CREATE TABLE IF NOT EXISTS message (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '消息ID',
+    conversation_id BIGINT NOT NULL COMMENT '会话ID',
+    sender_id BIGINT NOT NULL COMMENT '发送者用户ID',
+    content VARCHAR(1000) NOT NULL COMMENT '消息内容',
+    type VARCHAR(16) NOT NULL DEFAULT 'TEXT' COMMENT '类型：TEXT文本（二期扩展图片/位置）',
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '发送时间',
+    KEY idx_conv_created (conversation_id, created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='聊天消息';

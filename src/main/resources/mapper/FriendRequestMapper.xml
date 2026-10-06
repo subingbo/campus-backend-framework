@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.campus.social.mapper.FriendRequestMapper">
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO friend_request (from_user_id, to_user_id, status, message, created_at)
+        VALUES (#{fromUserId}, #{toUserId}, 0, #{message}, NOW())
+    </insert>
+
+    <select id="selectById" resultType="com.campus.social.entity.FriendRequest">
+        SELECT id, from_user_id, to_user_id, status, message, created_at, handled_at
+        FROM friend_request
+        WHERE id = #{id}
+        LIMIT 1
+    </select>
+
+    <select id="selectPendingBetween" resultType="com.campus.social.entity.FriendRequest">
+        SELECT id, from_user_id, to_user_id, status, message, created_at, handled_at
+        FROM friend_request
+        WHERE status = 0
+          AND ((from_user_id = #{fromUserId} AND to_user_id = #{toUserId})
+            OR (from_user_id = #{toUserId} AND to_user_id = #{fromUserId}))
+        ORDER BY id DESC
+        LIMIT 1
+    </select>
+
+    <select id="selectReceived" resultType="com.campus.social.dto.FriendRequestResponse">
+        SELECT r.id,
+               r.from_user_id AS fromUserId,
+               fu.username AS fromUsername,
+               fu.nickname AS fromNickname,
+               r.to_user_id AS toUserId,
+               tu.username AS toUsername,
+               tu.nickname AS toNickname,
+               r.message,
+               r.status,
+               r.created_at AS createdAt
+        FROM friend_request r
+        INNER JOIN sys_user fu ON fu.id = r.from_user_id
+        INNER JOIN sys_user tu ON tu.id = r.to_user_id
+        WHERE r.to_user_id = #{userId} AND r.status = 0
+        ORDER BY r.id DESC
+    </select>
+
+    <select id="selectSent" resultType="com.campus.social.dto.FriendRequestResponse">
+        SELECT r.id,
+               r.from_user_id AS fromUserId,
+               fu.username AS fromUsername,
+               fu.nickname AS fromNickname,
+               r.to_user_id AS toUserId,
+               tu.username AS toUsername,
+               tu.nickname AS toNickname,
+               r.message,
+               r.status,
+               r.created_at AS createdAt
+        FROM friend_request r
+        INNER JOIN sys_user fu ON fu.id = r.from_user_id
+        INNER JOIN sys_user tu ON tu.id = r.to_user_id
+        WHERE r.from_user_id = #{userId} AND r.status = 0
+        ORDER BY r.id DESC
+    </select>
+
+    <select id="countReceivedPending" resultType="int">
+        SELECT COUNT(*) FROM friend_request WHERE to_user_id = #{userId} AND status = 0
+    </select>
+
+    <update id="updateStatus">
+        UPDATE friend_request SET status = #{status}, handled_at = NOW() WHERE id = #{id}
+    </update>
+
+    <select id="searchUsers" resultType="com.campus.social.dto.SearchUserResponse">
+        SELECT u.id AS userId,
+               u.username,
+               u.nickname,
+               u.avatar,
+               EXISTS(SELECT 1 FROM friend f
+                      WHERE f.user_id = #{userId} AND f.friend_id = u.id) AS friend,
+               EXISTS(SELECT 1 FROM friend_request r
+                      WHERE r.status = 0
+                        AND ((r.from_user_id = #{userId} AND r.to_user_id = u.id)
+                          OR (r.from_user_id = u.id AND r.to_user_id = #{userId}))) AS requested
+        FROM sys_user u
+        WHERE u.id != #{userId}
+          AND u.status = 1
+          AND (u.username LIKE #{keyword} OR u.nickname LIKE #{keyword})
+        ORDER BY u.id
+        LIMIT 20
+    </select>
+</mapper>

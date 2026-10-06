@@ -24,3 +24,22 @@ export const placeApi = {
   categories: () => http.get('/place-categories'),
   update: (id, payload) => http.put(`/places/${id}`, payload)
 }
+
+export const friendApi = {
+  list: () => http.get('/friends'),
+  requests: () => http.get('/friends/requests'),
+  search: (keyword) => http.get('/friends/search', { params: { keyword } }),
+  sendRequest: (payload) => http.post('/friends/requests', payload),
+  accept: (id) => http.post(`/friends/requests/${id}/accept`),
+  reject: (id) => http.post(`/friends/requests/${id}/reject`),
+  remove: (userId) => http.delete(`/friends/${userId}`)
+}
+
+export const chatApi = {
+  conversations: () => http.get('/conversations'),
+  createPrivate: (userId) => http.post('/conversations/private', { userId }),
+  forMap: (mapId) => http.get(`/conversations/maps/${mapId}`),
+  forPlace: (placeId) => http.get(`/conversations/places/${placeId}`),
+  messages: (id, beforeId = null, limit = 50) =>
+    http.get(`/conversations/${id}/messages`, { params: { beforeId, limit } })
+}

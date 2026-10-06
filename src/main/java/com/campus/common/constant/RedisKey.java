@@ -24,4 +24,12 @@ public final class RedisKey {
     public static String placeDetail(Long placeId) {
         return "place:detail:" + placeId;
     }
+
+    public static String socialOnline() {
+        return "social:online";
+    }
+
+    public static String socialUnread(Long userId, Long conversationId) {
+        return "social:unread:" + userId + ":" + conversationId;
+    }
 }

@@ -28,4 +28,6 @@ public interface MapPlaceMapper {
     int existsOnMap(@Param("mapId") Long mapId, @Param("placeId") Long placeId);
 
     int countEditableMapsForUser(@Param("userId") Long userId, @Param("placeId") Long placeId);
+
+    List<Long> selectMapIdsByPlaceId(@Param("placeId") Long placeId);
 }

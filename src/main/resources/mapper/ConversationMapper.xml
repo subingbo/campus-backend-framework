@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.campus.social.mapper.ConversationMapper">
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO conversation (type, map_id, place_id, created_at)
+        VALUES (#{type}, #{mapId}, #{placeId}, NOW())
+    </insert>
+
+    <select id="selectById" resultType="com.campus.social.entity.Conversation">
+        SELECT id, type, map_id, place_id, created_at
+        FROM conversation
+        WHERE id = #{id}
+        LIMIT 1
+    </select>
+
+    <select id="selectPrivateBetween" resultType="com.campus.social.entity.Conversation">
+        SELECT c.id, c.type, c.map_id, c.place_id, c.created_at
+        FROM conversation c
+        INNER JOIN conversation_member m1 ON m1.conversation_id = c.id AND m1.user_id = #{userIdA}
+        INNER JOIN conversation_member m2 ON m2.conversation_id = c.id AND m2.user_id = #{userIdB}
+        WHERE c.type = 'PRIVATE'
+        ORDER BY c.id
+        LIMIT 1
+    </select>
+
+    <select id="selectByMapId" resultType="com.campus.social.entity.Conversation">
+        SELECT id, type, map_id, place_id, created_at
+        FROM conversation
+        WHERE type = 'GROUP' AND map_id = #{mapId}
+        ORDER BY id
+        LIMIT 1
+    </select>
+
+    <select id="selectByPlaceId" resultType="com.campus.social.entity.Conversation">
+        SELECT id, type, map_id, place_id, created_at
+        FROM conversation
+        WHERE type = 'PLACE' AND place_id = #{placeId}
+        ORDER BY id
+        LIMIT 1
+    </select>
+</mapper>
