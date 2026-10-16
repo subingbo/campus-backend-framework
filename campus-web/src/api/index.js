@@ -22,7 +22,26 @@ export const mapApi = {
 
 export const placeApi = {
   categories: () => http.get('/place-categories'),
-  update: (id, payload) => http.put(`/places/${id}`, payload)
+  update: (id, payload) => http.put(`/places/${id}`, payload),
+  get: (id) => http.get(`/places/${id}`),
+  feed: (id) => http.get(`/places/${id}/feed`),
+  mapsForPlace: (id) => http.get(`/places/${id}/maps`)
+}
+
+export const activityApi = {
+  listByPlace: (placeId) => http.get(`/places/${placeId}/activities`),
+  create: (payload) => http.post('/activities', payload),
+  update: (id, payload) => http.put(`/activities/${id}`, payload),
+  cancel: (id) => http.delete(`/activities/${id}`),
+  members: (id) => http.get(`/activities/${id}/members`),
+  join: (id) => http.post(`/activities/${id}/join`),
+  leave: (id) => http.delete(`/activities/${id}/join`),
+  checkin: (id, code) => http.post(`/activities/${id}/checkin`, { code }),
+  mine: (role = 'all') => http.get('/activities/mine', { params: { role } }),
+  invite: (id, userId) => http.post(`/activities/${id}/invites`, { userId }),
+  pendingInvites: () => http.get('/activity-invites/pending'),
+  acceptInvite: (inviteId) => http.post(`/activity-invites/${inviteId}/accept`),
+  declineInvite: (inviteId) => http.post(`/activity-invites/${inviteId}/decline`)
 }
 
 export const friendApi = {
@@ -42,4 +61,13 @@ export const chatApi = {
   forPlace: (placeId) => http.get(`/conversations/places/${placeId}`),
   messages: (id, beforeId = null, limit = 50) =>
     http.get(`/conversations/${id}/messages`, { params: { beforeId, limit } })
+}
+
+export const assistantApi = {
+  createChat: () => http.post('/assistant/chats'),
+  listChats: () => http.get('/assistant/chats'),
+  detail: (id) => http.get(`/assistant/chats/${id}`),
+  savePlan: (id, body) => http.post(`/assistant/chats/${id}/plan/save`, body),
+  revisePlan: (id, body) => http.post(`/assistant/chats/${id}/plan/revise`, body),
+  route: (params) => http.get('/assistant/routes', { params })
 }

@@ -1,6 +1,5 @@
 package com.campus.social.service.impl;
 
-import com.campus.common.constant.RedisKey;
 import com.campus.common.exception.BusinessException;
 import com.campus.common.result.ResultCode;
 import com.campus.map.dto.MapMemberResponse;
@@ -11,6 +10,7 @@ import com.campus.place.entity.Place;
 import com.campus.place.mapper.PlaceMapper;
 import com.campus.security.user.SecurityUtils;
 import com.campus.social.constant.ConversationType;
+import com.campus.social.constant.SocialRedisKey;
 import com.campus.social.dto.ChatMessageResponse;
 import com.campus.social.dto.ConversationResponse;
 import com.campus.social.entity.Conversation;
@@ -186,7 +186,7 @@ public class ConversationServiceImpl implements ConversationService {
     }
 
     private long readUnread(Long userId, Long conversationId) {
-        String raw = stringRedisTemplate.opsForValue().get(RedisKey.socialUnread(userId, conversationId));
+        String raw = stringRedisTemplate.opsForValue().get(SocialRedisKey.unread(userId, conversationId));
         if (raw == null) {
             return 0;
         }

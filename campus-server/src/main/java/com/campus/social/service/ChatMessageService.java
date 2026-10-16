@@ -1,12 +1,12 @@
 package com.campus.social.service;
 
-import com.campus.common.constant.RedisKey;
 import com.campus.common.exception.BusinessException;
 import com.campus.common.result.ResultCode;
 import com.campus.map.dto.MapMemberResponse;
 import com.campus.map.entity.MapMember;
 import com.campus.map.mapper.MapMemberMapper;
 import com.campus.social.constant.ConversationType;
+import com.campus.social.constant.SocialRedisKey;
 import com.campus.social.dto.ChatMessageResponse;
 import com.campus.social.entity.Conversation;
 import com.campus.social.entity.Message;
@@ -42,6 +42,7 @@ public class ChatMessageService {
     private final UserMapper userMapper;
     private final StringRedisTemplate stringRedisTemplate;
     private final WsSessionRegistry wsSessionRegistry;
+    private final com.campus.ai.service.GroupAgentService groupAgentService;
 
     public ChatMessageResponse send(Long senderId, Long conversationId, String content) {
         Conversation conversation = requireConversation(conversationId);
@@ -67,6 +68,11 @@ public class ChatMessageService {
 
         ChatMessageResponse response = toResponse(message, resolveNickname(sender));
         fanout(conversation, senderId, response);
+
+        // P2 群聊 @AI：GROUP 会话 + "@AI" 前缀触发时空协同规划（异步，不阻塞 ws 线程）
+        if (ConversationType.GROUP.equals(conversation.getType())) {
+            groupAgentService.maybeTrigger(senderId, conversation, text);
+        }
         return response;
     }
 
@@ -124,7 +130,7 @@ public class ChatMessageService {
     }
 
     public void clearUnread(Long userId, Long conversationId) {
-        stringRedisTemplate.delete(RedisKey.socialUnread(userId, conversationId));
+        stringRedisTemplate.delete(SocialRedisKey.unread(userId, conversationId));
     }
 
     private void fanout(Conversation conversation, Long senderId, ChatMessageResponse response) {
@@ -135,7 +141,7 @@ public class ChatMessageService {
                 continue;
             }
             Long unread = stringRedisTemplate.opsForValue()
-                    .increment(RedisKey.socialUnread(userId, conversation.getId()));
+                    .increment(SocialRedisKey.unread(userId, conversation.getId()));
             if (wsSessionRegistry.isOnline(userId)) {
                 wsSessionRegistry.sendToUser(userId, frame("CHAT_MESSAGE", response));
                 Map<String, Object> unreadFrame = new LinkedHashMap<>();

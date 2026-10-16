@@ -13,6 +13,7 @@ import com.campus.place.entity.Place;
 import com.campus.place.entity.PlaceCategory;
 import com.campus.place.mapper.PlaceCategoryMapper;
 import com.campus.place.mapper.PlaceMapper;
+import com.campus.place.lock.PlaceGridLock;
 import com.campus.place.service.PlaceService;
 import com.campus.map.mapper.MapPlaceMapper;
 import com.campus.post.dto.PostListItemResponse;
@@ -24,6 +25,7 @@ import com.campus.user.mapper.UserMapper;
 import com.campus.ws.MapEventNotifier;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
@@ -46,12 +48,23 @@ public class PlaceServiceImpl implements PlaceService {
     private final PlaceDetailCache placeDetailCache;
     private final MapPlaceMapper mapPlaceMapper;
     private final MapEventNotifier mapEventNotifier;
+    private final PlaceGridLock placeGridLock;
 
     @Override
-    @Transactional
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     public PlaceCreateResponse createPlace(CreatePlaceRequest request) {
+        // READ_COMMITTED 十分关键：若沿用外层默认 REPEATABLE READ，validateCategory 等加锁前的读
+        // 会把一致性视图钉在事务开始时刻，等事务真正拿到格网锁后，锁内复检看不到前一事务刚提交的行，
+        // 会复制出重复地点（DB-05 已实测复现该 Bug）。
         validateCategory(request.getCategoryId());
         boolean confirmNew = Boolean.TRUE.equals(request.getConfirmNew());
+        // "复检→插入"整体置于格网命名锁内（提交后才放锁），同名相同近坐标并发只会建出一条
+        return placeGridLock.withinLock(
+                placeGridLock.keysAround(request.getLongitude(), request.getLatitude()),
+                () -> doCreatePlace(request, confirmNew));
+    }
+
+    private PlaceCreateResponse doCreatePlace(CreatePlaceRequest request, boolean confirmNew) {
         List<PlaceBriefResponse> candidates = findCandidatesWithinMeters(
                 request.getLongitude(), request.getLatitude(), MERGE_RADIUS_METERS);
 

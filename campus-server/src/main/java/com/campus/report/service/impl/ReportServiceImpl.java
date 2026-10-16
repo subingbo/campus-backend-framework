@@ -12,6 +12,7 @@ import com.campus.post.mapper.PostCommentMapper;
 import com.campus.post.mapper.PostMapper;
 import com.campus.post.service.PostCommentService;
 import com.campus.post.service.PostService;
+import com.campus.profile.service.UserProfileService;
 import com.campus.report.dto.CreateReportRequest;
 import com.campus.report.dto.HandleReportRequest;
 import com.campus.report.dto.ReportResponse;
@@ -21,7 +22,6 @@ import com.campus.report.service.ReportService;
 import com.campus.security.user.SecurityUtils;
 import com.campus.user.entity.User;
 import com.campus.user.mapper.UserMapper;
-import com.campus.user.service.UserService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -39,7 +39,7 @@ public class ReportServiceImpl implements ReportService {
     private final PlaceService placeService;
     private final PostService postService;
     private final PostCommentService postCommentService;
-    private final UserService userService;
+    private final UserProfileService userProfileService;
 
     @Override
     @Transactional
@@ -101,7 +101,7 @@ public class ReportServiceImpl implements ReportService {
             case "NONE" -> {
             }
             case "DELETE_CONTENT" -> deleteContent(report);
-            case "BAN_USER" -> userService.updateStatus(resolveUserId(report), 0);
+            case "BAN_USER" -> userProfileService.updateStatus(resolveUserId(report), 0);
             default -> throw new BusinessException(ResultCode.BAD_REQUEST.getCode(), "action 无效");
         }
     }

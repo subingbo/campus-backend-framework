@@ -1,20 +1,30 @@
 package com.campus.activity.controller;
 
+import com.campus.activity.dto.ActivityMemberItem;
 import com.campus.activity.dto.ActivityResponse;
 import com.campus.activity.dto.CreateActivityRequest;
+import com.campus.activity.dto.UpdateActivityRequest;
 import com.campus.activity.service.ActivityService;
+import com.campus.common.ratelimit.RateLimiter;
 import com.campus.common.result.Result;
+import com.campus.security.user.SecurityUtils;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.time.Duration;
+import java.util.List;
 
 @Tag(name = "活动")
 @RestController
@@ -23,11 +33,19 @@ import org.springframework.web.bind.annotation.RestController;
 public class ActivityController {
 
     private final ActivityService activityService;
+    private final RateLimiter rateLimiter;
 
     @Operation(summary = "创建活动")
     @PostMapping
     public Result<ActivityResponse> create(@Valid @RequestBody CreateActivityRequest request) {
+        rateLimiter.check("activity:create:" + SecurityUtils.getUserId(), 10, Duration.ofMinutes(1));
         return Result.success(activityService.create(request));
+    }
+
+    @Operation(summary = "我的日程（role=created 创建的 / joined 报名的 / all 全部）")
+    @GetMapping("/mine")
+    public Result<List<ActivityResponse>> mine(@RequestParam(defaultValue = "all") String role) {
+        return Result.success(activityService.mine(role));
     }
 
     @Operation(summary = "活动详情")
@@ -36,9 +54,28 @@ public class ActivityController {
         return Result.success(activityService.get(id));
     }
 
+    @Operation(summary = "编辑活动（创建者，未开始）")
+    @PutMapping("/{id}")
+    public Result<ActivityResponse> update(@PathVariable Long id, @Valid @RequestBody UpdateActivityRequest request) {
+        return Result.success(activityService.update(id, request));
+    }
+
+    @Operation(summary = "取消活动（创建者）")
+    @DeleteMapping("/{id}")
+    public Result<ActivityResponse> cancel(@PathVariable Long id) {
+        return Result.success(activityService.cancel(id));
+    }
+
+    @Operation(summary = "成员与签到记录")
+    @GetMapping("/{id}/members")
+    public Result<List<ActivityMemberItem>> members(@PathVariable Long id) {
+        return Result.success(activityService.members(id));
+    }
+
     @Operation(summary = "报名")
     @PostMapping("/{id}/join")
     public Result<ActivityResponse> join(@PathVariable Long id) {
+        rateLimiter.check("activity:join:" + SecurityUtils.getUserId(), 15, Duration.ofMinutes(1));
         return Result.success(activityService.join(id));
     }
 
@@ -46,5 +83,17 @@ public class ActivityController {
     @DeleteMapping("/{id}/join")
     public Result<ActivityResponse> leave(@PathVariable Long id) {
         return Result.success(activityService.leave(id));
+    }
+
+    @Operation(summary = "输码签到")
+    @PostMapping("/{id}/checkin")
+    public Result<ActivityResponse> checkin(@PathVariable Long id, @RequestBody(required = false) CheckinRequest request) {
+        rateLimiter.check("activity:checkin:" + SecurityUtils.getUserId(), 10, Duration.ofMinutes(1));
+        return Result.success(activityService.checkin(id, request == null ? null : request.getCode()));
+    }
+
+    @Data
+    public static class CheckinRequest {
+        private String code;
     }
 }

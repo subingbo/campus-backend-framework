@@ -3,6 +3,8 @@
     <header class="topbar">
       <span class="topbar__brand">Campus Map</span>
       <div class="topbar__right">
+        <el-button text @click="$router.push('/assistant')">AI 助手</el-button>
+        <el-button text @click="$router.push('/activities')">活动日程</el-button>
         <el-badge :value="requestCount" :hidden="!requestCount" :max="99">
           <el-button text @click="$router.push('/friends')">好友</el-button>
         </el-badge>

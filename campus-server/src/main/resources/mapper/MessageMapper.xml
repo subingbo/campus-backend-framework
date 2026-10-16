@@ -40,4 +40,12 @@
         ORDER BY m.id DESC
         LIMIT 1
     </select>
+
+    <select id="selectAgentReply" resultType="com.campus.social.entity.Message">
+        SELECT id, conversation_id, sender_id, content, type, created_at
+        FROM message
+        WHERE conversation_id = #{conversationId} AND type = 'AGENT'
+        ORDER BY id DESC
+        LIMIT 1
+    </select>
 </mapper>

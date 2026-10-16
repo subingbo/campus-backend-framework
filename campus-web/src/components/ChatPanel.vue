@@ -6,8 +6,37 @@
         <span v-if="conversation.type !== 'PRIVATE' && m.senderId !== me" class="chat-msg__nick">
           {{ m.senderNickname }}
         </span>
-        <div class="chat-msg__bubble">{{ m.content }}</div>
+        <div class="chat-msg__bubble" :class="{ agent: m.type === 'AGENT' }">
+          <span v-if="m.type === 'AGENT'">🤖 </span>{{ m.content }}
+        </div>
         <span class="chat-msg__time">{{ formatTime(m.createdAt) }}</span>
+      </div>
+      <div v-if="agentPlan" class="chat-agent-card">
+        <h4>🧭 {{ agentPlan.title || 'AI 规划（未确认）' }}</h4>
+        <span v-if="agentPlan.constraintStatus === 'TENTATIVE'" class="chat-agent-card__badge tentative">
+          暂定：含未授权忙闲成员
+        </span>
+        <span v-else-if="agentPlan.constraintStatus === 'FEASIBLE'" class="chat-agent-card__badge ok">
+          忙闲已核验
+        </span>
+        <p v-for="(s, i) in (agentPlan.stops || []).slice(0, 6)" :key="i" class="chat-agent-card__stop">
+          <span class="src" :class="sourceClass(s.source)">{{ sourceLabel(s.source) }}</span>
+          {{ s.seq || i + 1 }}. {{ s.name }}
+          <span v-if="s.startTime">（{{ formatTime(s.startTime) }}-{{ formatTime(s.endTime) }}<template
+            v-if="s.stayMinutes">，停留 {{ s.stayMinutes }} 分钟</template>）</span>
+        </p>
+        <p v-for="(seg, i) in segmentList" :key="'seg' + i" class="chat-agent-card__seg">
+          ↳ {{ modeLabel(seg.transportMode) }} {{ seg.durationMinutes }} 分钟
+        </p>
+        <p v-if="agentPlan.totalTravelMinutes">🚦 全程交通约 {{ agentPlan.totalTravelMinutes }} 分钟
+          <span v-if="agentPlan.routeConfidence === 'ESTIMATED'" class="chat-agent-card__routebadge">估算（未验证）</span>
+          <span v-else-if="agentPlan.routeConfidence === 'AMAP'" class="chat-agent-card__routebadge ok">高德实测</span>
+        </p>
+        <p v-if="coverageNote" class="chat-agent-card__cov">{{ coverageNote }}</p>
+        <p v-if="agentPlan.reason" class="chat-agent-card__reason">💡 {{ agentPlan.reason }}</p>
+        <span class="chat-agent-card__hint">
+          已生成规划草稿；到页面顶部「AI 助手」可编辑并保存为活动。含未授权忙闲的方案仅为暂定，需相关成员确认。
+        </span>
       </div>
     </div>
     <div v-if="typingText" class="chat-panel__typing">{{ typingText }}</div>
@@ -27,7 +56,7 @@
 </template>
 
 <script setup>
-import { nextTick, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onUnmounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { chatApi } from '../api'
 import { myUserId, on, send } from '../composables/useChatSocket'
@@ -42,9 +71,39 @@ const draft = ref('')
 const loading = ref(false)
 const typingText = ref('')
 const listRef = ref(null)
+const agentPlan = ref(null)
 let typingTimer = null
 let lastTypingSentAt = 0
 let unreadRemovers = []
+
+// P1.5 卡片扩展：来源徽标 / 交通段 / 忙闲覆盖
+const segmentList = computed(() => (agentPlan.value?.routeSegments || []).slice(0, 8))
+const coverageNote = computed(() => {
+  const coverage = agentPlan.value?.availabilityCoverage || []
+  if (!coverage.length) return ''
+  const known = coverage.filter((c) => c.status === 'KNOWN').length
+  const unknown = coverage.filter((c) => c.status === 'UNKNOWN').length
+  if (!unknown) return `已核验 ${known} 位成员忙闲`
+  return `忙闲已核验 ${known} 人，${unknown} 人未授权（方案暂定）`
+})
+
+function sourceLabel(source) {
+  if (source === 'GROUP_MAP') return '共建'
+  if (source === 'PERSONAL_MAP') return '收藏'
+  if (source === 'AMAP_POI') return 'POI'
+  return ''
+}
+
+function sourceClass(source) {
+  return source ? `src-${String(source).toLowerCase().replace('_', '-')}` : ''
+}
+
+function modeLabel(mode) {
+  if (mode === 'RIDE') return '骑行'
+  if (mode === 'DRIVE') return '驾车'
+  if (mode === 'TRANSIT') return '公交'
+  return '步行'
+}
 
 watch(
   () => props.conversation.id,
@@ -81,6 +140,11 @@ watch(
       }),
       on('ERROR', (frame) => {
         ElMessage.error(frame.message || '发送失败')
+      }),
+      on('AGENT_PLAN_CARD', (frame) => {
+        if (frame.conversationId !== props.conversation.id) return
+        agentPlan.value = frame.plan
+        scrollBottom()
       })
     ]
     if (oldId !== undefined) scrollBottom()
@@ -220,5 +284,86 @@ function formatTime(value) {
 }
 .chat-panel__input .el-input {
   flex: 1;
+}
+
+/* —— P2 群聊 AI 规划卡片 —— */
+.chat-msg__bubble.agent {
+  background: rgba(64, 158, 255, 0.1);
+  border: 1px dashed rgba(64, 158, 255, 0.4);
+  color: inherit;
+}
+.chat-agent-card {
+  margin: 8px 0;
+  padding: 10px 12px;
+  background: rgba(64, 158, 255, 0.07);
+  border: 1px solid rgba(64, 158, 255, 0.25);
+  border-radius: 10px;
+  font-size: 12px;
+}
+.chat-agent-card h4 {
+  margin: 0 0 6px;
+  font-size: 13px;
+}
+.chat-agent-card p {
+  margin: 2px 0;
+  color: rgba(0, 0, 0, 0.72);
+}
+.chat-agent-card__stop .src {
+  display: inline-block;
+  margin-right: 4px;
+  padding: 0 4px;
+  border-radius: 4px;
+  font-size: 10px;
+  background: rgba(64, 158, 255, 0.15);
+  color: #2979cc;
+}
+.chat-agent-card__stop .src-personal-map {
+  background: rgba(103, 194, 58, 0.15);
+  color: #3f9b1e;
+}
+.chat-agent-card__stop .src-amap-poi {
+  background: rgba(144, 147, 153, 0.15);
+  color: rgba(0, 0, 0, 0.45);
+}
+.chat-agent-card__routebadge {
+  margin-left: 4px;
+  padding: 0 4px;
+  border-radius: 4px;
+  font-size: 10px;
+  background: rgba(230, 162, 60, 0.18);
+  color: #c0781c;
+}
+.chat-agent-card__routebadge.ok {
+  background: rgba(103, 194, 58, 0.16);
+  color: #3f9b1e;
+}
+.chat-agent-card__seg {
+  color: rgba(0, 0, 0, 0.45);
+  font-size: 11px;
+}
+.chat-agent-card__cov,
+.chat-agent-card__reason {
+  color: rgba(0, 0, 0, 0.55);
+}
+.chat-agent-card__badge {
+  display: inline-block;
+  margin: 2px 0 4px;
+  padding: 0 6px;
+  border-radius: 4px;
+  font-size: 10px;
+}
+.chat-agent-card__badge.ok {
+  background: rgba(103, 194, 58, 0.16);
+  color: #3f9b1e;
+}
+.chat-agent-card__badge.tentative {
+  background: rgba(230, 162, 60, 0.18);
+  color: #c0781c;
+}
+.chat-agent-card__hint {
+  display: block;
+  margin-top: 6px;
+  font-size: 11px;
+  color: rgba(0, 0, 0, 0.42);
 }
 </style>

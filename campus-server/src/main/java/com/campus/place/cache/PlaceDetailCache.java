@@ -1,6 +1,6 @@
 package com.campus.place.cache;
 
-import com.campus.common.constant.RedisKey;
+import com.campus.place.constant.PlaceRedisKey;
 import com.campus.place.dto.PlaceDetailResponse;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
@@ -26,7 +26,7 @@ public class PlaceDetailCache {
     }
 
     public PlaceDetailResponse get(Long placeId) {
-        String json = stringRedisTemplate.opsForValue().get(RedisKey.placeDetail(placeId));
+        String json = stringRedisTemplate.opsForValue().get(PlaceRedisKey.detail(placeId));
         if (json == null || json.isBlank()) {
             return null;
         }
@@ -45,7 +45,7 @@ public class PlaceDetailCache {
         }
         try {
             stringRedisTemplate.opsForValue().set(
-                    RedisKey.placeDetail(detail.getId()),
+                    PlaceRedisKey.detail(detail.getId()),
                     objectMapper.writeValueAsString(detail),
                     TTL
             );
@@ -58,6 +58,6 @@ public class PlaceDetailCache {
         if (placeId == null) {
             return;
         }
-        stringRedisTemplate.delete(RedisKey.placeDetail(placeId));
+        stringRedisTemplate.delete(PlaceRedisKey.detail(placeId));
     }
 }

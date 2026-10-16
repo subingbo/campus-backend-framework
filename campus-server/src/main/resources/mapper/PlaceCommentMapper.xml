@@ -20,4 +20,19 @@
         WHERE pc.map_id = #{mapId} AND pc.place_id = #{placeId}
         ORDER BY pc.id ASC
     </select>
+
+    <!-- 指纹聚合（P1.5H）：备注最新 id + 条数，覆盖“群内备注变化必须让 planningSourceVersion 失效” -->
+    <select id="selectDigestByMaps" resultType="map">
+        SELECT map_id AS mapId,
+               place_id AS placeId,
+               MAX(id) AS lastCommentId,
+               COUNT(*) AS commentCount
+        FROM place_comment
+        WHERE map_id IN
+        <foreach collection="mapIds" item="mapId" open="(" separator="," close=")">
+            #{mapId}
+        </foreach>
+        GROUP BY map_id, place_id
+        ORDER BY map_id, place_id
+    </select>
 </mapper>

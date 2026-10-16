@@ -10,6 +10,7 @@ import com.campus.map.dto.MapListItemResponse;
 import com.campus.map.dto.MapPlaceAddResponse;
 import com.campus.map.dto.MapPlaceItemResponse;
 import com.campus.map.dto.PlaceCommentResponse;
+import com.campus.map.dto.PlaceMapItem;
 import com.campus.map.dto.SharePlaceToMapRequest;
 import com.campus.map.dto.UpdateMemberRoleRequest;
 
@@ -24,6 +25,9 @@ public interface SharedMapService {
     List<MapListItemResponse> listMyMaps();
 
     MapDetailResponse getMapDetail(Long mapId);
+
+    /** 指定查看者身份的地图详情（Agent 工具线程没有 SecurityContext，规划校验用显式 userId） */
+    MapDetailResponse getMapDetailAs(Long mapId, Long userId);
 
     void updateMemberRole(Long mapId, Long userId, UpdateMemberRoleRequest request);
 
@@ -40,4 +44,7 @@ public interface SharedMapService {
     List<PlaceCommentResponse> listPlaceComments(Long mapId, Long placeId);
 
     PlaceCommentResponse addPlaceComment(Long mapId, Long placeId, CreatePlaceCommentRequest request);
+
+    /** 地点所在且当前用户是成员的地图（活动详情"去现场"） */
+    List<PlaceMapItem> listMapsForPlace(Long placeId);
 }

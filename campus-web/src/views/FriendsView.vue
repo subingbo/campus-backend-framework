@@ -2,7 +2,11 @@
   <div>
     <header class="topbar">
       <span class="topbar__brand" @click="$router.push('/')">Campus Map</span>
-      <el-button text type="danger" @click="logout">退出</el-button>
+      <div class="topbar__nav">
+        <el-button text @click="$router.push('/assistant')">AI 助手</el-button>
+        <el-button text @click="$router.push('/activities')">活动日程</el-button>
+        <el-button text type="danger" @click="logout">退出</el-button>
+      </div>
     </header>
 
     <div class="page">
@@ -226,6 +230,9 @@ function logout() {
   letter-spacing: 0.02em;
   color: var(--el-color-primary);
   cursor: pointer;
+}
+.topbar__nav .el-button + .el-button {
+  margin-left: 8px;
 }
 .page {
   max-width: 720px;

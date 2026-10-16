@@ -12,3 +12,6 @@ target/
 .settings/
 .DS_Store
 *.log
+.codegraph/
+application-secrets.properties
+.ai-run/

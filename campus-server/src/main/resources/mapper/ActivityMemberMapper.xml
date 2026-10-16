@@ -19,4 +19,28 @@
     <select id="countByActivityId" resultType="long">
         SELECT COUNT(*) FROM activity_member WHERE activity_id = #{activityId}
     </select>
+
+    <update id="checkin">
+        UPDATE activity_member
+        SET checked_in = 1, checked_in_at = #{time}
+        WHERE activity_id = #{activityId} AND user_id = #{userId} AND checked_in = 0
+    </update>
+
+    <select id="listByActivityId" resultType="com.campus.activity.dto.ActivityMemberItem">
+        SELECT m.user_id AS userId,
+               u.username,
+               u.nickname,
+               u.avatar,
+               m.created_at AS joinedAt,
+               m.checked_in AS checkedIn,
+               m.checked_in_at AS checkedInAt
+        FROM activity_member m
+        INNER JOIN sys_user u ON u.id = m.user_id
+        WHERE m.activity_id = #{activityId}
+        ORDER BY m.created_at ASC
+    </select>
+
+    <select id="selectUserIdsByActivityId" resultType="long">
+        SELECT user_id FROM activity_member WHERE activity_id = #{activityId}
+    </select>
 </mapper>

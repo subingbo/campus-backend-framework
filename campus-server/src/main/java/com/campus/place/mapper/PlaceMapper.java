@@ -3,12 +3,20 @@ package com.campus.place.mapper;
 import com.campus.place.entity.Place;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
+import org.apache.ibatis.annotations.Select;
 
 import java.math.BigDecimal;
 import java.util.List;
 
 @Mapper
 public interface PlaceMapper {
+
+    /** 地点去重格网命名锁（同一事务连接执行；提交/回滚后统一释放，见 PlaceGridLock） */
+    @Select("SELECT GET_LOCK(#{key}, #{timeoutSeconds})")
+    Integer getLock(@Param("key") String key, @Param("timeoutSeconds") int timeoutSeconds);
+
+    @Select("SELECT RELEASE_LOCK(#{key})")
+    Integer releaseLock(@Param("key") String key);
 
     int insert(Place place);
 

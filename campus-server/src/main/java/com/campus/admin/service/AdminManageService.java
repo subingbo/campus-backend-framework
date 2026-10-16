@@ -9,9 +9,9 @@ import com.campus.place.mapper.PlaceMapper;
 import com.campus.place.service.PlaceService;
 import com.campus.post.mapper.PostMapper;
 import com.campus.post.service.PostService;
+import com.campus.profile.service.UserProfileService;
 import com.campus.user.entity.User;
 import com.campus.user.mapper.UserMapper;
-import com.campus.user.service.UserService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -22,7 +22,7 @@ import java.util.List;
 public class AdminManageService {
 
     private final UserMapper userMapper;
-    private final UserService userService;
+    private final UserProfileService userProfileService;
     private final PlaceMapper placeMapper;
     private final PlaceService placeService;
     private final PostMapper postMapper;
@@ -38,7 +38,7 @@ public class AdminManageService {
     }
 
     public void updateUserStatus(Long userId, int status) {
-        userService.updateStatus(userId, status);
+        userProfileService.updateStatus(userId, status);
     }
 
     public PageResult<AdminPlaceItem> listPlaces(Integer page, Integer size) {

@@ -126,6 +126,9 @@ CREATE TABLE IF NOT EXISTS activity (
     start_time DATETIME NOT NULL,
     end_time DATETIME NOT NULL,
     max_members INT NOT NULL,
+    category VARCHAR(16) NOT NULL DEFAULT 'MEETING',
+    checkin_code VARCHAR(8) DEFAULT NULL,
+    checkin_open_until DATETIME DEFAULT NULL,
     status TINYINT NOT NULL DEFAULT 1,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     KEY idx_place_id (place_id),
@@ -136,9 +139,38 @@ CREATE TABLE IF NOT EXISTS activity_member (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     activity_id BIGINT NOT NULL,
     user_id BIGINT NOT NULL,
+    checked_in TINYINT NOT NULL DEFAULT 0,
+    checked_in_at DATETIME DEFAULT NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE KEY uk_activity_user (activity_id, user_id),
     KEY idx_user_id (user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS activity_invite (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    activity_id BIGINT NOT NULL,
+    inviter_id BIGINT NOT NULL,
+    invitee_id BIGINT NOT NULL,
+    status TINYINT NOT NULL DEFAULT 0,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    handled_at DATETIME DEFAULT NULL,
+    UNIQUE KEY uk_activity_invitee (activity_id, invitee_id),
+    KEY idx_invitee (invitee_id, status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS activity_stop (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    activity_id BIGINT NOT NULL,
+    seq INT NOT NULL,
+    name VARCHAR(128) NOT NULL,
+    place_id BIGINT DEFAULT NULL,
+    longitude DECIMAL(10, 7) DEFAULT NULL,
+    latitude DECIMAL(10, 7) DEFAULT NULL,
+    start_time DATETIME DEFAULT NULL,
+    end_time DATETIME DEFAULT NULL,
+    transport_mode VARCHAR(16) DEFAULT NULL,
+    note VARCHAR(256) DEFAULT NULL,
+    UNIQUE KEY uk_activity_seq (activity_id, seq)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS report (
@@ -219,4 +251,75 @@ CREATE TABLE IF NOT EXISTS place_comment (
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     KEY idx_map_place (map_id, place_id),
     KEY idx_user_id (user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS ai_conversation (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    user_id BIGINT NOT NULL,
+    title VARCHAR(128) DEFAULT NULL,
+    status VARCHAR(16) NOT NULL DEFAULT 'CHATTING',
+    plan_json MEDIUMTEXT DEFAULT NULL,
+    plan_version INT NOT NULL DEFAULT 0,
+    saved_activity_id BIGINT DEFAULT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    KEY idx_user_updated (user_id, updated_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS ai_message (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    conversation_id BIGINT NOT NULL,
+    role VARCHAR(16) NOT NULL,
+    content TEXT NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_conv (conversation_id, id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS personal_schedule (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    user_id BIGINT NOT NULL,
+    title VARCHAR(128) NOT NULL,
+    start_time DATETIME NOT NULL,
+    end_time DATETIME NOT NULL,
+    note VARCHAR(256) DEFAULT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_user_time (user_id, start_time)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS schedule_share_permission (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    owner_user_id BIGINT NOT NULL,
+    target_type VARCHAR(16) NOT NULL,
+    target_id BIGINT NOT NULL,
+    permission_level VARCHAR(16) NOT NULL DEFAULT 'FREE_BUSY',
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_owner_target (owner_user_id, target_type, target_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS conversation (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    type VARCHAR(16) NOT NULL,
+    map_id BIGINT NULL,
+    place_id BIGINT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_map_id (map_id),
+    KEY idx_place_id (place_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS conversation_member (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    conversation_id BIGINT NOT NULL,
+    user_id BIGINT NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_conv_user (conversation_id, user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS message (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    conversation_id BIGINT NOT NULL,
+    sender_id BIGINT NOT NULL,
+    content VARCHAR(1000) NOT NULL,
+    type VARCHAR(16) NOT NULL DEFAULT 'TEXT',
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_conv_created (conversation_id, created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

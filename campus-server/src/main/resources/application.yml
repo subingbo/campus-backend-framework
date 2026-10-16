@@ -3,9 +3,14 @@ spring:
     name: campus-server
   profiles:
     active: dev
+  # 本地密钥（DASHSCOPE_API_KEY / AMAP_WEB_KEY 等真实值）放在 git 忽略的
+  # application-secrets.properties，不入库；环境变量可覆盖
+  config:
+    import: optional:classpath:application-secrets.properties
 
 mybatis:
-  mapper-locations: classpath:mapper/*.xml
+  # classpath* 才能同时装载 campus-framework 与 campus-server 两个模块里的 Mapper XML
+  mapper-locations: classpath*:mapper/*.xml
   configuration:
     map-underscore-to-camel-case: true
 
@@ -14,8 +19,3 @@ springdoc:
     path: /v3/api-docs
   swagger-ui:
     path: /swagger-ui.html
-
-knife4j:
-  enable: true
-  setting:
-    language: zh_cn

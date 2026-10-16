@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.campus.schedule.mapper.ActivityBusyMapper">
+
+    <select id="selectActivityBusy" resultType="com.campus.schedule.dto.BusyEntryDto">
+        SELECT am.user_id      AS userId,
+               a.start_time    AS startTime,
+               a.end_time      AS endTime,
+               'ACTIVITY'      AS sourceType,
+               a.id            AS sourceId,
+               a.title
+        FROM activity a
+        INNER JOIN activity_member am ON am.activity_id = a.id
+        WHERE am.user_id = #{userId}
+          AND a.status = 1
+          AND a.start_time &lt; #{to}
+          AND a.end_time &gt; #{from}
+        ORDER BY a.start_time
+    </select>
+</mapper>

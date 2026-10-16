@@ -4,12 +4,15 @@
 <mapper namespace="com.campus.activity.mapper.ActivityMapper">
 
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
-        INSERT INTO activity (place_id, creator_id, title, description, start_time, end_time, max_members, status, created_at)
-        VALUES (#{placeId}, #{creatorId}, #{title}, #{description}, #{startTime}, #{endTime}, #{maxMembers}, #{status}, NOW())
+        INSERT INTO activity (place_id, creator_id, title, description, start_time, end_time,
+                              max_members, category, checkin_code, checkin_open_until, status, created_at)
+        VALUES (#{placeId}, #{creatorId}, #{title}, #{description}, #{startTime}, #{endTime},
+                #{maxMembers}, #{category}, #{checkinCode}, #{checkinOpenUntil}, #{status}, NOW())
     </insert>
 
     <select id="selectById" resultType="com.campus.activity.entity.Activity">
-        SELECT id, place_id, creator_id, title, description, start_time, end_time, max_members, status, created_at
+        SELECT id, place_id, creator_id, title, description, start_time, end_time, max_members,
+               category, checkin_code, checkin_open_until, status, created_at
         FROM activity
         WHERE id = #{id}
         LIMIT 1
@@ -18,6 +21,7 @@
     <sql id="activityView">
         SELECT a.id,
                a.place_id AS placeId,
+               p.name AS placeName,
                a.creator_id AS creatorId,
                u.nickname AS creatorNickname,
                a.title,
@@ -25,14 +29,22 @@
                a.start_time AS startTime,
                a.end_time AS endTime,
                a.max_members AS maxMembers,
+               a.category,
+               CASE WHEN #{currentUserId} = a.creator_id THEN a.checkin_code ELSE NULL END AS checkinCode,
+               a.checkin_open_until AS checkinOpenUntil,
                a.status,
                (SELECT COUNT(*) FROM activity_member m WHERE m.activity_id = a.id) AS joinedCount,
                CASE WHEN EXISTS (
                    SELECT 1 FROM activity_member m2
                    WHERE m2.activity_id = a.id AND m2.user_id = #{currentUserId}
-               ) THEN 1 ELSE 0 END AS joined
+               ) THEN 1 ELSE 0 END AS joined,
+               CASE WHEN EXISTS (
+                   SELECT 1 FROM activity_member m3
+                   WHERE m3.activity_id = a.id AND m3.user_id = #{currentUserId} AND m3.checked_in = 1
+               ) THEN 1 ELSE 0 END AS checkedIn
         FROM activity a
         INNER JOIN sys_user u ON u.id = a.creator_id
+        INNER JOIN place p ON p.id = a.place_id
     </sql>
 
     <select id="selectByPlaceId" resultType="com.campus.activity.dto.ActivityResponse">
@@ -46,7 +58,7 @@
         <include refid="activityView"/>
         WHERE a.place_id = #{placeId}
           AND a.status = 1
-          AND a.end_time &gt;= NOW()
+          AND a.end_time >= NOW()
         ORDER BY a.start_time ASC
         LIMIT #{limit}
     </select>
@@ -57,7 +69,41 @@
         LIMIT 1
     </select>
 
+    <!-- 两种来源：我创建的（含已取消，日程页管理入口要看） + 我报名过的 -->
+    <select id="selectMine" resultType="com.campus.activity.dto.ActivityResponse">
+        <include refid="activityView"/>
+        WHERE a.creator_id = #{userId}
+           OR EXISTS (
+               SELECT 1 FROM activity_member m4
+               WHERE m4.activity_id = a.id AND m4.user_id = #{userId}
+           )
+        ORDER BY a.start_time DESC
+        LIMIT #{limit}
+    </select>
+
+    <update id="updateById">
+        UPDATE activity
+        <set>
+            <if test="title != null">title = #{title},</if>
+            <if test="description != null">description = #{description},</if>
+            <if test="startTime != null">start_time = #{startTime},</if>
+            <if test="endTime != null">end_time = #{endTime},</if>
+            <if test="maxMembers != null">max_members = #{maxMembers},</if>
+            <if test="category != null">category = #{category},</if>
+            <if test="checkinOpenUntil != null">checkin_open_until = #{checkinOpenUntil},</if>
+        </set>
+        WHERE id = #{id}
+    </update>
+
     <update id="updateStatus">
         UPDATE activity SET status = #{status} WHERE id = #{id}
     </update>
+
+    <select id="selectStartingBetween" resultType="com.campus.activity.entity.Activity">
+        SELECT id, place_id, creator_id, title, start_time, end_time
+        FROM activity
+        WHERE status = 1
+          AND start_time &gt;= #{from}
+          AND start_time &lt; #{to}
+    </select>
 </mapper>

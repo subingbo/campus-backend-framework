@@ -30,6 +30,9 @@ public class SecurityConfig {
                         .authenticationEntryPoint(securityJsonHandlers)
                         .accessDeniedHandler(securityJsonHandlers))
                 .authorizeHttpRequests(auth -> auth
+                        // SSE 完成会触发一次 async dispatch，重过安全链时上下文已被 SSE 线程清理，
+                        // 会造成已提交响应上的 Access Denied 噪音（真实联调发现）——鉴权只过滤 REQUEST 分派
+                        .shouldFilterAllDispatcherTypes(false)
                         .requestMatchers(
                                 "/api/auth/register",
                                 "/api/auth/login",

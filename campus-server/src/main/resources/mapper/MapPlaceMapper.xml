@@ -53,4 +53,71 @@
     <select id="selectMapIdsByPlaceId" resultType="long">
         SELECT map_id FROM map_place WHERE place_id = #{placeId}
     </select>
+
+    <select id="selectMapsForPlace" resultType="com.campus.map.dto.PlaceMapItem">
+        SELECT sm.id, sm.name, mm.role AS myRole
+        FROM map_place mp
+        INNER JOIN shared_map sm ON sm.id = mp.map_id
+        INNER JOIN map_member mm ON mm.map_id = sm.id AND mm.user_id = #{userId}
+        WHERE mp.place_id = #{placeId}
+        ORDER BY sm.id ASC
+    </select>
+
+    <!-- P0.5 共建地图语义检索：四路匹配（名称/简介/分类名/群内备注），地图范围硬过滤 + 状态过滤。
+         同一地点在多张图上时按 map 分行返回（行内保留 mapId 供来源标注），调用端聚合去重；
+         noteDigest 聚合该图下全部备注（最新在前，GROUP_CONCAP 上限 512 防爆），非检索条件本身的一部分。 -->
+    <select id="searchPlacesOnMaps" resultType="com.campus.map.dto.MapPlaceSearchItem">
+        SELECT mp.map_id AS mapId,
+               p.id, p.name, p.description, p.address, p.creator_id AS creatorId,
+               p.category_id AS categoryId,
+               c.name AS categoryName,
+               p.longitude, p.latitude,
+               (SELECT GROUP_CONCAT(pc.content ORDER BY pc.id DESC SEPARATOR ' 丨 ')
+                  FROM place_comment pc
+                 WHERE pc.map_id = mp.map_id AND pc.place_id = p.id) AS noteDigest
+        FROM map_place mp
+        INNER JOIN place p ON p.id = mp.place_id AND p.status = 1
+        INNER JOIN place_category c ON c.id = p.category_id
+        WHERE mp.map_id IN
+        <foreach collection="mapIds" item="mapId" open="(" separator="," close=")">
+            #{mapId}
+        </foreach>
+          AND (
+            p.name LIKE CONCAT('%', #{pattern}, '%') ESCAPE '\\'
+            OR p.description LIKE CONCAT('%', #{pattern}, '%') ESCAPE '\\'
+            OR c.name LIKE CONCAT('%', #{pattern}, '%') ESCAPE '\\'
+            OR EXISTS (SELECT 1 FROM place_comment pc2
+                        WHERE pc2.map_id = mp.map_id AND pc2.place_id = p.id
+                          AND pc2.content LIKE CONCAT('%', #{pattern}, '%') ESCAPE '\\')
+          )
+        <if test="categoryId != null">
+          AND p.category_id = #{categoryId}
+        </if>
+        ORDER BY mp.map_id ASC, p.id DESC
+        LIMIT #{limit}
+    </select>
+
+    <!-- P0.5 get_place_context / 提交校验：取地点在指定地图集合内的全量上下文行（含每张图的备注摘要） -->
+    <select id="selectPlacesByMapAndPlaceIds" resultType="com.campus.map.dto.MapPlaceSearchItem">
+        SELECT mp.map_id AS mapId,
+               p.id, p.name, p.description, p.address, p.creator_id AS creatorId,
+               p.category_id AS categoryId,
+               c.name AS categoryName,
+               p.longitude, p.latitude,
+               (SELECT GROUP_CONCAT(pc.content ORDER BY pc.id DESC SEPARATOR ' 丨 ')
+                  FROM place_comment pc
+                 WHERE pc.map_id = mp.map_id AND pc.place_id = p.id) AS noteDigest
+        FROM map_place mp
+        INNER JOIN place p ON p.id = mp.place_id AND p.status = 1
+        INNER JOIN place_category c ON c.id = p.category_id
+        WHERE mp.map_id IN
+        <foreach collection="mapIds" item="mapId" open="(" separator="," close=")">
+            #{mapId}
+        </foreach>
+          AND p.id IN
+        <foreach collection="placeIds" item="placeId" open="(" separator="," close=")">
+            #{placeId}
+        </foreach>
+        ORDER BY mp.map_id ASC, p.id DESC
+    </select>
 </mapper>

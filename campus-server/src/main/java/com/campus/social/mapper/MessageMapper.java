@@ -17,4 +17,7 @@ public interface MessageMapper {
                                                    @Param("limit") int limit);
 
     ChatMessageResponse selectLastByConversation(@Param("conversationId") Long conversationId);
+
+    /** 群聊上一轮 @AI 的 AGENT 回复（不含普通文本消息），无则 null */
+    com.campus.social.entity.Message selectAgentReply(@Param("conversationId") Long conversationId);
 }

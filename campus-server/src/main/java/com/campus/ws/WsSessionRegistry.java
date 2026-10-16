@@ -1,6 +1,6 @@
 package com.campus.ws;
 
-import com.campus.common.constant.RedisKey;
+import com.campus.social.constant.SocialRedisKey;
 import com.campus.social.mapper.FriendMapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -100,9 +100,9 @@ public class WsSessionRegistry {
     private void onPresenceChanged(Long userId, boolean online) {
         try {
             if (online) {
-                stringRedisTemplate.opsForSet().add(RedisKey.socialOnline(), String.valueOf(userId));
+                stringRedisTemplate.opsForSet().add(SocialRedisKey.online(), String.valueOf(userId));
             } else {
-                stringRedisTemplate.opsForSet().remove(RedisKey.socialOnline(), String.valueOf(userId));
+                stringRedisTemplate.opsForSet().remove(SocialRedisKey.online(), String.valueOf(userId));
             }
         } catch (Exception ex) {
             log.warn("在线状态写入 Redis 失败 userId={}：{}", userId, ex.getMessage());

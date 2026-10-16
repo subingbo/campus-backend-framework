@@ -3,7 +3,7 @@ package com.campus;
 import com.campus.auth.dto.LoginRequest;
 import com.campus.auth.dto.RegisterRequest;
 import com.campus.auth.dto.TokenResponse;
-import com.campus.common.constant.RedisKey;
+import com.campus.place.constant.PlaceRedisKey;
 import com.campus.post.dto.CreatePostRequest;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -129,7 +129,7 @@ class EnhancementAcceptanceTest {
 
         mockMvc.perform(get("/api/places/" + placeId).header("Authorization", userAuth))
                 .andExpect(status().isOk());
-        assertThat(stringRedisTemplate.hasKey(RedisKey.placeDetail(placeId))).isTrue();
+        assertThat(stringRedisTemplate.hasKey(PlaceRedisKey.detail(placeId))).isTrue();
 
         mockMvc.perform(get("/api/places/" + placeId + "/feed").header("Authorization", userAuth))
                 .andExpect(status().isOk())
@@ -196,7 +196,7 @@ class EnhancementAcceptanceTest {
 
         mockMvc.perform(delete("/api/admin/places/" + placeId).header("Authorization", adminAuth))
                 .andExpect(status().isOk());
-        assertThat(stringRedisTemplate.hasKey(RedisKey.placeDetail(placeId))).isFalse();
+        assertThat(stringRedisTemplate.hasKey(PlaceRedisKey.detail(placeId))).isFalse();
 
         mockMvc.perform(get("/api/places/" + placeId).header("Authorization", userAuth))
                 .andExpect(status().isNotFound());

@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.campus.schedule.mapper.ScheduleSharePermissionMapper">
+
+    <insert id="upsert">
+        INSERT INTO schedule_share_permission (owner_user_id, target_type, target_id, permission_level, created_at)
+        VALUES (#{ownerUserId}, #{targetType}, #{targetId}, #{permissionLevel}, NOW())
+        ON DUPLICATE KEY UPDATE permission_level = #{permissionLevel}
+    </insert>
+
+    <select id="existsGrant" resultType="int">
+        SELECT COUNT(1)
+        FROM schedule_share_permission
+        WHERE owner_user_id = #{ownerUserId}
+          AND target_type = #{targetType}
+          AND target_id = #{targetId}
+          AND permission_level = #{permissionLevel}
+    </select>
+
+    <delete id="delete">
+        DELETE FROM schedule_share_permission
+        WHERE owner_user_id = #{ownerUserId}
+          AND target_type = #{targetType}
+          AND target_id = #{targetId}
+    </delete>
+
+    <select id="selectByOwnerAndTarget" resultType="com.campus.schedule.entity.ScheduleSharePermission">
+        SELECT id, owner_user_id AS ownerUserId, target_type AS targetType, target_id AS targetId,
+               permission_level AS permissionLevel, created_at AS createdAt
+        FROM schedule_share_permission
+        WHERE owner_user_id = #{ownerUserId}
+          AND target_type = #{targetType}
+          AND target_id = #{targetId}
+        LIMIT 1
+    </select>
+</mapper>

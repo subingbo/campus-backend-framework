@@ -16,6 +16,7 @@ import com.campus.map.dto.MapMemberResponse;
 import com.campus.map.dto.MapPlaceAddResponse;
 import com.campus.map.dto.MapPlaceItemResponse;
 import com.campus.map.dto.PlaceCommentResponse;
+import com.campus.map.dto.PlaceMapItem;
 import com.campus.map.dto.SharePlaceToMapRequest;
 import com.campus.map.dto.UpdateMemberRoleRequest;
 import com.campus.map.entity.CampusGroup;
@@ -131,6 +132,11 @@ public class SharedMapServiceImpl implements SharedMapService {
     @Override
     public MapDetailResponse getMapDetail(Long mapId) {
         return buildMapDetail(mapId, SecurityUtils.getUserId(), true);
+    }
+
+    @Override
+    public MapDetailResponse getMapDetailAs(Long mapId, Long userId) {
+        return buildMapDetail(mapId, userId, true);
     }
 
     @Override
@@ -287,6 +293,11 @@ public class SharedMapServiceImpl implements SharedMapService {
 
         List<PlaceCommentResponse> list = placeCommentMapper.selectByMapAndPlace(mapId, placeId);
         return list.isEmpty() ? null : list.get(list.size() - 1);
+    }
+
+    @Override
+    public List<PlaceMapItem> listMapsForPlace(Long placeId) {
+        return mapPlaceMapper.selectMapsForPlace(placeId, SecurityUtils.getUserId());
     }
 
     private MapPlaceAddResponse linkExistingPlace(Long mapId, Long userId, Long placeId,

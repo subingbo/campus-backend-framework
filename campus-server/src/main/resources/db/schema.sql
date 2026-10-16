@@ -108,6 +108,9 @@ CREATE TABLE IF NOT EXISTS activity (
     start_time DATETIME NOT NULL COMMENT '开始时间',
     end_time DATETIME NOT NULL COMMENT '结束时间',
     max_members INT NOT NULL COMMENT '人数上限',
+    category VARCHAR(16) NOT NULL DEFAULT 'MEETING' COMMENT '活动类型：MEETING 会议 COMPETITION 比赛 OTHER 其他',
+    checkin_code VARCHAR(8) DEFAULT NULL COMMENT '数字签到码（创建时生成，仅创建者可查）',
+    checkin_open_until DATETIME DEFAULT NULL COMMENT '签到窗口截止时间',
     status TINYINT NOT NULL DEFAULT 1 COMMENT '状态：1 进行中 0 已取消',
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     KEY idx_place_id (place_id),
@@ -118,10 +121,39 @@ CREATE TABLE IF NOT EXISTS activity_member (
     id BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '报名记录ID',
     activity_id BIGINT NOT NULL COMMENT '活动ID',
     user_id BIGINT NOT NULL COMMENT '用户ID',
+    checked_in TINYINT NOT NULL DEFAULT 0 COMMENT '是否已签到：0 否 1 是（签到时间见 checked_in_at）',
+    checked_in_at DATETIME DEFAULT NULL COMMENT '签到时间',
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '报名时间',
     UNIQUE KEY uk_activity_user (activity_id, user_id),
     KEY idx_user_id (user_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='活动成员';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='活动成员/签到记录';
+
+CREATE TABLE IF NOT EXISTS activity_invite (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '邀请ID',
+    activity_id BIGINT NOT NULL COMMENT '活动ID',
+    inviter_id BIGINT NOT NULL COMMENT '邀请人（活动创建者）用户ID',
+    invitee_id BIGINT NOT NULL COMMENT '被邀请人用户ID',
+    status TINYINT NOT NULL DEFAULT 0 COMMENT '状态：0 待响应 1 已接受 2 已拒绝',
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '邀请时间',
+    handled_at DATETIME DEFAULT NULL COMMENT '响应时间',
+    UNIQUE KEY uk_activity_invitee (activity_id, invitee_id),
+    KEY idx_invitee (invitee_id, status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='活动召集邀请';
+
+CREATE TABLE IF NOT EXISTS activity_stop (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '行程站点ID',
+    activity_id BIGINT NOT NULL COMMENT '活动ID',
+    seq INT NOT NULL COMMENT '站点顺序，从 1 递增',
+    name VARCHAR(128) NOT NULL COMMENT '站点名称',
+    place_id BIGINT DEFAULT NULL COMMENT '关联地点ID，可空（外部 POI 坐标直存）',
+    longitude DECIMAL(10, 7) DEFAULT NULL COMMENT '经度 GCJ-02',
+    latitude DECIMAL(10, 7) DEFAULT NULL COMMENT '纬度 GCJ-02',
+    start_time DATETIME DEFAULT NULL COMMENT '到达/开始时间',
+    end_time DATETIME DEFAULT NULL COMMENT '离开/结束时间',
+    transport_mode VARCHAR(16) DEFAULT NULL COMMENT '前往本站的交通方式：WALK 步行 RIDE 骑行 DRIVE 驾车 TRANSIT 公交',
+    note VARCHAR(256) DEFAULT NULL COMMENT '站点备注',
+    UNIQUE KEY uk_activity_seq (activity_id, seq)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='多站活动行程站点';
 
 CREATE TABLE IF NOT EXISTS report (
     id BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '举报ID',
@@ -242,3 +274,46 @@ CREATE TABLE IF NOT EXISTS message (
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '发送时间',
     KEY idx_conv_created (conversation_id, created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='聊天消息';
+
+CREATE TABLE IF NOT EXISTS ai_conversation (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '会话ID',
+    user_id BIGINT NOT NULL COMMENT '归属用户ID',
+    title VARCHAR(128) DEFAULT NULL COMMENT '会话标题（通常取首条需求摘要）',
+    status VARCHAR(16) NOT NULL DEFAULT 'CHATTING' COMMENT '状态：CHATTING 对话中 DRAFT 已出草稿 SAVED 已保存为活动',
+    plan_json MEDIUMTEXT DEFAULT NULL COMMENT '最近校验通过的规划草稿 JSON',
+    plan_version INT NOT NULL DEFAULT 0 COMMENT '草稿版本号，每次产出+1',
+    saved_activity_id BIGINT DEFAULT NULL COMMENT '草稿落库后的活动ID（save 幂等依据）',
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    KEY idx_user_updated (user_id, updated_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='AI 规划会话';
+
+CREATE TABLE IF NOT EXISTS ai_message (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '消息ID',
+    conversation_id BIGINT NOT NULL COMMENT '会话ID',
+    role VARCHAR(16) NOT NULL COMMENT '角色：USER 用户 ASSISTANT 助手',
+    content TEXT NOT NULL COMMENT '消息内容',
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '发送时间',
+    KEY idx_conv (conversation_id, id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='AI 规划会话消息';
+
+CREATE TABLE IF NOT EXISTS personal_schedule (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '个人日程ID',
+    user_id BIGINT NOT NULL COMMENT '归属用户',
+    title VARCHAR(128) NOT NULL COMMENT '事项标题（仅本人可见）',
+    start_time DATETIME NOT NULL COMMENT '开始时间',
+    end_time DATETIME NOT NULL COMMENT '结束时间',
+    note VARCHAR(256) DEFAULT NULL COMMENT '备注（仅本人可见）',
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_user_time (user_id, start_time)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='个人日程（多人规划时的忙碌来源之一）';
+
+CREATE TABLE IF NOT EXISTS schedule_share_permission (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    owner_user_id BIGINT NOT NULL COMMENT '日程所有者',
+    target_type VARCHAR(16) NOT NULL COMMENT '授权对象类型：USER 单人 / GROUP 群体',
+    target_id BIGINT NOT NULL COMMENT '目标ID（用户ID 或 campus_group.id）',
+    permission_level VARCHAR(16) NOT NULL DEFAULT 'FREE_BUSY' COMMENT '授权等级：FREE_BUSY 仅忙闲（不暴露标题/地点）',
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_owner_target (owner_user_id, target_type, target_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='日程共享授权：授予他人/群体仅忙闲可见';

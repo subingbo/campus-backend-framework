@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.campus.schedule.mapper.PersonalScheduleMapper">
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO personal_schedule (user_id, title, start_time, end_time, note, created_at)
+        VALUES (#{userId}, #{title}, #{startTime}, #{endTime}, #{note}, NOW())
+    </insert>
+
+    <select id="selectById" resultType="com.campus.schedule.entity.PersonalSchedule">
+        SELECT id, user_id AS userId, title, start_time AS startTime, end_time AS endTime,
+               note, created_at AS createdAt
+        FROM personal_schedule
+        WHERE id = #{id}
+        LIMIT 1
+    </select>
+
+    <select id="selectOverlap" resultType="com.campus.schedule.entity.PersonalSchedule">
+        SELECT id, user_id AS userId, title, start_time AS startTime, end_time AS endTime,
+               note, created_at AS createdAt
+        FROM personal_schedule
+        WHERE user_id = #{userId}
+          AND start_time &lt; #{to}
+          AND end_time &gt; #{from}
+        ORDER BY start_time
+    </select>
+
+    <update id="update">
+        UPDATE personal_schedule
+        SET title = #{title}, start_time = #{startTime}, end_time = #{endTime}, note = #{note}
+        WHERE id = #{id} AND user_id = #{userId}
+    </update>
+
+    <delete id="deleteByIdAndUser">
+        DELETE FROM personal_schedule WHERE id = #{id} AND user_id = #{userId}
+    </delete>
+</mapper>

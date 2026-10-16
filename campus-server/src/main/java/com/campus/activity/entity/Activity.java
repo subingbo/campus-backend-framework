@@ -15,6 +15,9 @@ public class Activity {
     private LocalDateTime startTime;
     private LocalDateTime endTime;
     private Integer maxMembers;
+    private String category;
+    private String checkinCode;
+    private LocalDateTime checkinOpenUntil;
     private Integer status;
     private LocalDateTime createdAt;
 }

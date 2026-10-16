@@ -255,3 +255,39 @@ export function renderMarkers(AMap, map, places, onMarkerClick) {
   ctrl.render(places, { fitView: true })
   return ctrl
 }
+
+const ROUTE_COLORS = { WALK: '#2ba471', RIDE: '#1677ff', DRIVE: '#fa8c16', TRANSIT: '#722ed1' }
+
+/**
+ * 站间路线折线控制器：折线数据来自后端（与规划时刻同源缓存），前端只负责描绘。
+ * segments=[{mode, polyline:[[lng,lat],...]}]；缺折线数据的段跳过不画。
+ * 注意：createPlaceMarkerController.render 会 clearMap，折线应在标点渲染之后绘制。
+ */
+export function createRouteLineController(AMap, map) {
+  let lines = []
+
+  function draw(segments) {
+    clear()
+    for (const segment of segments || []) {
+      const path = (segment.polyline || []).map(([lng, lat]) => [Number(lng), Number(lat)])
+      if (path.length < 2) continue
+      const line = new AMap.Polyline({
+        path,
+        strokeColor: ROUTE_COLORS[segment.mode] || ROUTE_COLORS.WALK,
+        strokeWeight: 6,
+        strokeOpacity: 0.85,
+        showDir: true,
+        lineJoin: 'round'
+      })
+      map.add(line)
+      lines.push(line)
+    }
+  }
+
+  function clear() {
+    for (const line of lines) map.remove(line)
+    lines = []
+  }
+
+  return { draw, clear }
+}

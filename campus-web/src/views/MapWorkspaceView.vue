@@ -67,6 +67,12 @@
 
       <el-divider />
       <el-button style="width: 100%" @click="openChat">聊天</el-button>
+      <el-button style="width: 100%; margin-left: 0; margin-top: 8px" @click="router.push('/assistant')">
+        AI 规划活动
+      </el-button>
+      <el-button style="width: 100%; margin-left: 0; margin-top: 8px" @click="router.push('/activities')">
+        活动日程
+      </el-button>
 
       <el-divider />
       <div class="place-head">
@@ -151,6 +157,9 @@
           <el-button size="small" :type="popCommentsOpen ? 'primary' : ''" @click="popCommentsOpen = !popCommentsOpen">
             评论{{ comments.length ? `（${comments.length}）` : '' }}
           </el-button>
+          <el-button size="small" :type="popActivitiesOpen ? 'primary' : ''" @click="togglePopActivities">
+            活动{{ placeActivities.length ? `（${placeActivities.length}）` : '' }}
+          </el-button>
           <el-button v-if="canEdit" size="small" @click="openEdit">编辑</el-button>
           <el-button v-if="canEdit" size="small" type="danger" plain @click="removeFromMap">移除</el-button>
           <el-button size="small" @click="openPlaceChat(selectedPlace)">聊天</el-button>
@@ -178,15 +187,50 @@
             <el-button type="primary" size="small" @click="submitComment">发送</el-button>
           </div>
         </template>
+        <template v-if="popActivitiesOpen">
+          <div class="place-pop__comments">
+            <p v-if="!placeActivities.length" class="hint">这个地点还没有安排活动</p>
+            <div v-for="a in placeActivities" :key="a.id" class="activity-entry">
+              <div class="activity-entry__head">
+                <strong>{{ a.title }}</strong>
+                <el-tag size="small" :type="phaseTagType(a.phase)">{{ phaseText(a.phase) }}</el-tag>
+              </div>
+              <p class="hint">{{ fmtRange(a.startTime, a.endTime) }} · {{ a.joinedCount }}/{{ a.maxMembers }} 人</p>
+              <div class="activity-entry__actions">
+                <template v-if="a.joined">
+                  <el-tag v-if="a.checkedIn" size="small" type="success">已签到</el-tag>
+                  <template v-else-if="checkinAvailable(a)">
+                    <el-input
+                      v-model="checkinInputs[a.id]"
+                      size="small"
+                      class="checkin-input"
+                      placeholder="签到码"
+                      @keyup.enter="doCheckin(a)"
+                    />
+                    <el-button size="small" type="primary" @click="doCheckin(a)">签到</el-button>
+                  </template>
+                  <el-button v-if="a.phase !== 'ENDED'" size="small" @click="leaveActivity(a)">取消报名</el-button>
+                </template>
+                <el-button v-else-if="a.phase === 'OPEN'" size="small" type="primary" @click="joinActivity(a)">报名</el-button>
+                <el-button size="small" @click="toggleMembers(a)">成员</el-button>
+                <el-button v-if="isCreatorOf(a)" size="small" @click="openActivityDialog(a)">编辑</el-button>
+                <el-button v-if="isCreatorOf(a) && a.phase === 'OPEN'" size="small" type="danger" plain @click="cancelActivity(a)">取消</el-button>
+              </div>
+              <div v-if="isCreatorOf(a) && a.checkinCode" class="checkin-code">签到码：{{ a.checkinCode }}</div>
+              <div v-if="membersOpenFor === a.id" class="activity-members">
+                <p v-if="!activityMembers.length" class="hint">暂无成员</p>
+                <div v-for="m in activityMembers" :key="m.userId" class="activity-member">
+                  <span>{{ m.nickname }}（{{ m.checkedIn ? '已签' : '未签' }}）</span>
+                </div>
+              </div>
+            </div>
+            <el-button size="small" style="width: 100%" @click="openActivityDialog(null)">在此安排活动</el-button>
+          </div>
+        </template>
       </div>
 
-      <!-- 聊天浮层：桌面贴右侧，手机为底部面板 -->
-      <div
-        v-if="chatVisible"
-        ref="chatFloatRef"
-        class="chat-float"
-        :class="{ 'chat-float--mobile': isMobile }"
-      >
+      <!-- 聊天浮层：桌面贴右侧，手机为视口底部停靠面板 -->
+      <div v-if="chatVisible" class="chat-float">
         <div class="chat-float__head">
           <strong>聊天</strong>
           <button type="button" class="chat-float__close" @click="chatVisible = false">×</button>
@@ -232,6 +276,59 @@
             </template>
           </el-dropdown>
         </div>
+
+        <el-divider>本地点活动</el-divider>
+        <p v-if="!placeActivities.length" class="hint">这个地点还没有安排活动</p>
+        <div v-for="a in placeActivities" :key="a.id" class="activity-entry">
+          <div class="activity-entry__head">
+            <strong>{{ a.title }}</strong>
+            <el-tag size="small" :type="phaseTagType(a.phase)">{{ phaseText(a.phase) }}</el-tag>
+          </div>
+          <p class="hint">
+            {{ fmtRange(a.startTime, a.endTime) }} · {{ a.joinedCount }}/{{ a.maxMembers }} 人
+            <template v-if="categoryText(a.category)"> · {{ categoryText(a.category) }}</template>
+          </p>
+          <div class="activity-entry__actions">
+            <template v-if="a.joined">
+              <el-tag v-if="a.checkedIn" size="small" type="success">已签到</el-tag>
+              <template v-else-if="checkinAvailable(a)">
+                <el-input
+                  v-model="checkinInputs[a.id]"
+                  size="small"
+                  class="checkin-input"
+                  placeholder="签到码"
+                  @keyup.enter="doCheckin(a)"
+                />
+                <el-button size="small" type="primary" @click="doCheckin(a)">签到</el-button>
+              </template>
+              <el-button v-if="a.phase !== 'ENDED'" size="small" @click="leaveActivity(a)">取消报名</el-button>
+            </template>
+            <el-button v-else-if="a.phase === 'OPEN'" size="small" type="primary" @click="joinActivity(a)">报名</el-button>
+            <el-button size="small" @click="toggleMembers(a)">成员（{{ a.joinedCount }}）</el-button>
+            <template v-if="isCreatorOf(a)">
+              <el-button size="small" @click="openActivityDialog(a)">编辑</el-button>
+              <el-button v-if="a.phase === 'OPEN'" size="small" type="danger" plain @click="cancelActivity(a)">取消活动</el-button>
+              <span v-if="a.checkinCode" class="checkin-code">现场公布签到码：{{ a.checkinCode }}</span>
+            </template>
+          </div>
+          <div v-if="membersOpenFor === a.id" class="activity-members">
+            <p v-if="!activityMembers.length" class="hint">暂无成员</p>
+            <div v-for="m in activityMembers" :key="m.userId" class="activity-member">
+              <span>
+                {{ m.nickname }}（{{ m.checkedIn ? '已签' + fmtClock(m.checkedInAt) : '未签' }}）
+              </span>
+            </div>
+            <div v-if="isCreatorOf(a) && a.phase !== 'ENDED'" class="invite-row">
+              <el-select v-model="inviteChoice" size="small" filterable placeholder="邀请好友参加" class="invite-select">
+                <el-option v-for="f in friends" :key="f.userId" :value="f.userId" :label="f.nickname" />
+              </el-select>
+              <el-button size="small" @click="inviteToActivity(a)">发邀请</el-button>
+            </div>
+          </div>
+        </div>
+        <el-button style="width: 100%; margin-top: 8px" @click="openActivityDialog(null)">
+          在「{{ selectedPlace.name }}」安排活动
+        </el-button>
 
         <el-divider>评论</el-divider>
         <div v-for="c in comments" :key="c.id" class="comment">
@@ -304,20 +401,58 @@
         <el-button type="primary" @click="saveEdit">保存</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog v-model="activityDialog" :title="activityForm.id ? '编辑活动' : '安排活动'" width="460px">
+      <el-form :model="activityForm" label-width="72px">
+        <el-form-item label="类型">
+          <el-radio-group v-model="activityForm.category">
+            <el-radio value="MEETING">会议</el-radio>
+            <el-radio value="COMPETITION">比赛</el-radio>
+            <el-radio value="OTHER">其他</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item label="活动">
+          <el-input v-model="activityForm.title" placeholder="如：项目组周会 / 校园编程挑战赛" />
+        </el-form-item>
+        <el-form-item label="说明">
+          <el-input v-model="activityForm.description" type="textarea" placeholder="集合位置、比赛规则、需要带的物资等" />
+        </el-form-item>
+        <el-form-item label="时间">
+          <el-date-picker
+            v-model="activityForm.range"
+            type="datetimerange"
+            start-placeholder="开始时间"
+            end-placeholder="结束时间"
+            style="width: 100%"
+          />
+        </el-form-item>
+        <el-form-item label="人数上限">
+          <el-input-number v-model="activityForm.maxMembers" :min="1" :max="500" controls-position="right" />
+        </el-form-item>
+        <p class="hint">创建后系统生成 6 位数字签到码，活动开始前后 15 分钟可在本面板输码签到。</p>
+      </el-form>
+      <template #footer>
+        <el-button @click="activityDialog = false">取消</el-button>
+        <el-button type="primary" :loading="submittingActivity" @click="submitActivityDialog">
+          {{ activityForm.id ? '保存' : '创建' }}
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { createAmapLocationProvider, createPlaceMarkerController, loadAmap } from '../composables/useAmap'
 import { useLocation } from '../composables/useLocation'
-import { chatApi, mapApi, placeApi } from '../api'
-import { connect, on } from '../composables/useChatSocket'
+import { activityApi, chatApi, friendApi, mapApi, placeApi } from '../api'
+import { connect, myUserId, on } from '../composables/useChatSocket'
 import ChatPanel from '../components/ChatPanel.vue'
 
 const route = useRoute()
+const router = useRouter()
 const mapId = computed(() => Number(route.params.id))
 const defaultLng = Number(import.meta.env.VITE_MAP_CENTER_LNG || 113.384128)
 const defaultLat = Number(import.meta.env.VITE_MAP_CENTER_LAT || 23.045678)
@@ -356,12 +491,24 @@ const selectedPlace = ref(null)
 const comments = ref([])
 const commentText = ref('')
 
+/** 本地点活动：报名 / 数字签到码签到 / 成员与签到记录 */
+const myId = myUserId()
+const placeActivities = ref([])
+const membersOpenFor = ref(null)
+const activityMembers = ref([])
+const friends = ref([])
+const inviteChoice = ref(null)
+const checkinInputs = reactive({})
+const activityDialog = ref(false)
+const submittingActivity = ref(false)
+const activityForm = reactive({ id: null, category: 'MEETING', title: '', description: '', range: [], maxMembers: 10 })
+const popActivitiesOpen = ref(false)
+
 const chatVisible = ref(false)
 const chatTab = ref('map')
 const chatPlaceId = ref(null)
 const mapConversation = ref(null)
 const chatPlaceConversation = ref(null)
-const chatFloatRef = ref(null)
 let chatRemovers = []
 
 /** 手机端（≤768px，与工作台断点一致）用锚定标记的小浮窗替代抽屉 */
@@ -457,6 +604,14 @@ async function initPage() {
     categories.value = await placeApi.categories()
     allMaps.value = await mapApi.list()
     await refresh()
+    // 活动日程“去现场”跳转：/maps/:id?place=<placeId> 自动打开该地点的面板
+    const wantPlace = Number(route.query.place)
+    if (wantPlace) {
+      const target = places.value.find((p) => p.id === wantPlace)
+      if (target) {
+        openPlace(target)
+      }
+    }
     try {
       amapCtx = await loadAmap(mapRef.value, onMapClick)
       markerController = createPlaceMarkerController(amapCtx.AMap, amapCtx.map, openPlace)
@@ -612,6 +767,8 @@ async function openPlace(place) {
   markerController?.setHighlight(place.id)
   placeDrawer.value = !isMobile.value
   comments.value = await mapApi.listComments(mapId.value, place.id)
+  membersOpenFor.value = null
+  await loadPlaceActivities()
   scrollPlaceIntoView(place.id)
   if (isMobile.value) {
     // 手机端单列布局下侧栏占满首屏，选中地点后把地图（连同浮窗）带进视野
@@ -648,7 +805,6 @@ function updatePopPos() {
 
 async function openChat() {
   chatVisible.value = true
-  scrollChatIntoView()
   if (!mapConversation.value) {
     try {
       mapConversation.value = await chatApi.forMap(mapId.value)
@@ -675,14 +831,7 @@ function openPlaceChat(place) {
   chatVisible.value = true
   chatTab.value = 'place'
   chatPlaceId.value = place.id
-  scrollChatIntoView()
   loadPlaceConversation(place.id)
-}
-
-/** 手机端单列布局时把聊天面板滚进视野 */
-function scrollChatIntoView() {
-  if (!isMobile.value) return
-  nextTick(() => chatFloatRef.value?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }))
 }
 
 function closePlacePop() {
@@ -747,6 +896,224 @@ async function submitComment() {
   }
 }
 
+/** ===== 本地点活动：安排 / 报名 / 数字签到码签到 ===== */
+const PHASE_TEXT = { OPEN: '报名中', ONGOING: '进行中', ENDED: '已结束', CANCELLED: '已取消' }
+const PHASE_TAG = { OPEN: 'primary', ONGOING: 'success', ENDED: 'info', CANCELLED: 'danger' }
+const CATEGORY_TEXT = { MEETING: '会议', COMPETITION: '比赛', OTHER: '其他' }
+
+function phaseText(phase) {
+  return PHASE_TEXT[phase] || phase
+}
+
+function phaseTagType(phase) {
+  return PHASE_TAG[phase] || 'info'
+}
+
+function categoryText(category) {
+  return CATEGORY_TEXT[category] || ''
+}
+
+/** LocalDateTime 在响应里多为 [年,月,日,时,分,秒] 数组，兼容 ISO 字符串 */
+function toDate(value) {
+  if (!value) return null
+  if (Array.isArray(value)) return new Date(value[0], value[1] - 1, value[2] ?? 0, value[3] ?? 0, value[4] ?? 0, value[5] ?? 0)
+  return new Date(value)
+}
+
+function pad2(n) {
+  return String(n).padStart(2, '0')
+}
+
+function fmt(value) {
+  const d = toDate(value)
+  if (!d || Number.isNaN(d.getTime())) return ''
+  return `${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`
+}
+
+function fmtRange(a, b) {
+  return `${fmt(a)} ~ ${fmt(b)}`
+}
+
+function fmtClock(value) {
+  const d = toDate(value)
+  if (!d || Number.isNaN(d.getTime())) return ''
+  return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`
+}
+
+/** 签到窗口与后端一致：开始前 0 分钟起、checkinOpenUntil（默认开始后 15 分钟）止 — 即前后共 15 分钟 */
+function checkinAvailable(a) {
+  const start = toDate(a.startTime)
+  const end = toDate(a.checkinOpenUntil)
+  if (!start || !end) return false
+  const now = Date.now()
+  return now >= start.getTime() && now <= end.getTime()
+}
+
+function isCreatorOf(a) {
+  return myId != null && a.creatorId === myId
+}
+
+async function loadPlaceActivities() {
+  if (!selectedPlace.value) return
+  try {
+    placeActivities.value = await activityApi.listByPlace(selectedPlace.value.id)
+  } catch (e) {
+    ElMessage.error(e.message)
+  }
+}
+
+function togglePopActivities() {
+  popActivitiesOpen.value = !popActivitiesOpen.value
+  if (popActivitiesOpen.value) {
+    loadPlaceActivities()
+  }
+}
+
+function replaceActivity(updated) {
+  placeActivities.value = placeActivities.value.map((a) => (a.id === updated.id ? updated : a))
+}
+
+async function joinActivity(a) {
+  try {
+    replaceActivity(await activityApi.join(a.id))
+  } catch (e) {
+    ElMessage.error(e.message)
+  }
+}
+
+async function leaveActivity(a) {
+  try {
+    replaceActivity(await activityApi.leave(a.id))
+  } catch (e) {
+    ElMessage.error(e.message)
+  }
+}
+
+async function doCheckin(a) {
+  const code = String(checkinInputs[a.id] || '').trim()
+  if (!code) {
+    ElMessage.warning('请输入签到码')
+    return
+  }
+  try {
+    replaceActivity(await activityApi.checkin(a.id, code))
+    delete checkinInputs[a.id]
+    ElMessage.success('签到成功')
+  } catch (e) {
+    ElMessage.error(e.message)
+  }
+}
+
+async function toggleMembers(a) {
+  if (membersOpenFor.value === a.id) {
+    membersOpenFor.value = null
+    return
+  }
+  try {
+    activityMembers.value = await activityApi.members(a.id)
+    membersOpenFor.value = a.id
+    if (isCreatorOf(a) && !friends.value.length) {
+      friends.value = await friendApi.list()
+    }
+    inviteChoice.value = null
+  } catch (e) {
+    ElMessage.error(e.message)
+  }
+}
+
+async function inviteToActivity(a) {
+  if (!inviteChoice.value) {
+    ElMessage.warning('先选择要邀请的好友')
+    return
+  }
+  try {
+    await activityApi.invite(a.id, inviteChoice.value)
+    ElMessage.success('已发出召集邀请，对方接受后加入成员')
+    inviteChoice.value = null
+    activityMembers.value = await activityApi.members(a.id)
+  } catch (e) {
+    ElMessage.error(e.message)
+  }
+}
+
+async function cancelActivity(a) {
+  await ElMessageBox.confirm('取消后所有成员都会收到通知，操作不可撤销', '取消活动')
+  try {
+    await activityApi.cancel(a.id)
+    placeActivities.value = placeActivities.value.filter((x) => x.id !== a.id)
+    if (membersOpenFor.value === a.id) {
+      membersOpenFor.value = null
+    }
+    ElMessage.success('活动已取消，在线成员会收到提醒')
+  } catch (e) {
+    ElMessage.error(e.message)
+  }
+}
+
+function openActivityDialog(a) {
+  if (a) {
+    activityForm.id = a.id
+    activityForm.category = a.category || 'MEETING'
+    activityForm.title = a.title
+    activityForm.description = a.description || ''
+    activityForm.range = [toDate(a.startTime), toDate(a.endTime)]
+    activityForm.maxMembers = a.maxMembers
+  } else {
+    activityForm.id = null
+    activityForm.category = 'MEETING'
+    activityForm.title = ''
+    activityForm.description = ''
+    activityForm.range = []
+    activityForm.maxMembers = 10
+  }
+  activityDialog.value = true
+}
+
+function toLocalIso(date) {
+  const d = toDate(date)
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`
+}
+
+async function submitActivityDialog() {
+  if (!activityForm.title.trim()) {
+    ElMessage.warning('填一个活动标题')
+    return
+  }
+  if (!activityForm.range?.length || !activityForm.range[0] || !activityForm.range[1]) {
+    ElMessage.warning('选择起止时间')
+    return
+  }
+  const payload = {
+    placeId: selectedPlace.value.id,
+    category: activityForm.category,
+    title: activityForm.title,
+    description: activityForm.description,
+    startTime: toLocalIso(activityForm.range[0]),
+    endTime: toLocalIso(activityForm.range[1]),
+    maxMembers: activityForm.maxMembers
+  }
+  submittingActivity.value = true
+  try {
+    if (activityForm.id) {
+      replaceActivity(await activityApi.update(activityForm.id, payload))
+      ElMessage.success('活动已更新')
+    } else {
+      const created = await activityApi.create(payload)
+      placeActivities.value = [...placeActivities.value, created].sort((x, y) => {
+        const dx = toDate(x.startTime)?.getTime() ?? 0
+        const dy = toDate(y.startTime)?.getTime() ?? 0
+        return dx - dy
+      })
+      ElMessage.success(`已安排活动，签到码 ${created.checkinCode}（开始后 15 分钟内有效）`)
+    }
+    activityDialog.value = false
+  } catch (e) {
+    ElMessage.error(e.message)
+  } finally {
+    submittingActivity.value = false
+  }
+}
+
 async function changeRole(userId, role) {
   try {
     await mapApi.updateMemberRole(mapId.value, userId, { role })
@@ -781,6 +1148,21 @@ onMounted(() => {
       ElMessage.info(`${frame.actorNickname} ${frame.summary}「${frame.placeName}」`)
       if (frame.mapId === mapId.value) {
         refresh()
+      }
+    }),
+    on('ACTIVITY_REMINDER', (frame) => {
+      ElMessage.warning(frame.summary)
+      if (frame.placeName) {
+        ElMessage.info(`地点：${frame.placeName}`)
+      }
+    }),
+    on('ACTIVITY_INVITED', (frame) => {
+      ElMessage.warning(frame.summary)
+    }),
+    on('ACTIVITY_CANCELLED', (frame) => {
+      ElMessage.info(frame.summary)
+      if (selectedPlace.value) {
+        loadPlaceActivities()
       }
     })
   ]
@@ -1103,19 +1485,11 @@ onUnmounted(() => {
   z-index: 31;
   display: flex;
   flex-direction: column;
-  width: 340px;
+  width: min(340px, calc(100% - 24px));
   padding: 10px 12px;
   background: #fff;
   border-radius: 12px;
   box-shadow: 0 8px 24px rgba(31, 56, 88, 0.18);
-}
-.chat-float--mobile {
-  top: auto;
-  left: 12px;
-  right: 12px;
-  bottom: 12px;
-  width: auto;
-  height: 62vh;
 }
 .chat-float__head {
   display: flex;
@@ -1145,6 +1519,20 @@ onUnmounted(() => {
 }
 .chat-float__tabs :deep(.el-tab-pane) {
   height: 100%;
+}
+/* 手机端：脱离地图容器改为视口停靠，不随页面滚动、不被裁切；
+   用媒体查询而非 JS 断点，窗口跨断点即时生效 */
+@media (max-width: 768px) {
+  .chat-float {
+    position: fixed;
+    top: auto;
+    left: 12px;
+    right: 12px;
+    bottom: 12px;
+    width: auto;
+    height: 62vh;
+    height: 62dvh;
+  }
 }
 .comment {
   margin-bottom: 10px;
@@ -1178,5 +1566,54 @@ onUnmounted(() => {
   .map-container {
     height: 60vh;
   }
+}
+
+/* ===== 本地点活动 ===== */
+.activity-entry {
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+  padding: 8px 10px;
+  margin-bottom: 8px;
+}
+.activity-entry__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.activity-entry__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.activity-entry__actions .el-button + .el-button {
+  margin-left: 0;
+}
+.checkin-input {
+  width: 96px;
+}
+.checkin-code {
+  font-variant-numeric: tabular-nums;
+  color: var(--el-color-primary);
+  font-weight: 600;
+}
+.activity-members {
+  margin-top: 6px;
+  border-top: 1px dashed var(--el-border-color-lighter);
+  padding-top: 6px;
+}
+.activity-member {
+  font-size: 12px;
+  color: var(--el-text-color-regular);
+  line-height: 1.8;
+}
+.invite-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+}
+.invite-select {
+  flex: 1;
 }
 </style>

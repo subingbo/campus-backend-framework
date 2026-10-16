@@ -2,6 +2,8 @@ package com.campus.place.controller;
 
 import com.campus.common.ratelimit.RateLimiter;
 import com.campus.common.result.Result;
+import com.campus.map.dto.PlaceMapItem;
+import com.campus.map.service.SharedMapService;
 import com.campus.place.dto.CreatePlaceRequest;
 import com.campus.place.dto.PlaceBriefResponse;
 import com.campus.place.dto.PlaceCreateResponse;
@@ -34,6 +36,7 @@ import java.util.List;
 public class PlaceController {
 
     private final PlaceService placeService;
+    private final SharedMapService sharedMapService;
     private final RateLimiter rateLimiter;
 
     @Operation(summary = "创建地点")
@@ -75,5 +78,11 @@ public class PlaceController {
     public Result<PlaceDetailResponse> update(@PathVariable Long id,
                                               @Valid @RequestBody UpdatePlaceRequest request) {
         return Result.success(placeService.updatePlace(id, request));
+    }
+
+    @Operation(summary = "地点所在地图（仅当前用户是成员的）")
+    @GetMapping("/{id:\\d+}/maps")
+    public Result<List<PlaceMapItem>> mapsForPlace(@PathVariable Long id) {
+        return Result.success(sharedMapService.listMapsForPlace(id));
     }
 }
