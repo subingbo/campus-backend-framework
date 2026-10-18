@@ -4,12 +4,12 @@
 <mapper namespace="com.campus.ai.mapper.AiMessageMapper">
 
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
-        INSERT INTO ai_message (conversation_id, role, content, created_at)
-        VALUES (#{conversationId}, #{role}, #{content}, NOW())
+        INSERT INTO ai_message (conversation_id, role, content, geo_json, created_at)
+        VALUES (#{conversationId}, #{role}, #{content}, #{geoJson}, NOW())
     </insert>
 
     <select id="selectRecent" resultType="com.campus.ai.entity.AiMessage">
-        SELECT id, conversation_id AS conversationId, role, content, created_at AS createdAt
+        SELECT id, conversation_id AS conversationId, role, content, geo_json AS geoJson, created_at AS createdAt
         FROM ai_message
         WHERE conversation_id = #{conversationId}
         ORDER BY id DESC

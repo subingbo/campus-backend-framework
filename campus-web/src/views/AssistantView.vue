@@ -2,11 +2,34 @@
   <div class="assistant-page">
     <aside class="chat-col">
       <header class="chat-head">
-        <el-button text size="small" @click="$router.push('/')">← 地图</el-button>
         <span class="chat-head__title">AI 规划助手</span>
+        <el-dropdown trigger="click" @visible-change="onSessionsVisible" @command="switchConversation">
+          <el-button size="small" :disabled="busy">会话 ▾</el-button>
+          <template #dropdown>
+            <el-dropdown-menu class="session-menu">
+              <el-dropdown-item
+                v-for="c in chatSessions"
+                :key="c.id"
+                :command="c.id"
+                :class="{ 'session-menu__item--active': c.id === activeChatId }"
+              >
+                <div class="session-menu__title" :class="{ 'is-empty': !c.title }">{{ c.title || '新的规划' }}</div>
+                <div class="session-menu__meta">
+                  <el-tag v-if="c.status === 'SAVED'" size="small" type="success" effect="plain">已保存</el-tag>
+                  <el-tag v-else-if="c.planVersion" size="small" type="warning" effect="plain">草稿 v{{ c.planVersion }}</el-tag>
+                  <span class="session-menu__time">{{ fmt(c.updatedAt) }}</span>
+                </div>
+              </el-dropdown-item>
+              <el-dropdown-item v-if="!chatSessions.length" disabled>暂无历史会话</el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
+        <el-button size="small" :disabled="busy" @click="newChat">＋ 新对话</el-button>
         <el-select
-          v-model="referenceMapId"
+          v-model="referenceMapIds"
           size="small"
+          multiple
+          collapse-tags
           clearable
           placeholder="参考地图"
           class="chat-head__ref"
@@ -30,10 +53,35 @@
               <div v-if="msg.status" class="msg__status">
                 <span class="spin-dot"></span>{{ msg.status }}
               </div>
-              <span v-if="msg.content" class="msg__text">{{ msg.content }}<span v-if="msg.streaming" class="caret">▌</span></span>
+              <!-- 流式期间纯文本（避免每段 delta 全量重排），结束后切 Markdown 渲染 -->
+              <span v-if="msg.content && msg.streaming" class="msg__text">{{ msg.content }}<span class="caret">▌</span></span>
+              <MarkdownText v-else-if="msg.content" :text="msg.content" />
+              <!-- 本条消息涉及的地点：点芯片聚焦地图并打开浮窗；有草稿时按路线站序排前并带序号 -->
+              <div v-if="msg.geoPlaces && msg.geoPlaces.length" class="geo-chips">
+                <span
+                  v-for="row in orderedChips(msg)"
+                  :key="row.chip.key"
+                  class="geo-chip"
+                  :class="'geo-chip--' + String(row.chip.source || '').toLowerCase()"
+                  @click="focusGeoPlace(row.chip)"
+                >
+                  <span v-if="row.seq" class="geo-chip__seq">{{ row.seq }}</span>
+                  <span class="geo-chip__badge">{{ sourceLabel(row.chip.source) }}</span>{{ row.chip.name }}
+                </span>
+              </div>
             </div>
           </div>
         </template>
+        <!-- 确认式问句兜底：模型停下来问“要不要提交”时一键回复，无需打字 -->
+        <div v-if="quickReplies.length" class="quick-replies">
+          <button
+            v-for="q in quickReplies"
+            :key="q"
+            type="button"
+            class="quick-reply"
+            @click="sendQuickReply(q)"
+          >{{ q }}</button>
+        </div>
       </div>
 
       <div v-if="plan" class="plan-card">
@@ -126,7 +174,33 @@
         </template>
       </div>
 
+      <p v-if="locateNote" class="input-note">{{ locateNote }}</p>
       <footer class="input-row">
+        <div class="locate-col">
+          <!-- 打开即实时：每次发送前重新取样设备定位（GCJ-02），随请求注入 get_my_location 工具 -->
+          <el-button
+            class="locate-toggle"
+            size="small"
+            :plain="!attachLocation"
+            :type="attachLocation ? 'primary' : ''"
+            :loading="locating"
+            :title="attachLocation ? '每次发送都会取实时位置；点一下关闭' : '每次发送带上实时位置（浏览器可能请求定位权限）'"
+            @click="toggleAttachLocation"
+          >
+            📍 位置
+          </el-button>
+          <!-- 手动纠偏：在地图上点一下设为我的位置（优先于设备定位，可清除） -->
+          <el-button
+            size="small"
+            :type="pickMode ? 'warning' : ''"
+            :plain="!pickMode"
+            :title="pickMode ? '请在地图上点击你的真实位置' : '定位不准？点一下后在地图上点选你的真实位置'"
+            @click="togglePickMode"
+          >
+            {{ pickMode ? '点地图…' : '纠偏' }}
+          </el-button>
+          <el-button v-if="manualLocation" size="small" plain type="danger" @click="clearManualLocation">清除</el-button>
+        </div>
         <el-input
           v-model="input"
           type="textarea"
@@ -144,7 +218,46 @@
     <section class="map-col">
       <div v-if="mapError" class="map-fallback">{{ mapError }}</div>
       <div ref="mapRef" class="map-canvas"></div>
+      <!-- 地点浮窗：点聊天芯片或地图标记后锚定在该点附近（工作台同款像素锚定） -->
+      <div v-if="geoPopup" ref="geoPopRef" class="geo-pop" :style="geoPopupStyle">
+        <div class="geo-pop__head">
+          <span class="geo-pop__name">{{ geoPopup.name }}</span>
+          <span class="geo-pop__src">{{ sourceLabel(geoPopup.source) }}</span>
+          <button type="button" class="geo-pop__close" @click="geoPopup = null">×</button>
+        </div>
+        <p v-if="geoPopup.address" class="geo-pop__line">{{ geoPopup.address }}</p>
+        <p v-if="geoPopup.categoryName || geoPopup.distanceMeters != null" class="geo-pop__line">
+          <template v-if="geoPopup.categoryName">{{ geoPopup.categoryName }}</template>
+          <template v-if="geoPopup.distanceMeters != null"> · 约 {{ Math.round(geoPopup.distanceMeters) }} 米</template>
+        </p>
+        <p v-if="geoPopup.noteDigest" class="geo-pop__note">📝 {{ geoPopup.noteDigest }}</p>
+        <div class="geo-pop__actions">
+          <el-button size="small" @click="focusGeoPlace(geoPopup)">居中</el-button>
+          <el-button v-if="geoPopup.mapId" size="small" type="primary" @click="openInMap(geoPopup)">在共建地图打开</el-button>
+        </div>
+      </div>
     </section>
+
+    <!-- 直点化：草稿一生成即弹确认弹窗（历史回放/切换会话不弹），点按钮即保存 -->
+    <el-dialog v-model="planDialogVisible" title="📅 草稿已生成" width="380px" append-to-body class="plan-dialog">
+      <template v-if="plan">
+        <p class="plan-dialog__name">{{ plan.title }}</p>
+        <p class="hint">🕐 {{ planRangeText }} · {{ (plan.stops || []).length }} 站
+          <el-tag v-if="plan.routeConfidence === 'AMAP'" size="small" effect="plain">交通·高德实测</el-tag>
+          <el-tag v-else-if="plan.routeConfidence === 'ESTIMATED'" size="small" type="warning" effect="plain">交通·估算</el-tag>
+        </p>
+        <p class="hint">草稿不是终态：可先在聊天卡片里编辑时间与站点，或直接保存为活动邀请报名。</p>
+      </template>
+      <template #footer>
+        <el-button size="small" @click="planDialogVisible = false">先看看再说</el-button>
+        <el-button
+          type="primary"
+          :loading="saving"
+          :disabled="saved || editing"
+          @click="planDialogVisible = false; savePlan()"
+        >{{ saved ? '已保存到活动日程' : (plan?.lineageActivityId ? '保存并更新活动' : '保存为活动') }}</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -154,7 +267,10 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { assistantApi, mapApi } from '../api'
 import { streamAssistantChat } from '../api/aiStream'
-import { loadAmap, createPlaceMarkerController, createRouteLineController } from '../composables/useAmap'
+import { loadAmap, createPlaceMarkerController, createRouteLineController, createAmapLocationProvider } from '../composables/useAmap'
+import { useLocation } from '../composables/useLocation'
+import MarkdownText from '../components/MarkdownText.vue'
+import { fmt } from '../utils/format'
 
 const router = useRouter()
 
@@ -167,7 +283,7 @@ const busy = ref(false)
 const plan = ref(null)
 const saving = ref(false)
 const saved = ref(false)
-const referenceMapId = ref(null)
+const referenceMapIds = ref([])
 const myMaps = ref([])
 const mapError = ref('')
 const listRef = ref(null)
@@ -179,11 +295,258 @@ const currentPlanVersion = ref(0)
 const editForm = ref(null)
 
 let chatId = null
+const chatSessions = ref([])
+const activeChatId = ref(null)
+/** 直点化：实时 plan 事件弹确认弹窗；历史回放前先解除武装 */
+const planDialogVisible = ref(false)
+const planDialogArmed = ref(true)
 let streamingPlaceholderIndex = -1
 let abortController = null
 let markerCtrl = null
 let routeCtrl = null
 let mapApi_ = null
+let locProvider_ = null
+
+/** 定位层：发送前实时取样（GCJ-02），失败不阻塞发送 */
+const {
+  locating,
+  error: locateError,
+  locate
+} = useLocation(() => locProvider_)
+const attachLocation = ref(localStorage.getItem('campus.assistant.locate') === '1')
+const locateNote = ref('')
+
+function toggleAttachLocation() {
+  attachLocation.value = !attachLocation.value
+  localStorage.setItem('campus.assistant.locate', attachLocation.value ? '1' : '0')
+  locateNote.value = ''
+}
+
+const isMobile = () => window.matchMedia('(max-width: 768px)').matches
+
+/** ===== 对话地理信息（实时 + 历史回放）：地图标记/折线/我的位置 + 可点击浮窗 ===== */
+const geoPlaces = ref([])
+const geoRoutes = ref([])
+const geoPopup = ref(null)
+const geoPopupStyle = ref({})
+const geoPopRef = ref(null)
+let offMapViewport = null
+
+/** 手动纠正的“我的位置”（优先于设备定位，localStorage 记忆） */
+const pickMode = ref(false)
+const manualLocation = ref(readManualLocation())
+
+function readManualLocation() {
+  try {
+    return JSON.parse(localStorage.getItem('campus.assistant.myLocation') || 'null')
+  } catch (e) {
+    return null
+  }
+}
+
+function sourceLabel(source) {
+  if (source === 'GROUP_MAP') return '共建'
+  if (source === 'PERSONAL_MAP') return '收藏'
+  if (source === 'CAMPUS_LIB') return '校园库'
+  if (source === 'AMAP_POI') return 'POI'
+  if (source === 'USER_LOCATION') return '定位'
+  return '地点'
+}
+
+/** 稳定去重键：系统地点按 placeId，POI 按坐标（5 位小数） */
+function geoKeyOf(p) {
+  if (p.placeId != null) return `p-${p.placeId}`
+  return `c-${Number(p.longitude).toFixed(5)},${Number(p.latitude).toFixed(5)}`
+}
+
+function decorate(p) {
+  return { ...p, key: geoKeyOf(p), mapId: p.mapIds && p.mapIds.length ? p.mapIds[0] : null }
+}
+
+/** 芯片排序：有行程草稿时，命中行程站点的芯片排前并按站序，其余保持原（时间足迹）顺序 */
+function orderedChips(msg) {
+  const chips = msg.geoPlaces || []
+  if (!chips.length) return []
+  const stops = plan.value?.stops
+  if (!stops || !stops.length) {
+    return chips.map((chip) => ({ chip, seq: null }))
+  }
+  const coordOf = (o) => `c-${Number(o.longitude).toFixed(5)},${Number(o.latitude).toFixed(5)}`
+  const seqOfChip = new Map()
+  for (const stop of stops) {
+    if (seqOfChip.size >= chips.length) break
+    const chip = chips.find((c) =>
+      !seqOfChip.has(c)
+      && ((stop.placeId != null && c.placeId != null && c.placeId === stop.placeId)
+        || (stop.longitude != null && coordOf(c) === coordOf(stop))))
+    if (chip) seqOfChip.set(chip, stop.seq)
+  }
+  return [...chips]
+    .sort((a, b) => {
+      const sa = seqOfChip.get(a)
+      const sb = seqOfChip.get(b)
+      if (sa != null && sb != null) return sa - sb
+      if (sa != null) return -1
+      if (sb != null) return 1
+      return 0
+    })
+    .map((chip) => ({ chip, seq: seqOfChip.get(chip) ?? null }))
+}
+
+/** 从事件里抽出可展示的地点 chip（含 mapId 供“在共建地图打开”）；同点合并，保留首次出现顺序 */
+function collectPlacesOf(events) {
+  const out = []
+  const placeIdKeys = new Set()
+  const coordIndex = new Map()
+  for (const ev of events || []) {
+    for (const p of ev.places || []) {
+      if (p.longitude == null || p.latitude == null) continue
+      const coordKey = `c-${Number(p.longitude).toFixed(5)},${Number(p.latitude).toFixed(5)}`
+      const seen = coordIndex.get(coordKey)
+      if (p.placeId != null) {
+        if (placeIdKeys.has(p.placeId) || (seen && seen.hasPlaceId)) continue
+        placeIdKeys.add(p.placeId)
+        const item = decorate(p)
+        if (seen && !seen.hasPlaceId) {
+          // 同坐标先出现了无 ID 条目：原位替换为带 ID 版本（浮窗字段更全）
+          out.splice(out.indexOf(seen.item), 1, item)
+        } else {
+          out.push(item)
+        }
+        coordIndex.set(coordKey, { item, hasPlaceId: true })
+      } else {
+        if (seen) continue
+        const item = decorate(p)
+        out.push(item)
+        coordIndex.set(coordKey, { item, hasPlaceId: false })
+      }
+    }
+  }
+  return out
+}
+
+/** 把一批 geo 事件并入地图状态并重绘（实时与历史回放共用） */
+function applyGeoEvents(events) {
+  if (!events || !events.length) return
+  let changed = false
+  for (const ev of events) {
+    for (const raw of ev.places || []) {
+      if (raw.longitude == null || raw.latitude == null) continue
+      if (raw.source === 'USER_LOCATION') {
+        // 我的位置只画蓝点（不重复建普通标记）；chip 仍由 collectPlacesOf 提供
+        markerCtrl?.setMyLocation({ lng: raw.longitude, lat: raw.latitude, accuracy: raw.distanceMeters || 0 })
+        continue
+      }
+      const item = decorate(raw)
+      const idx = geoPlaces.value.findIndex((x) => x.key === item.key)
+      if (idx >= 0) geoPlaces.value.splice(idx, 1, { ...geoPlaces.value[idx], ...item })
+      else geoPlaces.value.push(item)
+      changed = true
+    }
+    if (ev.route?.polyline?.length > 1) {
+      geoRoutes.value.push({ mode: ev.route.mode || 'WALK', polyline: ev.route.polyline })
+      changed = true
+    }
+    for (const seg of ev.segments || []) {
+      if (seg.polyline?.length > 1) {
+        geoRoutes.value.push({ mode: seg.transportMode || 'WALK', polyline: seg.polyline })
+        changed = true
+      }
+    }
+  }
+  if (changed) redrawMap()
+}
+
+/** 统一重绘：标记（地点集合）→ 折线（geo 路线 + 草稿站点间预览），折线必须后画（render 会 clearMap） */
+function redrawMap({ fitView = false } = {}) {
+  if (!markerCtrl) return
+  const markers = geoPlaces.value.map((p) => ({
+    id: p.key,
+    name: p.name,
+    longitude: Number(p.longitude),
+    latitude: Number(p.latitude)
+  }))
+  markerCtrl.render(markers, { fitView })
+  const lines = [...geoRoutes.value]
+  for (const seg of stopSegments.value) {
+    if (seg?.polyline?.length > 1) lines.push({ mode: seg.mode, polyline: seg.polyline })
+  }
+  if (lines.length) routeCtrl?.draw(lines)
+}
+
+function focusGeoPlace(p) {
+  if (!p) return
+  if (isMobile()) {
+    mapRef.value?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+  }
+  markerCtrl?.focusPlace({ id: p.key, name: p.name, longitude: Number(p.longitude), latitude: Number(p.latitude) })
+  geoPopup.value = p
+  nextTick(updateGeoPopupPos)
+}
+
+function updateGeoPopupPos() {
+  const p = geoPopup.value
+  if (!p || !mapRef.value) return
+  const pt = markerCtrl?.projectToContainer?.({ longitude: p.longitude, latitude: p.latitude })
+  if (!pt) {
+    geoPopupStyle.value = { right: '12px', bottom: '16px' }
+    return
+  }
+  const w = geoPopRef.value?.offsetWidth || 260
+  const h = geoPopRef.value?.offsetHeight || 120
+  const cw = mapRef.value.clientWidth
+  const ch = mapRef.value.clientHeight
+  const below = pt.y - 48 - h < 8
+  const x = cw > w + 16 ? Math.min(Math.max(pt.x, w / 2 + 8), cw - w / 2 - 8) : cw / 2
+  const top = below ? Math.min(pt.y + 12, Math.max(ch - h - 8, 8)) : pt.y - 48
+  geoPopupStyle.value = {
+    left: `${Math.round(x)}px`,
+    top: `${Math.round(Math.max(top, 8))}px`,
+    transform: below ? 'translate(-50%, 0)' : 'translate(-50%, -100%)'
+  }
+}
+
+function openInMap(p) {
+  if (p?.mapId && p?.placeId != null) {
+    router.push(`/maps/${p.mapId}?place=${p.placeId}`)
+  }
+}
+
+/** 地图交互：纠偏模式下点选"我的位置"，否则点空白关闭浮窗 */
+function onMapClick(lng, lat) {
+  if (pickMode.value) {
+    setManualLocation(lng, lat)
+    return
+  }
+  geoPopup.value = null
+}
+
+function onMarkerClick(place) {
+  const item = geoPlaces.value.find((p) => p.key === place.id)
+  if (!item) return
+  geoPopup.value = item
+  nextTick(updateGeoPopupPos)
+}
+
+function togglePickMode() {
+  pickMode.value = !pickMode.value
+  locateNote.value = pickMode.value ? '请在地图上点击你的真实位置（点击「点地图…」取消）' : ''
+}
+
+function setManualLocation(lng, lat) {
+  manualLocation.value = { lng, lat }
+  localStorage.setItem('campus.assistant.myLocation', JSON.stringify(manualLocation.value))
+  pickMode.value = false
+  markerCtrl?.setMyLocation({ lng, lat, accuracy: 0, locationType: 'manual' })
+  locateNote.value = '已把手动位置设为“我的位置”（发送时优先使用，可清除）'
+}
+
+function clearManualLocation() {
+  manualLocation.value = null
+  localStorage.removeItem('campus.assistant.myLocation')
+  markerCtrl?.clearMyLocation()
+  locateNote.value = '已清除手动位置，将使用设备定位'
+}
 
 const planCategory = computed(() => plan.value?.category || 'OTHER')
 
@@ -234,6 +597,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   abortController?.abort()
+  offMapViewport?.()
 })
 
 watch(plan, async (value) => {
@@ -244,23 +608,45 @@ watch(plan, async (value) => {
 })
 
 function initMap() {
-  loadAmap(mapRef.value).then(({ AMap, map }) => {
-    markerCtrl = createPlaceMarkerController(AMap, map, null)
+  loadAmap(mapRef.value, onMapClick).then(({ AMap, map, geolocation }) => {
+    markerCtrl = createPlaceMarkerController(AMap, map, onMarkerClick)
     routeCtrl = createRouteLineController(AMap, map)
     mapApi_ = { AMap, map }
+    offMapViewport = markerCtrl.onViewportChange(() => updateGeoPopupPos())
+    if (geolocation) {
+      locProvider_ = createAmapLocationProvider(geolocation)
+    }
+    // 已有手动位置：先画蓝点；有历史 geo 或草稿再重绘
+    if (manualLocation.value) {
+      markerCtrl.setMyLocation({ lng: manualLocation.value.lng, lat: manualLocation.value.lat, accuracy: 0, locationType: 'manual' })
+    }
     if (plan.value) {
       renderPlanOnMap(plan.value)
+    } else if (geoPlaces.value.length) {
+      redrawMap({ fitView: geoPlaces.value.length > 1 })
     }
   }).catch((e) => {
     mapError.value = e?.message || '地图加载失败'
   })
 }
 
+/** 草稿站点并入统一标记集合（键 stop-N），与对话 geo 点位共存于同一张地图 */
 function renderPlanOnMap(value) {
   if (!markerCtrl) return
-  const places = (value.stops || []).filter((s) => s.longitude != null)
-    .map((s) => ({ id: `stop-${s.seq}`, name: s.name, longitude: Number(s.longitude), latitude: Number(s.latitude) }))
-  markerCtrl.render(places, { fitView: places.length > 1 })
+  const planStops = (value.stops || []).filter((s) => s.longitude != null)
+  geoPlaces.value = geoPlaces.value.filter((p) => !String(p.key).startsWith('stop-'))
+  for (const s of planStops) {
+    geoPlaces.value.push({
+      key: `stop-${s.seq}`,
+      placeId: s.placeId ?? null,
+      name: s.name,
+      longitude: Number(s.longitude),
+      latitude: Number(s.latitude),
+      source: s.source || null,
+      mapId: s.sourceMapId ?? null
+    })
+  }
+  redrawMap({ fitView: planStops.length > 1 })
 }
 
 /** 站间折线走后端 /routes（与规划阶段同源缓存） */
@@ -287,30 +673,86 @@ async function loadRouteSegments(value) {
     }
   }
   stopSegments.value = result
-  if (routeCtrl) {
-    routeCtrl.draw(result.filter(Boolean))
-  }
+  redrawMap()
 }
 
 async function restoreLatestChat() {
   try {
     const chats = await assistantApi.listChats()
-    const latest = (chats || [])[0]
-    if (!latest) return
-    chatId = latest.id
-    saved.value = latest.status === 'SAVED'
-    currentPlanVersion.value = latest.planVersion || 0
-    const detail = await assistantApi.detail(chatId)
-    currentPlanVersion.value = detail?.conversation?.planVersion || currentPlanVersion.value
-    messages.value = (detail?.messages || []).map((m) => ({
-      role: m.role === 'USER' ? 'user' : 'assistant',
-      content: m.content
-    }))
-    if (detail?.plan) {
-      plan.value = detail.plan
+    chatSessions.value = chats || []
+    if (!chatSessions.value.length) return
+    // 优先回到上次正看的会话（已不在列表则回退最近一条）
+    let target = null
+    try {
+      const lastId = Number(localStorage.getItem('campus.assistant.lastChat'))
+      target = chatSessions.value.find((c) => c.id === lastId) || null
+    } catch (e) {
+      target = null
     }
+    if (!target) target = chatSessions.value[0]
+    await loadConversation(target.id)
   } catch (e) {
     // 无历史会话则等待用户开启新对话
+  }
+}
+
+/** 打开会话下拉时刷新列表（保持“最近更新优先”） */
+async function onSessionsVisible(visible) {
+  if (!visible) return
+  try {
+    chatSessions.value = await assistantApi.listChats()
+  } catch (e) {
+    /* 拉取失败保留旧列表 */
+  }
+}
+
+/** 加载指定会话：消息 + geo 回放 + 草稿卡片（restoreLatestChat / switchConversation 共用） */
+async function loadConversation(id) {
+  chatId = id
+  activeChatId.value = id
+  planDialogArmed.value = false
+  // 记住最后查看的会话：刷新/重进页面回到当前正看的会话，而不是“最近更新”的那条
+  try { localStorage.setItem('campus.assistant.lastChat', String(id)) } catch (e) { /* 隐私模式忽略 */ }
+  const detail = await assistantApi.detail(id)
+  const meta = detail?.conversation
+  saved.value = meta?.status === 'SAVED'
+  currentPlanVersion.value = meta?.planVersion || 0
+  // 历史消息连同其 geo_json 一起回放：chips + 地图标记/折线/蓝点
+  messages.value = (detail?.messages || []).map((m) => {
+    const item = {
+      role: m.role === 'USER' ? 'user' : 'assistant',
+      content: m.content
+    }
+    const events = parseGeoJson(m.geoJson)
+    if (events.length) {
+      item.geoEvents = events
+      item.geoPlaces = collectPlacesOf(events)
+      applyGeoEvents(events)
+    }
+    return item
+  })
+  if (detail?.plan) {
+    plan.value = detail.plan
+  }
+}
+
+/** 切到历史会话：先清空上一会话的界面状态（消息/草稿/地图覆盖物），再加载目标会话 */
+async function switchConversation(id) {
+  if (!id || id === activeChatId.value || busy.value) return
+  messages.value = []
+  plan.value = null
+  currentPlanVersion.value = 0
+  saved.value = false
+  editing.value = false
+  stopSegments.value = []
+  geoPlaces.value = []
+  geoRoutes.value = []
+  geoPopup.value = null
+  redrawMap()
+  try {
+    await loadConversation(id)
+  } catch (e) {
+    ElMessage.error(e.message)
   }
 }
 
@@ -321,11 +763,61 @@ async function ensureChat() {
   return chatId
 }
 
+/** 解析助手消息携带的 geo_json（历史回放）；坏数据静默忽略 */
+function parseGeoJson(geoJson) {
+  if (!geoJson) return []
+  try {
+    const parsed = JSON.parse(geoJson)
+    return Array.isArray(parsed) ? parsed : []
+  } catch (e) {
+    return []
+  }
+}
+
+/** 手动开新会话：清空当前消息流与草稿（原会话仍保留在服务端会话列表里） */
+async function newChat() {
+  try {
+    const session = await assistantApi.createChat()
+    chatId = session.id
+    activeChatId.value = session.id
+    planDialogArmed.value = true
+    messages.value = []
+    plan.value = null
+    currentPlanVersion.value = 0
+    saved.value = false
+    editing.value = false
+    stopSegments.value = []
+    geoPlaces.value = []
+    geoRoutes.value = []
+    geoPopup.value = null
+    redrawMap()
+    ElMessage.success('已开启新对话')
+  } catch (e) {
+    ElMessage.error(e.message)
+  }
+}
+
+/** 确认式问句兜底：模型停下来问“要不要提交”时给一键回复 chips（点击即发送该文本） */
+const quickReplies = computed(() => {
+  if (busy.value || plan.value || editing.value) return []
+  const last = [...messages.value].reverse().find((m) => m.role === 'assistant')
+  const text = last?.content || ''
+  if (!text || text.length > 240) return []
+  const asksConfirm = /(提交|确认|要不要|可以吗|行吗|好吗|需要我)/.test(text) && /[？?]/.test(text)
+  return asksConfirm ? ['提交吧', '先不提交'] : []
+})
+
+function sendQuickReply(text) {
+  input.value = text
+  send()
+}
+
 function composeContent() {
   let content = input.value.trim()
-  const refMap = myMaps.value.find((m) => m.id === referenceMapId.value)
-  if (refMap) {
-    content = `（请优先参考我共建的共享地图「${refMap.name}」里的地点）\n${content}`
+  const chosen = myMaps.value.filter((m) => referenceMapIds.value.includes(m.id))
+  if (chosen.length) {
+    const names = chosen.map((m) => `「${m.name}」`).join('')
+    content = `（请优先参考我共建的共享地图${names}里的地点）\n${content}`
   }
   return content
 }
@@ -333,8 +825,38 @@ function composeContent() {
 async function send() {
   const content = composeContent()
   if (!content || busy.value) return
+  // 开关打开时每条消息实时取样定位；失败不阻塞发送，只是本条不带位置
+  let payload = null
+  if (attachLocation.value) {
+    // 手动纠正的位置优先：无需再等设备定位（GPS 被拒时也能带上位置）
+    let loc = null
+    let source = 'device'
+    if (manualLocation.value) {
+      loc = { lng: manualLocation.value.lng, lat: manualLocation.value.lat, accuracy: 0 }
+      source = 'manual'
+    } else {
+      loc = await locate()
+    }
+    if (loc) {
+      payload = {
+        userLocation: {
+          longitude: loc.lng,
+          latitude: loc.lat,
+          accuracy: loc.accuracy || null,
+          capturedAt: new Date().toISOString(),
+          source
+        }
+      }
+      locateNote.value = source === 'manual'
+        ? '本条使用手动纠正的位置'
+        : `已附实时位置（${Math.round(Number(loc.accuracy)) || '精度未知'} 米）`
+    } else {
+      locateNote.value = `未获取到定位，本条不带位置发送（${locateError.value || '定位失败'}）`
+    }
+  }
   busy.value = true
   input.value = ''
+  planDialogArmed.value = true
   abortController = new AbortController()
   messages.value.push({ role: 'user', content })
   messages.value.push({ role: 'assistant', content: '', status: '连接助手…', streaming: true })
@@ -343,7 +865,7 @@ async function send() {
   try {
     const id = await ensureChat()
     messages.value[streamingPlaceholderIndex].status = '正在思考…'
-    await streamAssistantChat(id, content, handleEvent, abortController.signal)
+    await streamAssistantChat(id, content, handleEvent, abortController.signal, payload)
   } catch (e) {
     handleEvent('error', { message: e?.message || '请求失败' })
   } finally {
@@ -359,12 +881,25 @@ function handleEvent(event, payload) {
   } else if (event === 'delta') {
     placeholder.content += typeof payload === 'string' ? payload : ''
     scrollBottom()
+  } else if (event === 'geo') {
+    // 工具产出的地点/路线/我的位置：实时上图 + 挂到本条消息的 chips
+    const events = payload?.events || []
+    if (events.length) {
+      applyGeoEvents(events)
+      placeholder.geoEvents = (placeholder.geoEvents || []).concat(events)
+      placeholder.geoPlaces = collectPlacesOf(placeholder.geoEvents)
+    }
   } else if (event === 'plan') {
     placeholder.status = ''
     plan.value = payload
     saved.value = false
     // 新草稿版本未知（plan 事件不含版本号）——保存/编辑前由 detail / revise 接口取回
     currentPlanVersion.value = 0
+    if (planDialogArmed.value) {
+      // 直点化：实时生成的草稿立即弹确认弹窗（历史回放/切换会话不弹）
+      planDialogVisible.value = true
+    }
+    nextTick(() => document.querySelector('.plan-card')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }))
   } else if (event === 'done') {
     placeholder.status = ''
     placeholder.streaming = false
@@ -565,14 +1100,16 @@ function stopTimeText(stop) {
 .assistant-page {
   display: grid;
   grid-template-columns: 400px 1fr;
-  min-height: 100vh;
+  /* 全局导航壳的主区已定高，这里撑满壳内可视区 */
+  height: 100%;
   background: #f5f7fa;
 }
 
 .chat-col {
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
+  height: 100%;
+  min-height: 0;
   border-right: 1px solid #e8eaee;
   background: #fff;
 }
@@ -590,7 +1127,7 @@ function stopTimeText(stop) {
 }
 .chat-head__ref {
   margin-left: auto;
-  width: 130px;
+  width: 150px;
 }
 
 .msg-list {
@@ -733,10 +1270,184 @@ function stopTimeText(stop) {
 .input-row :deep(.el-textarea__inner) {
   border-radius: 10px;
 }
+.locate-toggle {
+  flex-shrink: 0;
+}
+.locate-col {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex-shrink: 0;
+  align-self: flex-end;
+}
+/* 三键等宽等高：📍位置 / 纠偏(点地图…) / 清除 */
+.locate-col .el-button {
+  width: 72px;
+  margin-left: 0;
+  padding-left: 0;
+  padding-right: 0;
+  justify-content: center;
+}
+.quick-replies {
+  display: flex;
+  gap: 8px;
+  padding: 4px 16px 8px;
+}
+/* 行程站序号角标：主色圆底白字 */
+.geo-chip__seq {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 15px;
+  height: 15px;
+  margin-right: 2px;
+  padding: 0 3px;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  color: #fff;
+  background: var(--el-color-primary);
+  border-radius: 999px;
+}
+.quick-reply {
+  padding: 5px 14px;
+  font-size: 12px;
+  color: var(--el-color-primary);
+  background: var(--el-color-primary-light-9);
+  border: 1px solid var(--el-color-primary-light-7);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.quick-reply:hover {
+  background: var(--el-color-primary-light-8);
+}
+.plan-dialog .plan-dialog__name {
+  margin: 0 0 6px;
+  font-size: 15px;
+  font-weight: 600;
+  color: #303133;
+}
+.geo-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.geo-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  line-height: 20px;
+  cursor: pointer;
+  background: var(--el-color-primary-light-9);
+  color: var(--el-color-primary);
+  border: 1px solid transparent;
+  transition: border-color 0.15s;
+}
+.geo-chip:hover {
+  border-color: currentColor;
+}
+.geo-chip__badge {
+  opacity: 0.75;
+  font-size: 11px;
+}
+.geo-chip--group_map {
+  background: var(--el-color-success-light-9);
+  color: var(--el-color-success);
+}
+.geo-chip--personal_map {
+  background: var(--el-color-primary-light-9);
+  color: var(--el-color-primary);
+}
+.geo-chip--campus_lib {
+  background: var(--el-color-warning-light-9);
+  color: var(--el-color-warning);
+}
+.geo-chip--amap_poi {
+  background: #f4f4f5;
+  color: #909399;
+}
+.geo-chip--user_location {
+  background: rgba(7, 193, 96, 0.12);
+  color: #07a552;
+}
+.geo-pop {
+  position: absolute;
+  z-index: 30;
+  box-sizing: border-box;
+  width: min(280px, calc(100vw - 24px));
+  padding: 10px 12px;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(31, 56, 88, 0.18);
+  font-size: 13px;
+  text-align: left;
+  white-space: normal;
+}
+.geo-pop__head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.geo-pop__name {
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.geo-pop__src {
+  flex-shrink: 0;
+  padding: 0 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  color: #fff;
+  background: var(--el-color-primary);
+}
+.geo-pop__close {
+  flex-shrink: 0;
+  border: none;
+  background: none;
+  padding: 2px 4px;
+  font-size: 18px;
+  line-height: 1;
+  color: rgba(0, 0, 0, 0.45);
+  cursor: pointer;
+}
+.geo-pop__line {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: rgba(0, 0, 0, 0.65);
+}
+.geo-pop__note {
+  margin: 6px 0 0;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: #f7f8fa;
+  font-size: 12px;
+  color: rgba(0, 0, 0, 0.55);
+}
+.geo-pop__actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+.input-note {
+  padding: 6px 14px 0;
+  font-size: 11px;
+  color: rgba(0, 0, 0, 0.45);
+}
 
 .map-col {
   position: relative;
-  min-height: 100vh;
+  height: 100%;
+  min-height: 0;
 }
 .map-canvas {
   position: absolute;
@@ -821,14 +1532,48 @@ function stopTimeText(stop) {
 @media (max-width: 768px) {
   .assistant-page {
     grid-template-columns: 1fr;
+    height: auto;
+    min-height: 100%;
   }
   .map-col {
     order: 2;
+    height: auto;
     min-height: 46vh;
   }
   .chat-col {
-    min-height: 54vh;
+    height: 54vh;
     border-right: none;
   }
+}
+</style>
+
+<style>
+/* 会话下拉（teleport 到 body，需全局样式） */
+.session-menu {
+  max-width: 320px;
+}
+.session-menu .session-menu__title {
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  line-height: 1.3;
+}
+.session-menu .session-menu__title.is-empty {
+  color: #909399;
+}
+.session-menu .session-menu__meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+}
+.session-menu .session-menu__time {
+  color: #909399;
+  font-size: 11px;
+}
+.session-menu .session-menu__item--active {
+  background: var(--el-fill-color-light);
 }
 </style>

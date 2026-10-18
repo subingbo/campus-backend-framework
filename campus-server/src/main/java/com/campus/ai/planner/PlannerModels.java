@@ -62,4 +62,8 @@ public final class PlannerModels {
     /** 求解整体输出：可行方案 + 无可行时的建议 */
     public record PlannerOutcome(List<PlannerSolution> solutions, List<String> suggestions) {
     }
+
+    /** 往返行程的起点（通常为用户实时定位，不是系统地点，保存时才会落成/复用 place） */
+    public record OriginPoint(String name, double longitude, double latitude) {
+    }
 }

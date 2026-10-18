@@ -16,6 +16,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockHttpServletResponse;
+import org.mockito.ArgumentCaptor;
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -30,9 +31,12 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -182,6 +186,110 @@ class AgentChatMockedAcceptanceTest {
                 .path("data").path("conversation");
         assertThat(conversationAfter.path("status").asText()).isEqualTo("SAVED");
         assertThat(conversationAfter.path("savedActivityId").asLong()).isEqualTo(activityId);
+    }
+
+    /** 消息携带 userLocation 时，get_my_location 应把本轮上送坐标回给模型（不落库） */
+    @Test
+    void chatWithUserLocationExposesGetMyLocationTool() throws Exception {
+        String username = "agentloc_" + System.nanoTime();
+        register(username);
+        TokenResponse tokens = login(username, "password1");
+        String auth = "Bearer " + tokens.getAccessToken();
+
+        when(llmClient.chat(any(), any(), any(), any())).thenReturn(
+                new LlmResponse("", "tool_calls",
+                        List.of(new LlmToolCall("call_1", "get_my_location", "{}")), 80),
+                new LlmResponse("已拿到你的实时位置，正在用它规划到修车店的路线。",
+                        "stop", List.of(), 120));
+
+        MvcResult created = mockMvc.perform(post("/api/assistant/chats").header("Authorization", auth))
+                .andExpect(status().isOk())
+                .andReturn();
+        long chatId = objectMapper.readTree(created.getResponse().getContentAsString())
+                .path("data").path("id").asLong();
+
+        MvcResult sendStream = mockMvc.perform(post("/api/assistant/chats/" + chatId + "/messages")
+                        .header("Authorization", auth)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"content":"我在哪附近？怎么去修车店",
+                                 "userLocation":{"longitude":113.3842,"latitude":23.0459,
+                                  "accuracy":18.0,"capturedAt":"2026-10-18T00:57:00"}}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(request().asyncStarted())
+                .andReturn();
+        sendStream.getAsyncResult(30_000);
+        // SSE 线协议：地理事件（前端实时上图通道）已推送
+        assertThat(sendStream.getResponse().getContentAsString()).contains("event:geo");
+
+        // 第二轮 LLM 调用的 messages 里应有 role=tool 的定位结果：含上送坐标与 GCJ-02 标注
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<Map<String, Object>>> captor =
+                ArgumentCaptor.forClass((Class) List.class);
+        verify(llmClient, times(2)).chat(captor.capture(), any(), any(), any());
+        List<List<Map<String, Object>>> calls = captor.getAllValues();
+        assertThat(calls).hasSize(2);
+        String toolJson = calls.get(1).stream()
+                .filter(m -> "tool".equals(m.get("role")))
+                .map(m -> String.valueOf(m.get("content")))
+                .findFirst().orElse("");
+        assertThat(toolJson).contains("\"available\":true")
+                .contains("113.3842").contains("23.0459")
+                .contains("18.0").contains("GCJ-02");
+
+        // 助手消息带 geo_json（USER_LOCATION 含上送坐标），刷新后地图可回放
+        JsonNode detail = objectMapper.readTree(
+                mockMvc.perform(get("/api/assistant/chats/" + chatId).header("Authorization", auth))
+                        .andReturn().getResponse().getContentAsString());
+        JsonNode messages = detail.path("data").path("messages");
+        assertThat(messages.size()).isEqualTo(2);
+        assertThat(messages.get(1).path("geoJson").asText())
+                .contains("USER_LOCATION").contains("113.3842").contains("23.0459");
+    }
+
+    /** 同参重复调用应被打回（duplicate_call）且不再真实执行——防模型反复搜索烧光轮次预算 */
+    @Test
+    void duplicateIdenticalToolCallIsRejectedWithoutReexecution() throws Exception {
+        String username = "agentdup_" + System.nanoTime();
+        register(username);
+        TokenResponse tokens = login(username, "password1");
+        String auth = "Bearer " + tokens.getAccessToken();
+
+        when(llmClient.chat(any(), any(), any(), any())).thenReturn(
+                new LlmResponse("", "tool_calls",
+                        List.of(new LlmToolCall("call_1", "get_my_location", "{}")), 80),
+                new LlmResponse("", "tool_calls",
+                        List.of(new LlmToolCall("call_2", "get_my_location", "{}")), 80),
+                new LlmResponse("好的，位置沿用刚才那次查询结果。", "stop", List.of(), 120));
+
+        MvcResult created = mockMvc.perform(post("/api/assistant/chats").header("Authorization", auth))
+                .andExpect(status().isOk())
+                .andReturn();
+        long chatId = objectMapper.readTree(created.getResponse().getContentAsString())
+                .path("data").path("id").asLong();
+
+        MvcResult sendStream = mockMvc.perform(post("/api/assistant/chats/" + chatId + "/messages")
+                        .header("Authorization", auth)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"content\":\"我在这附近，直接告诉我怎么安排\"}"))
+                .andExpect(status().isOk())
+                .andExpect(request().asyncStarted())
+                .andReturn();
+        sendStream.getAsyncResult(30_000);
+
+        // 第 3 次 LLM 调用的消息流里应出现 duplicate_call 打回结果（第二次调用未真实执行）
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<Map<String, Object>>> captor =
+                ArgumentCaptor.forClass((Class) List.class);
+        verify(llmClient, times(3)).chat(captor.capture(), any(), any(), any());
+        List<List<Map<String, Object>>> calls = captor.getAllValues();
+        String duplicateTool = calls.get(2).stream()
+                .filter(m -> "tool".equals(m.get("role")))
+                .map(m -> String.valueOf(m.get("content")))
+                .filter(c -> c.contains("duplicate_call"))
+                .findFirst().orElse("");
+        assertThat(duplicateTool).contains("duplicate_call").contains("get_my_location");
     }
 
     private void register(String username) throws Exception {

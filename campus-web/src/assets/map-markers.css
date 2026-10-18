@@ -1,0 +1,80 @@
+/*
+ * AMap 自定义覆盖物的全局样式。
+ * 标记 HTML 由 composables/useAmap.js 的 createMarkerContent/createMyLocationContent 生成，
+ * 覆盖物不经过 Vue 渲染管线，样式必须全局可用（工作台/助手页等任何地图容器共用）。
+ */
+.campus-place-marker {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  cursor: pointer;
+}
+.campus-place-marker__dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--el-color-primary);
+  border: 2px solid #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+  flex-shrink: 0;
+}
+.campus-place-marker--active .campus-place-marker__dot {
+  width: 18px;
+  height: 18px;
+  background: #f56c6c;
+  border-width: 3px;
+}
+.campus-place-marker__label {
+  margin-top: 2px;
+  max-width: 120px;
+  padding: 2px 6px;
+  font-size: 11px;
+  line-height: 1.2;
+  color: #303133;
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid #dcdfe6;
+  border-radius: 4px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.campus-place-marker--active .campus-place-marker__label {
+  color: #fff;
+  background: var(--el-color-primary);
+  border-color: var(--el-color-primary);
+  font-weight: 600;
+}
+.campus-my-location-marker {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+}
+.campus-my-location-marker__dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #07c160;
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 6px rgba(7, 193, 96, 0.22), 0 1px 4px rgba(0, 0, 0, 0.35);
+  flex-shrink: 0;
+}
+.campus-my-location-marker__label {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-top: 4px;
+  padding: 2px 6px;
+  font-size: 11px;
+  line-height: 1.2;
+  font-weight: 600;
+  color: #fff;
+  background: #07c160;
+  border-radius: 4px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  white-space: nowrap;
+}

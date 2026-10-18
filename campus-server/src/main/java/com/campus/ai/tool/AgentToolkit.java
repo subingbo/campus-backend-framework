@@ -1,5 +1,7 @@
 package com.campus.ai.tool;
 
+import com.campus.ai.dto.AiUserLocation;
+import com.campus.ai.dto.GeoEvent;
 import com.campus.ai.dto.GroupPlaceContext;
 import com.campus.ai.dto.PlanDto;
 import com.campus.ai.dto.PlanStop;
@@ -9,6 +11,7 @@ import com.campus.ai.planner.PlannerModels;
 import com.campus.ai.planner.SpatiotemporalPlanner;
 import com.campus.ai.plan.PlanSource;
 import com.campus.ai.service.GroupMapContextService;
+import com.campus.ai.travel.PoiItem;
 import com.campus.ai.travel.RouteInfo;
 import com.campus.ai.travel.TravelInfoProvider;
 import com.campus.common.exception.BusinessException;
@@ -16,6 +19,7 @@ import com.campus.common.result.ResultCode;
 import com.campus.common.util.SqlLikeUtils;
 import com.campus.map.dto.MapPlaceSearchItem;
 import com.campus.map.service.SharedMapService;
+import com.campus.place.dto.PlaceBriefResponse;
 import com.campus.place.mapper.PlaceMapper;
 import com.campus.schedule.dto.BusyEntryDto;
 import com.campus.schedule.dto.GroupBusyDto;
@@ -57,6 +61,7 @@ public class AgentToolkit {
     public static final String TOOL_SEARCH_GROUP_MAP_PLACES = "search_group_map_places";
     public static final String TOOL_GET_PLACE_CONTEXT = "get_place_context";
     public static final String TOOL_PLAN_ITINERARY = "plan_itinerary";
+    public static final String TOOL_GET_MY_LOCATION = "get_my_location";
 
     private static final DateTimeFormatter TS = DateTimeFormatter.ISO_LOCAL_DATE_TIME;
 
@@ -81,6 +86,105 @@ public class AgentToolkit {
     private boolean hasGroupContext() {
         long[] ctx = GROUP_CONTEXT.get();
         return ctx != null && ctx[0] > 0 && ctx[1] > 0;
+    }
+
+    /** 本轮对话的用户实时定位（客户端随请求上送、AgentService 注入，模型不可指定） */
+    private static final ThreadLocal<AiUserLocation> RUN_LOCATION = new ThreadLocal<>();
+
+    public static void setRunLocation(AiUserLocation location) {
+        RUN_LOCATION.set(location);
+    }
+
+    public static void clearRunLocation() {
+        RUN_LOCATION.remove();
+    }
+
+    public boolean hasRunLocation() {
+        AiUserLocation loc = RUN_LOCATION.get();
+        return loc != null && loc.getLongitude() != null && loc.getLatitude() != null;
+    }
+
+    // ---------- 本轮地理事件收集（前端实时上图 + 助手消息落库回放） ----------
+
+    /** 折线抽稀上限：超过按步长采样，避免 geo_json 体积膨胀 */
+    private static final int MAX_POLYLINE_POINTS = 200;
+    /** 单轮事件上限（防御性）：超出后不再收集，仅影响地图丰富度 */
+    private static final int MAX_GEO_EVENTS = 60;
+
+    private static final ThreadLocal<List<GeoEvent>> RUN_GEO = new ThreadLocal<>();
+
+    public static void setRunGeoCollector() {
+        RUN_GEO.set(new ArrayList<>());
+    }
+
+    public static void clearRunGeoCollector() {
+        RUN_GEO.remove();
+    }
+
+    /** 由 AgentService 在每个工具执行后 / 最终答复前 drain；无收集器时返回空列表 */
+    public static List<GeoEvent> drainRunGeo() {
+        List<GeoEvent> bucket = RUN_GEO.get();
+        if (bucket == null || bucket.isEmpty()) {
+            return List.of();
+        }
+        List<GeoEvent> drained = new ArrayList<>(bucket);
+        bucket.clear();
+        return drained;
+    }
+
+    private void collect(GeoEvent event) {
+        List<GeoEvent> bucket = RUN_GEO.get();
+        if (bucket == null || bucket.size() >= MAX_GEO_EVENTS) {
+            return;
+        }
+        bucket.add(event);
+    }
+
+    private static List<double[]> thin(List<double[]> polyline) {
+        if (polyline == null || polyline.isEmpty()) {
+            return new ArrayList<>();
+        }
+        if (polyline.size() <= MAX_POLYLINE_POINTS) {
+            return new ArrayList<>(polyline);
+        }
+        int step = (int) Math.ceil(polyline.size() / (double) MAX_POLYLINE_POINTS);
+        List<double[]> sampled = new ArrayList<>();
+        for (int i = 0; i < polyline.size(); i += step) {
+            sampled.add(polyline.get(i));
+        }
+        double[] last = polyline.get(polyline.size() - 1);
+        if (sampled.isEmpty() || sampled.get(sampled.size() - 1) != last) {
+            sampled.add(last);
+        }
+        return sampled;
+    }
+
+    private GeoEvent placesEvent(String tool, String source, List<GeoEvent.GeoPlace> places, String note) {
+        GeoEvent event = new GeoEvent();
+        event.setType(GeoEvent.TYPE_PLACES);
+        event.setTool(tool);
+        event.setSource(source);
+        event.setPlaces(places);
+        event.setNote(note);
+        return event;
+    }
+
+    private GeoEvent.GeoPlace toGeoPlace(GroupPlaceContext context, String source) {
+        GeoEvent.GeoPlace place = new GeoEvent.GeoPlace();
+        place.setPlaceId(context.getPlaceId());
+        place.setName(context.getName());
+        place.setAddress(context.getAddress());
+        place.setCategoryName(context.getCategoryName());
+        place.setLongitude(context.getLongitude());
+        place.setLatitude(context.getLatitude());
+        place.setMapIds(context.getMapIds());
+        place.setSource(source);
+        if (context.getNotes() != null && !context.getNotes().isEmpty()
+                && context.getNotes().get(0).getContent() != null) {
+            String digest = context.getNotes().get(0).getContent().trim();
+            place.setNoteDigest(digest.length() > 160 ? digest.substring(0, 160) : digest);
+        }
+        return place;
     }
 
     public AgentToolkit(SharedMapService sharedMapService,
@@ -139,6 +243,10 @@ public class AgentToolkit {
                         "dateTo", type("string", "窗口结束 yyyy-MM-ddTHH:mm"),
                         "durationMinutes", type("integer", "需要的连续分钟数（15～600）"))),
                 List.of("dateFrom", "dateTo", "durationMinutes")));
+        functions.add(function(TOOL_GET_MY_LOCATION,
+                "获取用户当前的实时位置（GCJ-02 坐标，来自设备定位）。涉及“我现在在哪 / 从哪出发 / 到某地去”的路线、耗时与交通方式问题时先调用，"
+                        + "坐标可直接用于 route_info / plan_itinerary；若返回 available:false，请提醒用户在输入框旁打开「📍 位置」开关后重新发送，不要臆测出发点",
+                Map.of(), List.of()));
         functions.add(function(TOOL_GET_GROUP_MAP_CONTEXT,
                 "获取当前语境可用的共建地图清单（群聊里=本群共享地图；个人会话=我加入的地图），含地图名称/描述/地点数。群体规划的第一步",
                 Map.of(), List.of()));
@@ -155,28 +263,35 @@ public class AgentToolkit {
                         "placeId", type("integer", "系统地点ID"),
                         "mapId", type("integer", "可选：仅查看该地图下的投影"))),
                 List.of("placeId")));
+        Map<String, Object> itineraryProps = new LinkedHashMap<>();
+        itineraryProps.put("dateFrom", type("string", "窗口开始 yyyy-MM-ddTHH:mm"));
+        itineraryProps.put("dateTo", type("string", "窗口结束 yyyy-MM-ddTHH:mm"));
+        itineraryProps.put("placeIds", Map.of("type", "array", "items", Map.of("type", "integer"),
+                "description", "候选地点（≤4 个，来自 search_group_map_places / list_map_places）"));
+        itineraryProps.put("keyword", type("string", "可选：共建地图语义检索，自动取最相关 ≤4 个地点"));
+        itineraryProps.put("stayMinutes", Map.of("type", "array", "items", Map.of("type", "integer"),
+                "description", "可选：与最终候选一一对应的停留分钟数（缺省 60）"));
+        itineraryProps.put("transportMode", enumType("出行方式（公交不支持联合求解）", "WALK", "RIDE", "DRIVE"));
+        itineraryProps.put("bufferMinutes", type("integer", "可选：最后一站后保留缓冲分钟数（缺省 10）"));
+        itineraryProps.put("originLng", type("number", "可选：往返行程起点 GCJ-02 经度（通常取 get_my_location 的坐标）"));
+        itineraryProps.put("originLat", type("number", "可选：往返行程起点 GCJ-02 纬度"));
+        itineraryProps.put("originName", type("string", "可选：起点名称（缺省“出发点”）"));
+        itineraryProps.put("returnToStart", type("boolean", "可选：true 时末尾追加返回起点站（需同时给 originLng/originLat）"));
         functions.add(function(TOOL_PLAN_ITINERARY,
                 "确定性时空联合求解：给日期窗口与候选地点（placeIds 或 keyword），由系统计算共同空闲、真实交通耗时与站点顺序，"
-                        + "返回最多 3 个带回精确起止时间的可行方案；无解时返回原因与建议。方案时间必须原样引用，不得自行编造或调整",
-                props(Map.of(
-                        "dateFrom", type("string", "窗口开始 yyyy-MM-ddTHH:mm"),
-                        "dateTo", type("string", "窗口结束 yyyy-MM-ddTHH:mm"),
-                        "placeIds", Map.of("type", "array", "items", Map.of("type", "integer"),
-                                "description", "候选地点（≤4 个，来自 search_group_map_places / list_map_places）"),
-                        "keyword", type("string", "可选：共建地图语义检索，自动取最相关 ≤4 个地点"),
-                        "stayMinutes", Map.of("type", "array", "items", Map.of("type", "integer"),
-                                "description", "可选：与最终候选一一对应的停留分钟数（缺省 60）"),
-                        "transportMode", enumType("出行方式（公交不支持联合求解）", "WALK", "RIDE", "DRIVE"),
-                        "bufferMinutes", type("integer", "可选：最后一站后保留缓冲分钟数（缺省 10）"))),
+                        + "返回最多 3 个带回精确起止时间的可行方案；无解时返回原因与建议。方案时间必须原样引用，不得自行编造或调整。"
+                        + "往返行程（从我的位置出发并回到原点）必须传 originLng/originLat 与 returnToStart=true，"
+                        + "输出的 stops 已含起点与返程站，直接原样提交，不要自己补站",
+                itineraryProps,
                 List.of("dateFrom", "dateTo")));
         Map<String, Object> stopItemProps = new LinkedHashMap<>();
         stopItemProps.put("name", type("string", "站点名称"));
         stopItemProps.put("placeId", type("integer", "系统地点ID（有则优先）"));
         stopItemProps.put("longitude", type("number", "GCJ-02 经度"));
         stopItemProps.put("latitude", type("number", "GCJ-02 纬度"));
-        stopItemProps.put("startTime", type("string", "到达/开始时间"));
-        stopItemProps.put("endTime", type("string", "离开/结束时间"));
-        stopItemProps.put("transportMode", enumType("前往本站的交通方式", "WALK", "RIDE", "DRIVE", "TRANSIT"));
+        stopItemProps.put("startTime", type("string", "到达该站的绝对时间（前一站 endTime + 交通耗时，严格按计划引用）"));
+        stopItemProps.put("endTime", type("string", "离开该站的绝对时间（startTime + 停留；须与下一站 startTime 留出交通时间）"));
+        stopItemProps.put("transportMode", enumType("前往本站的交通方式；留空按步行（WALK）校验", "WALK", "RIDE", "DRIVE", "TRANSIT"));
         stopItemProps.put("stayMinutes", type("integer", "可选：该站停留分钟数（来自 plan_itinerary）"));
         stopItemProps.put("note", type("string", "站点备注，256 字内"));
         Map<String, Object> stopsSchema = new LinkedHashMap<>();
@@ -211,7 +326,8 @@ public class AgentToolkit {
         submitPlanProps.put("stops", stopsSchema);
         submitPlanProps.put("availabilityCoverage", coverageSchema);
         submitPlanProps.put("routeSegments", segmentsSchema);
-        submitPlanProps.put("totalTravelMinutes", type("integer", "可选：总交通耗时分钟数（来自 plan_itinerary）"));
+        submitPlanProps.put("totalTravelMinutes", type("integer",
+                "无需填写：后端会按真实路线重算并覆写（填了也会被覆盖）"));
         submitPlanProps.put("constraintStatus", enumType("可行性状态（存在未授权忙闲成员时为 TENTATIVE）",
                 "FEASIBLE", "TENTATIVE"));
         submitPlanProps.put("reason", type("string", "可选：推荐理由（引用共建地点备注等真实依据，500 字内）"));
@@ -235,21 +351,37 @@ public class AgentToolkit {
                 case TOOL_LIST_MY_MAPS -> jsonify(sharedMapService.listMyMaps());
                 case TOOL_LIST_MAP_PLACES -> jsonify(sharedMapService.listMapPlaces(
                         requiredLong(args, "mapId")));
-                case TOOL_SEARCH_PLACES -> jsonify(placeMapper.searchPlaces(
-                        SqlLikeUtils.escapeLike(requiredText(args, "keyword")), 10));
+                case TOOL_SEARCH_PLACES -> {
+                    List<PlaceBriefResponse> found = placeMapper.searchPlaces(
+                            SqlLikeUtils.escapeLike(requiredText(args, "keyword")), 10);
+                    List<GeoEvent.GeoPlace> geoPlaces = new ArrayList<>();
+                    for (PlaceBriefResponse item : found) {
+                        GeoEvent.GeoPlace place = new GeoEvent.GeoPlace();
+                        place.setPlaceId(item.getId());
+                        place.setName(item.getName());
+                        place.setCategoryName(item.getCategoryName());
+                        place.setLongitude(item.getLongitude() == null ? null : item.getLongitude().doubleValue());
+                        place.setLatitude(item.getLatitude() == null ? null : item.getLatitude().doubleValue());
+                        place.setSource(GeoEvent.SOURCE_CAMPUS_LIB);
+                        geoPlaces.add(place);
+                    }
+                    collect(placesEvent(TOOL_SEARCH_PLACES, GeoEvent.SOURCE_CAMPUS_LIB, geoPlaces, null));
+                    yield jsonify(found);
+                }
                 case TOOL_GET_GROUP_MAP_CONTEXT -> jsonify(groupMapContextTool());
                 case TOOL_SEARCH_GROUP_MAP_PLACES -> jsonify(searchGroupMapPlacesTool(args));
                 case TOOL_GET_PLACE_CONTEXT -> jsonify(placeContextTool(args));
                 case TOOL_PLAN_ITINERARY -> jsonify(planItineraryTool(args));
                 case TOOL_GET_MY_SCHEDULE -> jsonify(myScheduleTool(args));
                 case TOOL_FIND_FREE_WINDOWS -> jsonify(findFreeWindowsTool(args, hasGroupContext()));
+                case TOOL_GET_MY_LOCATION -> jsonify(myLocationTool());
                 case TOOL_ROUTE_INFO -> {
-                    RouteInfo route = travelInfoProvider.searchRoute(
-                            requiredText(args, "mode"),
-                            requiredNumber(args, "fromLng"),
-                            requiredNumber(args, "fromLat"),
-                            requiredNumber(args, "toLng"),
-                            requiredNumber(args, "toLat"));
+                    String routeMode = requiredText(args, "mode");
+                    double fromLng = requiredNumber(args, "fromLng");
+                    double fromLat = requiredNumber(args, "fromLat");
+                    double toLng = requiredNumber(args, "toLng");
+                    double toLat = requiredNumber(args, "toLat");
+                    RouteInfo route = travelInfoProvider.searchRoute(routeMode, fromLng, fromLat, toLng, toLat);
                     Map<String, Object> compact = new LinkedHashMap<>();
                     compact.put("mode", route.getMode());
                     compact.put("distanceMeters", route.getDistanceMeters());
@@ -259,13 +391,44 @@ public class AgentToolkit {
                             : Math.round(route.getDurationSeconds() / 6.0) / 10.0);
                     compact.put("estimated", route.isEstimated());
                     compact.put("provider", route.getProvider());
+                    // 给模型的是 compact 字段；完整折线只进地理事件（前端上图）
+                    GeoEvent routeEvent = new GeoEvent();
+                    routeEvent.setType(GeoEvent.TYPE_ROUTE);
+                    routeEvent.setTool(TOOL_ROUTE_INFO);
+                    routeEvent.setSource(GeoEvent.SOURCE_ROUTE);
+                    GeoEvent.GeoRoute geoRoute = new GeoEvent.GeoRoute();
+                    geoRoute.setMode(route.getMode());
+                    geoRoute.setDistanceMeters(route.getDistanceMeters());
+                    geoRoute.setDurationSeconds(route.getDurationSeconds());
+                    geoRoute.setEstimated(route.isEstimated());
+                    geoRoute.setProvider(route.getProvider());
+                    geoRoute.setPolyline(thin(route.getPolyline()));
+                    geoRoute.setFrom(new double[]{fromLng, fromLat});
+                    geoRoute.setTo(new double[]{toLng, toLat});
+                    routeEvent.setRoute(geoRoute);
+                    collect(routeEvent);
                     yield jsonify(compact);
                 }
-                case TOOL_AMAP_POI_SEARCH -> jsonify(travelInfoProvider.searchPoi(
-                        requiredText(args, "keyword"),
-                        optionalNumber(args, "nearLng"),
-                        optionalNumber(args, "nearLat"),
-                        optionalInt(args, "radiusMeters")));
+                case TOOL_AMAP_POI_SEARCH -> {
+                    List<PoiItem> pois = travelInfoProvider.searchPoi(
+                            requiredText(args, "keyword"),
+                            optionalNumber(args, "nearLng"),
+                            optionalNumber(args, "nearLat"),
+                            optionalInt(args, "radiusMeters"));
+                    List<GeoEvent.GeoPlace> poiPlaces = new ArrayList<>();
+                    for (PoiItem poi : pois) {
+                        GeoEvent.GeoPlace place = new GeoEvent.GeoPlace();
+                        place.setName(poi.getName());
+                        place.setAddress(poi.getAddress());
+                        place.setLongitude(poi.getLongitude());
+                        place.setLatitude(poi.getLatitude());
+                        place.setDistanceMeters(poi.getDistanceMeters());
+                        place.setSource(GeoEvent.SOURCE_AMAP_POI);
+                        poiPlaces.add(place);
+                    }
+                    collect(placesEvent(TOOL_AMAP_POI_SEARCH, GeoEvent.SOURCE_AMAP_POI, poiPlaces, null));
+                    yield jsonify(pois);
+                }
                 default -> errorJson("未知工具：" + name);
             };
         } catch (BusinessException ex) {
@@ -368,6 +531,40 @@ public class AgentToolkit {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("entries", entries);
         result.put("truncated", truncated);
+        return result;
+    }
+
+    /** 用户实时定位：客户端随请求上送、本轮线程注入；未提供时如实告知，模型不应编造起点 */
+    private Map<String, Object> myLocationTool() {
+        Map<String, Object> result = new LinkedHashMap<>();
+        AiUserLocation location = RUN_LOCATION.get();
+        if (location == null || location.getLongitude() == null || location.getLatitude() == null) {
+            result.put("available", false);
+            result.put("hint", "本轮对话未携带实时定位；请用户点击输入框旁「📍 位置」开关后重新发送");
+            return result;
+        }
+        result.put("available", true);
+        result.put("longitude", location.getLongitude());
+        result.put("latitude", location.getLatitude());
+        result.put("accuracyMeters", location.getAccuracy());
+        result.put("capturedAt", location.getCapturedAt());
+        result.put("source", location.getSource() == null ? "device" : location.getSource());
+        result.put("coordinateSystem", "GCJ-02");
+        result.put("note", "发送前一刻从取样设备获取的快照；精度有限时按大范围推荐，勿当作精确到门口的位置");
+        // 位置同步进地理事件：前端画"我的位置"蓝点并可回放
+        GeoEvent locatedEvent = new GeoEvent();
+        locatedEvent.setType(GeoEvent.TYPE_USER_LOCATION);
+        locatedEvent.setTool(TOOL_GET_MY_LOCATION);
+        locatedEvent.setSource(GeoEvent.SOURCE_USER_LOCATION);
+        GeoEvent.GeoPlace me = new GeoEvent.GeoPlace();
+        me.setName("我的位置");
+        me.setLongitude(location.getLongitude());
+        me.setLatitude(location.getLatitude());
+        me.setDistanceMeters(location.getAccuracy());
+        me.setSource(GeoEvent.SOURCE_USER_LOCATION);
+        locatedEvent.setPlaces(List.of(me));
+        locatedEvent.setNote("manual".equals(location.getSource()) ? "用户手动纠正的位置" : "设备定位位置");
+        collect(locatedEvent);
         return result;
     }
 
@@ -483,6 +680,12 @@ public class AgentToolkit {
         String source = scopeSource();
         List<GroupPlaceContext> results =
                 groupMapContextService.searchPlaces(scopeMapIds(), keyword, categoryId, limit, source);
+        List<GeoEvent.GeoPlace> geoPlaces = new ArrayList<>();
+        for (GroupPlaceContext context : results) {
+            geoPlaces.add(toGeoPlace(context, source));
+        }
+        collect(placesEvent(TOOL_SEARCH_GROUP_MAP_PLACES, source, geoPlaces,
+                "关键词「" + keyword + "」，共 " + results.size() + " 个命中"));
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("source", source);
         result.put("keyword", keyword);
@@ -508,6 +711,7 @@ public class AgentToolkit {
         }
         String source = scopeSource();
         GroupPlaceContext context = groupMapContextService.placeContext(scope, placeId, source);
+        collect(placesEvent(TOOL_GET_PLACE_CONTEXT, source, List.of(toGeoPlace(context, source)), null));
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("source", source);
         result.put("place", context);
@@ -531,6 +735,20 @@ public class AgentToolkit {
         long buffer = args.get("bufferMinutes") == null
                 ? SpatiotemporalPlanner.DEFAULT_BUFFER_MINUTES
                 : Math.min(Math.max(requiredLong(args, "bufferMinutes"), 0), 60);
+
+        // 往返行程：起点（通常来自 get_my_location）+ 可选返程段，由求解器统一排时间，模型不必手拼
+        Double originLng = optionalNumber(args, "originLng");
+        Double originLat = optionalNumber(args, "originLat");
+        if ((originLng == null) != (originLat == null)) {
+            throw new BusinessException(ResultCode.BAD_REQUEST.getCode(), "originLng 与 originLat 必须同时提供");
+        }
+        PlannerModels.OriginPoint origin = null;
+        if (originLng != null) {
+            String originName = args.get("originName") == null ? "出发点" : requiredText(args, "originName").trim();
+            origin = new PlannerModels.OriginPoint(
+                    originName.length() > 32 ? originName.substring(0, 32) : originName, originLng, originLat);
+        }
+        boolean returnToStart = Boolean.TRUE.equals(args.get("returnToStart")) && origin != null;
 
         boolean group = hasGroupContext();
         long[] ctx = GROUP_CONTEXT.get();
@@ -568,12 +786,53 @@ public class AgentToolkit {
         }
 
         PlannerModels.PlannerOutcome outcome = SpatiotemporalPlanner.plan(
-                busy, from, to, bounded, mode, buffer, buffer, travelInfoProvider);
+                busy, from, to, bounded, mode, buffer, buffer, travelInfoProvider, origin, returnToStart);
+
+        // 首选方案同步进地理事件：前端预览站点与真实路线（模型最终提交哪个方案由它自己选）
+        if (!outcome.solutions().isEmpty()) {
+            PlannerModels.PlannerSolution best = outcome.solutions().get(0);
+            GeoEvent itinerary = new GeoEvent();
+            itinerary.setType(GeoEvent.TYPE_ITINERARY);
+            itinerary.setTool(TOOL_PLAN_ITINERARY);
+            itinerary.setSource(GeoEvent.SOURCE_ROUTE);
+            itinerary.setNote("首选方案（评分最高）预览：点与折线来自确定性求解与真实路线");
+            List<GeoEvent.GeoPlace> previewStops = new ArrayList<>();
+            for (PlannerModels.PlannerStop stop : best.stops()) {
+                GeoEvent.GeoPlace place = new GeoEvent.GeoPlace();
+                place.setPlaceId(stop.placeId());
+                place.setName(stop.name());
+                place.setLongitude(stop.longitude());
+                place.setLatitude(stop.latitude());
+                place.setSource(GeoEvent.SOURCE_USER_LOCATION.equals(stop.source())
+                        ? GeoEvent.SOURCE_USER_LOCATION : stop.source());
+                place.setMapIds(stop.sourceMapId() == null ? null : List.of(stop.sourceMapId()));
+                previewStops.add(place);
+            }
+            itinerary.setPlaces(previewStops);
+            List<GeoEvent.GeoRouteSegment> previewSegments = new ArrayList<>();
+            for (PlannerModels.PlannerSegment segment : best.segments()) {
+                GeoEvent.GeoRouteSegment row = new GeoEvent.GeoRouteSegment();
+                row.setFromSeq(segment.fromIndex() + 1);
+                row.setToSeq(segment.toIndex() + 1);
+                row.setTransportMode(segment.transportMode());
+                row.setDistanceMeters(segment.distanceMeters());
+                row.setDurationMinutes((int) segment.durationMinutes());
+                row.setEstimated(segment.estimated());
+                row.setPolyline(thin(segment.polyline()));
+                previewSegments.add(row);
+            }
+            itinerary.setSegments(previewSegments);
+            collect(itinerary);
+        }
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("window", Map.of("start", TS.format(from), "end", TS.format(to)));
         result.put("transportMode", mode);
         result.put("bufferMinutes", buffer);
+        if (origin != null) {
+            result.put("origin", Map.of("name", origin.name(), "longitude", origin.longitude(),
+                    "latitude", origin.latitude(), "returnToStart", returnToStart));
+        }
         result.put("coverage", coverage);
         result.put("unknownCount", unknownCount);
         if (unknownCount > 0) {
@@ -604,6 +863,7 @@ public class AgentToolkit {
         }
         result.put("note2", "方案时间由 Java 确定性求解器计算：请从 solutions 中选择最贴合用户需求的方案，"
                 + "原样引用 stops 时间与 routeSegments 数据调用 submit_plan，不得改动时间或漏掉交通路线；"
+                + "带 origin 的方案已含起点与返程站及其交通段，原样引用即可，严禁自行补站；"
                 + "routeConfidence=ESTIMATED 的方案须向用户明示“交通为估算”");
         return result;
     }

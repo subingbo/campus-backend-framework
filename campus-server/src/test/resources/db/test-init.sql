@@ -271,6 +271,7 @@ CREATE TABLE IF NOT EXISTS ai_message (
     conversation_id BIGINT NOT NULL,
     role VARCHAR(16) NOT NULL,
     content TEXT NOT NULL,
+    geo_json MEDIUMTEXT DEFAULT NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     KEY idx_conv (conversation_id, id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

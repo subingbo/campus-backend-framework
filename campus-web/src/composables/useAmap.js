@@ -171,7 +171,10 @@ export function createPlaceMarkerController(AMap, map, onMarkerClick) {
         anchor: 'bottom-center',
         zIndex: isActive ? 200 : 100
       })
-      marker.on('click', () => onMarkerClick(place))
+      marker.on('click', () => {
+        // 视图可以不关心点击（如助手页早期版本传 null）；空回调时点标记不抛错
+        if (onMarkerClick) onMarkerClick(place)
+      })
       markerById.set(place.id, marker)
       placeById.set(place.id, place)
       markers.push(marker)

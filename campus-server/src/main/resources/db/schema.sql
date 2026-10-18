@@ -293,6 +293,7 @@ CREATE TABLE IF NOT EXISTS ai_message (
     conversation_id BIGINT NOT NULL COMMENT '会话ID',
     role VARCHAR(16) NOT NULL COMMENT '角色：USER 用户 ASSISTANT 助手',
     content TEXT NOT NULL COMMENT '消息内容',
+    geo_json MEDIUMTEXT DEFAULT NULL COMMENT '助手消息附带的地理事件JSON（地图回放）',
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '发送时间',
     KEY idx_conv (conversation_id, id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='AI 规划会话消息';

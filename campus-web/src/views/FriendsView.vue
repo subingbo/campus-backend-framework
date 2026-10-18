@@ -1,94 +1,82 @@
 <template>
-  <div>
-    <header class="topbar">
-      <span class="topbar__brand" @click="$router.push('/')">Campus Map</span>
-      <div class="topbar__nav">
-        <el-button text @click="$router.push('/assistant')">AI 助手</el-button>
-        <el-button text @click="$router.push('/activities')">活动日程</el-button>
-        <el-button text type="danger" @click="logout">退出</el-button>
-      </div>
-    </header>
+  <div class="page">
+    <div class="hero">
+      <h1>好友</h1>
+      <p>和朋友一起维护校园地图</p>
+    </div>
 
-    <div class="page">
-      <div class="hero">
-        <h1>好友</h1>
-        <p>和朋友一起维护校园地图</p>
-      </div>
-
-      <div class="section">
-        <el-input
-          v-model="keyword"
-          placeholder="搜索用户名或昵称，回车搜索"
-          clearable
-          @keyup.enter="doSearch"
-        >
-          <template #append>
-            <el-button @click="doSearch">搜索</el-button>
-          </template>
-        </el-input>
-        <div v-for="u in searchResults" :key="u.userId" class="row">
-          <div class="row__main">
-            <strong>{{ u.nickname || u.username }}</strong>
-            <span class="hint">@{{ u.username }}</span>
-          </div>
-          <el-button v-if="!u.friend && !u.requested" size="small" type="primary" @click="addFriend(u)">
-            加好友
-          </el-button>
-          <el-tag v-else size="small" type="info" effect="plain">
-            {{ u.friend ? '已是好友' : '已申请' }}
-          </el-tag>
+    <div class="section">
+      <el-input
+        v-model="keyword"
+        placeholder="搜索用户名或昵称，回车搜索"
+        clearable
+        @keyup.enter="doSearch"
+      >
+        <template #append>
+          <el-button @click="doSearch">搜索</el-button>
+        </template>
+      </el-input>
+      <div v-for="u in searchResults" :key="u.userId" class="row">
+        <div class="row__main">
+          <strong>{{ u.nickname || u.username }}</strong>
+          <span class="hint">@{{ u.username }}</span>
         </div>
-        <p v-if="searched && !searchResults.length" class="hint empty">没有匹配的用户</p>
+        <el-button v-if="!u.friend && !u.requested" size="small" type="primary" @click="addFriend(u)">
+          加好友
+        </el-button>
+        <el-tag v-else size="small" type="info" effect="plain">
+          {{ u.friend ? '已是好友' : '已申请' }}
+        </el-tag>
       </div>
+      <p v-if="searched && !searchResults.length" class="hint empty">没有匹配的用户</p>
+    </div>
 
-      <div v-if="requests.received.length" class="section">
-        <h3>收到的好友请求</h3>
-        <div v-for="r in requests.received" :key="r.id" class="row">
-          <div class="row__main">
-            <strong>{{ r.fromNickname }}</strong>
-            <span class="hint">@{{ r.fromUsername }}</span>
-            <span v-if="r.message" class="hint">「{{ r.message }}」</span>
-          </div>
-          <div class="row__actions">
-            <el-button size="small" type="primary" @click="accept(r)">接受</el-button>
-            <el-button size="small" @click="reject(r)">拒绝</el-button>
-          </div>
+    <div v-if="requests.received.length" class="section">
+      <h3>收到的好友请求</h3>
+      <div v-for="r in requests.received" :key="r.id" class="row">
+        <div class="row__main">
+          <strong>{{ r.fromNickname }}</strong>
+          <span class="hint">@{{ r.fromUsername }}</span>
+          <span v-if="r.message" class="hint">「{{ r.message }}」</span>
         </div>
-      </div>
-
-      <div class="section">
-        <h3>我的好友</h3>
-        <p v-if="!friends.length" class="hint empty">还没有好友，先在上面搜索添加吧</p>
-        <div v-for="f in friends" :key="f.userId" class="row">
-          <div class="row__main">
-            <span class="dot" :class="{ on: f.online }" />
-            <strong>{{ f.nickname || f.username }}</strong>
-            <span class="hint">@{{ f.username }}</span>
-            <span class="hint">{{ f.online ? '在线' : '离线' }}</span>
-          </div>
-          <div class="row__actions">
-            <el-button size="small" type="primary" plain @click="openChat(f)">私聊</el-button>
-            <el-button size="small" type="danger" text @click="removeFriend(f)">删除</el-button>
-          </div>
+        <div class="row__actions">
+          <el-button size="small" type="primary" @click="accept(r)">接受</el-button>
+          <el-button size="small" @click="reject(r)">拒绝</el-button>
         </div>
       </div>
     </div>
 
-    <el-dialog v-model="chatOpen" :title="chatPeer" width="420px">
-      <ChatPanel v-if="activeConversation" :conversation="activeConversation" style="height: 380px" />
-    </el-dialog>
+    <div class="section">
+      <h3>我的好友</h3>
+      <p v-if="!friends.length" class="hint empty">还没有好友，先在上面搜索添加吧</p>
+      <div v-for="f in friends" :key="f.userId" class="row">
+        <div class="row__main">
+          <span class="dot" :class="{ on: f.online }" />
+          <strong>{{ f.nickname || f.username }}</strong>
+          <span class="hint">@{{ f.username }}</span>
+          <span class="hint">{{ f.online ? '在线' : '离线' }}</span>
+        </div>
+        <div class="row__actions">
+          <el-button size="small" type="primary" plain @click="openChat(f)">私聊</el-button>
+          <el-button size="small" type="danger" text @click="removeFriend(f)">删除</el-button>
+        </div>
+      </div>
+    </div>
   </div>
+
+  <el-dialog v-model="chatOpen" :title="chatPeer" width="420px">
+    <ChatPanel v-if="activeConversation" :conversation="activeConversation" style="height: 380px" />
+  </el-dialog>
 </template>
 
 <script setup>
+// 全局顶栏（品牌/导航/退出/好友申请角标）由路由壳 AppShell 提供
 import { onMounted, onUnmounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { chatApi, friendApi } from '../api'
-import { connect, on } from '../composables/useChatSocket'
+import { on } from '../composables/useChatSocket'
 import ChatPanel from '../components/ChatPanel.vue'
 
-const router = useRouter()
 const keyword = ref('')
 const searched = ref(false)
 const searchResults = ref([])
@@ -100,13 +88,10 @@ const activeConversation = ref(null)
 let removers = []
 
 onMounted(async () => {
-  connect()
   await Promise.all([loadFriends(), loadRequests()])
   removers = [
-    on('FRIEND_REQUEST', () => {
-      ElMessage.info('收到新的好友请求')
-      loadRequests()
-    }),
+    // 顶部角标提示在 AppShell 统一弹出，这里只负责刷新本页数据
+    on('FRIEND_REQUEST', () => loadRequests()),
     on('FRIEND_ACCEPTED', (frame) => {
       ElMessage.success(`${frame.nickname} 接受了你的好友请求`)
       loadFriends()
@@ -205,35 +190,9 @@ async function removeFriend(f) {
     }
   }
 }
-
-function logout() {
-  localStorage.clear()
-  router.push('/login')
-}
 </script>
 
 <style scoped>
-.topbar {
-  position: sticky;
-  top: 0;
-  z-index: 20;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  height: 56px;
-  padding: 0 32px;
-  background: #fff;
-  border-bottom: 1px solid rgba(31, 56, 88, 0.08);
-}
-.topbar__brand {
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  color: var(--el-color-primary);
-  cursor: pointer;
-}
-.topbar__nav .el-button + .el-button {
-  margin-left: 8px;
-}
 .page {
   max-width: 720px;
   margin: 0 auto;
@@ -302,9 +261,6 @@ function logout() {
   background: #2ba471;
 }
 @media (max-width: 600px) {
-  .topbar {
-    padding: 0 16px;
-  }
   .page {
     padding: 0 16px 40px;
   }

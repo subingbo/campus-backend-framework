@@ -134,7 +134,7 @@ public class AssistantController {
         SSE_POOL.submit(() -> {
             SecurityContextHolder.getContext().setAuthentication(authentication);
             try {
-                agentService.run(conversation, request.getContent(), listener);
+                agentService.run(conversation, request.getContent(), listener, request.getUserLocation());
             } catch (Exception ex) {
                 log.error("Agent 执行异常 conversation={}：{}", conversation.getId(), ex.toString());
                 if (!cancelled.get()) {
@@ -202,6 +202,7 @@ public class AssistantController {
         item.setId(message.getId());
         item.setRole(message.getRole());
         item.setContent(message.getContent());
+        item.setGeoJson(message.getGeoJson());
         item.setCreatedAt(message.getCreatedAt());
         return item;
     }
@@ -226,6 +227,11 @@ public class AssistantController {
             @Override
             public void onPlan(PlanDto plan) {
                 sendSafe("plan", toJson(plan));
+            }
+
+            @Override
+            public void onGeo(java.util.List<com.campus.ai.dto.GeoEvent> events) {
+                sendSafe("geo", toJson(java.util.Map.of("events", events)));
             }
 
             @Override

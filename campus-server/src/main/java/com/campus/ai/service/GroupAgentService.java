@@ -42,6 +42,7 @@ public class GroupAgentService {
 
     private static final String PEOPLE_PREFIX = "@AI";
     private static final String FRAME_TYPE = "AGENT_PLAN_CARD";
+    private static final String FRAME_TYPE_GEO = "AGENT_GEO";
 
     private final ConversationMapper conversationMapper;
     private final MessageMapper messageMapper;
@@ -96,7 +97,7 @@ public class GroupAgentService {
 
         StringBuilder finalText = new StringBuilder();
         Map<String, PlanDto> planHolder = new LinkedHashMap<>();
-        AgentChatListener listener = createListener(askerId, finalText, planHolder);
+        AgentChatListener listener = createListener(askerId, conversationId, finalText, planHolder);
         AgentToolkit.setGroupContext(askerId, groupId);
         try {
             // 场景 D 续聊：把 24h 内该群上一轮草稿与 AGENT 回复带进本轮输入，支持“把第二个方案创建成活动”
@@ -146,7 +147,7 @@ public class GroupAgentService {
         }
     }
 
-    private AgentChatListener createListener(Long askerId, StringBuilder finalText,
+    private AgentChatListener createListener(Long askerId, Long conversationId, StringBuilder finalText,
                                              Map<String, PlanDto> planHolder) {
         return new AgentChatListener() {
             @Override
@@ -172,6 +173,11 @@ public class GroupAgentService {
             }
 
             @Override
+            public void onGeo(java.util.List<com.campus.ai.dto.GeoEvent> events) {
+                broadcastGeo(conversationId, events);
+            }
+
+            @Override
             public void onDone() {
             }
 
@@ -181,6 +187,21 @@ public class GroupAgentService {
                 finalText.append("AI 处理失败：").append(message == null ? "请稍后重试" : message);
             }
         };
+    }
+
+    /** 群聊实时地理帧（AGENT_GEO）：只广播不落库；群聊历史回放不在本期范围 */
+    private void broadcastGeo(Long conversationId, java.util.List<com.campus.ai.dto.GeoEvent> events) {
+        if (events == null || events.isEmpty()) {
+            return;
+        }
+        try {
+            Map<String, Object> frame = new LinkedHashMap<>();
+            frame.put("conversationId", conversationId);
+            frame.put("events", events);
+            broadcastChatMessage(conversationId, FRAME_TYPE_GEO, frame);
+        } catch (Exception ex) {
+            log.warn("群地理帧广播失败 conversation={}：{}", conversationId, ex.toString());
+        }
     }
 
     /** 群消息落库 + WS 广播（type=AGENT，sender=发起人代发；前端有卡片渲染提示）。

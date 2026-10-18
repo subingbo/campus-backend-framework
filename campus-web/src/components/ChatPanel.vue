@@ -7,7 +7,11 @@
           {{ m.senderNickname }}
         </span>
         <div class="chat-msg__bubble" :class="{ agent: m.type === 'AGENT' }">
-          <span v-if="m.type === 'AGENT'">🤖 </span>{{ m.content }}
+          <template v-if="m.type === 'AGENT'">
+            <span class="chat-msg__ai">🤖</span>
+            <MarkdownText :text="m.content" />
+          </template>
+          <template v-else>{{ m.content }}</template>
         </div>
         <span class="chat-msg__time">{{ formatTime(m.createdAt) }}</span>
       </div>
@@ -33,7 +37,7 @@
           <span v-else-if="agentPlan.routeConfidence === 'AMAP'" class="chat-agent-card__routebadge ok">高德实测</span>
         </p>
         <p v-if="coverageNote" class="chat-agent-card__cov">{{ coverageNote }}</p>
-        <p v-if="agentPlan.reason" class="chat-agent-card__reason">💡 {{ agentPlan.reason }}</p>
+        <div v-if="agentPlan.reason" class="chat-agent-card__reason">💡 <MarkdownText :text="agentPlan.reason" /></div>
         <span class="chat-agent-card__hint">
           已生成规划草稿；到页面顶部「AI 助手」可编辑并保存为活动。含未授权忙闲的方案仅为暂定，需相关成员确认。
         </span>
@@ -60,6 +64,7 @@ import { computed, nextTick, onUnmounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { chatApi } from '../api'
 import { myUserId, on, send } from '../composables/useChatSocket'
+import MarkdownText from './MarkdownText.vue'
 
 const props = defineProps({
   conversation: { type: Object, required: true }
@@ -291,6 +296,9 @@ function formatTime(value) {
   background: rgba(64, 158, 255, 0.1);
   border: 1px dashed rgba(64, 158, 255, 0.4);
   color: inherit;
+}
+.chat-msg__ai {
+  margin-right: 2px;
 }
 .chat-agent-card {
   margin: 8px 0;

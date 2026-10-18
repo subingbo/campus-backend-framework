@@ -14,6 +14,10 @@ public interface AgentChatListener {
 
     void onPlan(PlanDto plan);
 
+    /** 本轮工具产出的地理信息（地点/路线/用户位置）：前端实时上图与可点击联动；默认忽略 */
+    default void onGeo(java.util.List<com.campus.ai.dto.GeoEvent> events) {
+    }
+
     /** 结束（含最终答复已完成、草稿可能已提交） */
     void onDone();
 

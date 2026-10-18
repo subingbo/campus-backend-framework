@@ -37,6 +37,8 @@ public class PlanValidator {
             PlanSource.AMAP_POI);
     private static final int MAX_STOPS = 8;
     private static final int MAX_SEGMENT_CHECKS = 8;
+    private static final java.time.format.DateTimeFormatter HHMMSS =
+            java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss");
 
     private final ObjectMapper objectMapper;
     private final ObjectMapper lenientMapper;
@@ -267,8 +269,9 @@ public class PlanValidator {
             if (route.getDurationSeconds() == null) {
                 continue;
             }
-            long travelMinutes = Math.max(0, (route.getDurationSeconds() + 59) / 60);
-            long gapMinutes = Math.max(0, Duration.between(current.getEndTime(), next.getStartTime()).toMinutes());
+            long travelSeconds = Math.max(0, route.getDurationSeconds());
+            long gapSeconds = Duration.between(current.getEndTime(), next.getStartTime()).getSeconds();
+            long travelMinutes = (travelSeconds + 59) / 60;
             anyEstimated |= route.isEstimated() || "estimate".equals(route.getProvider());
             PlanDto.PlanRouteSegment segment = new PlanDto.PlanRouteSegment();
             segment.setFromSeq(i + 1);
@@ -281,10 +284,15 @@ public class PlanValidator {
             if (segments.size() > MAX_SEGMENT_CHECKS) {
                 break;
             }
-            if (gapMinutes < travelMinutes) {
-                throw new BusinessException(ResultCode.BAD_REQUEST.getCode(),
-                        String.format("「%s」→「%s」实际交通约 %d 分钟，但时间表只留了 %d 分钟，请调整站点时间",
-                                current.getName(), next.getName(), travelMinutes, gapMinutes));
+            // 按秒比较：此前 gap 向下取整、耗时向上取整，按真实秒数留间隔也可能差 1 分钟被拒；
+            // 文案给出可执行的"最早开始时间"与交通方式口径（未填 transportMode 按步行估算）
+            if (gapSeconds < travelSeconds) {
+                LocalDateTime earliest = current.getEndTime().plusSeconds(travelSeconds);
+                throw new BusinessException(ResultCode.BAD_REQUEST.getCode(), String.format(
+                        "「%s」→「%s」%s约 %d 分钟，但时间表只留了 %d 分钟；请把「%s」的开始时间设为 %s 或更晚"
+                                + "（该段按目标站交通方式计算，未填写时按步行估算）",
+                        current.getName(), next.getName(), transportLabel(mode), travelMinutes,
+                        Math.max(0, gapSeconds) / 60, next.getName(), earliest.format(HHMMSS)));
             }
         }
         if (!segments.isEmpty()) {
@@ -292,5 +300,14 @@ public class PlanValidator {
             plan.setTotalTravelMinutes((int) total);
             plan.setRouteConfidence(anyEstimated ? "ESTIMATED" : "AMAP");
         }
+    }
+
+    private String transportLabel(String mode) {
+        return switch (mode) {
+            case "RIDE" -> "骑行";
+            case "DRIVE" -> "驾车";
+            case "TRANSIT" -> "公交";
+            default -> "步行";
+        };
     }
 }

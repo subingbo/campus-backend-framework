@@ -88,6 +88,32 @@ class SpatiotemporalPlannerTest {
     }
 
     @Test
+    void roundTripWithOriginAppendsOutboundAndReturnLegs() {
+        // 起点 → 图书馆(90 分钟停留) → 返回起点；每段 15 分钟；窗口 14:00-17:00，缓冲 10
+        PlannerModels.PlannerOutcome outcome = SpatiotemporalPlanner.plan(
+                new ArrayList<>(), DAY0, DAY0_END,
+                List.of(place(1, "图书馆", 90, "GROUP_MAP", 0)),
+                "WALK", 10, 10, walkingProvider(15 * 60),
+                new PlannerModels.OriginPoint("出发地", 113.36D, 23.09D), true);
+        assertThat(outcome.solutions()).isNotEmpty();
+        PlannerModels.PlannerSolution best = outcome.solutions().get(0);
+        // 起点站 + 图书馆 + 返回站
+        assertThat(best.stops()).hasSize(3);
+        assertThat(best.stops().get(0).name()).isEqualTo("出发地");
+        assertThat(best.stops().get(0).startTime()).isEqualTo(DAY0);
+        assertThat(best.stops().get(0).endTime()).isEqualTo(DAY0.plusMinutes(15));
+        assertThat(best.stops().get(1).startTime()).isEqualTo(DAY0.plusMinutes(15));
+        assertThat(best.stops().get(1).endTime()).isEqualTo(DAY0.plusMinutes(105));
+        assertThat(best.stops().get(2).name()).contains("返回");
+        assertThat(best.stops().get(2).startTime()).isEqualTo(DAY0.plusMinutes(120));
+        // 两段交通（去 + 回）都计入总耗时与段列表
+        assertThat(best.totalTravelMinutes()).isEqualTo(30);
+        assertThat(best.segments()).hasSize(2);
+        assertThat(best.segments().get(1).fromIndex()).isEqualTo(1);
+        assertThat(best.segments().get(1).toIndex()).isEqualTo(2);
+    }
+
+    @Test
     void busyIntervalsSplitWindowAndSolutionAvoidsThem() {
         // 15:00-15:30 有日程 → 空闲窗 15:30-17:00，90 分钟不够两站（175） → 无解建议
         PlannerModels.PlannerOutcome split = SpatiotemporalPlanner.plan(

@@ -15,5 +15,7 @@ public class AiMessage {
     private Long conversationId;
     private String role;
     private String content;
+    /** 助手消息附带的地理事件 JSON（地图回放）；用户消息为 null */
+    private String geoJson;
     private LocalDateTime createdAt;
 }

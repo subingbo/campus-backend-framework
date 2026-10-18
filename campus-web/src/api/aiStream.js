@@ -2,8 +2,9 @@
  * AI 助手 SSE 流式封装：EventSource 不支持自定义 Authorization 头，
  * 因此走 fetch + ReadableStream 自行解析 data 协议（event: name / data: ...）。
  * 事件：status 文本提示、delta 最终答复增量、plan 草稿JSON、done 结束、error 失败。
+ * payload：可选的附加请求体字段（如 userLocation 实时定位），由调用方组装。
  */
-export async function streamAssistantChat(chatId, content, onEvent, signal) {
+export async function streamAssistantChat(chatId, content, onEvent, signal, payload = null) {
   let resp
   try {
     resp = await fetch(`/api/assistant/chats/${chatId}/messages`, {
@@ -12,7 +13,7 @@ export async function streamAssistantChat(chatId, content, onEvent, signal) {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${localStorage.getItem('accessToken') || ''}`
       },
-      body: JSON.stringify({ content }),
+      body: JSON.stringify(payload ? { content, ...payload } : { content }),
       signal
     })
   } catch (err) {

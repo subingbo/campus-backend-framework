@@ -49,6 +49,25 @@ public final class SpatiotemporalPlanner {
                                                     long bufferAfterMinutes,
                                                     long headBufferMinutes,
                                                     TravelInfoProvider provider) {
+        return plan(busy, windowStart, windowEnd, candidates, transportMode, bufferAfterMinutes,
+                headBufferMinutes, provider, null, false);
+    }
+
+    /**
+     * 带起点的求解（往返行程）：origin 非空时把「从起点出发」作为首站（停留 0），
+     * returnToStart=true 时末尾追加「返回起点」站；两段均走真实路线并计入总交通与收尾缓冲，
+     * 模型无需手拼起点/返程站及其时间。
+     */
+    public static PlannerModels.PlannerOutcome plan(List<BusyEntryDto> busy,
+                                                    LocalDateTime windowStart,
+                                                    LocalDateTime windowEnd,
+                                                    List<PlannerModels.PlannerPlace> candidates,
+                                                    String transportMode,
+                                                    long bufferAfterMinutes,
+                                                    long headBufferMinutes,
+                                                    TravelInfoProvider provider,
+                                                    PlannerModels.OriginPoint origin,
+                                                    boolean returnToStart) {
         if (windowEnd.isBefore(windowStart) || windowStart.equals(windowEnd)) {
             return noSolution("时间窗口无效");
         }
@@ -84,7 +103,8 @@ public final class SpatiotemporalPlanner {
         for (FreeWindow window : freeWindows) {
             for (Permutation permutation : permutations) {
                 PlannerModels.PlannerSolution solution =
-                        solve(window, permutation.places(), transportMode, buffer, headBuffer, busy, provider);
+                        solve(window, permutation.places(), transportMode, buffer, headBuffer, busy, provider,
+                                origin, returnToStart);
                 if (solution != null) {
                     solutions.add(solution);
                 }
@@ -95,8 +115,9 @@ public final class SpatiotemporalPlanner {
         }
         if (solutions.isEmpty()) {
             List<String> suggestions = new ArrayList<>();
-            suggestions.add(String.format("窗口时长可容纳停留（%d 分钟），但加入%s实际交通耗时或首尾衔接缓冲后超出窗口",
-                    stayFloor, transportMode.equals("WALK") ? "步行" : transportMode.equals("RIDE") ? "骑行" : "驾车"));
+            suggestions.add(String.format("窗口时长可容纳停留（%d 分钟），但加入%s实际交通耗时（%s）或首尾衔接缓冲后超出窗口",
+                    stayFloor, transportMode.equals("WALK") ? "步行" : transportMode.equals("RIDE") ? "骑行" : "驾车",
+                    origin != null ? "含出发与返程两段" : "含站间交通"));
             suggestions.add("可尝试：选择更近的地点、更快交通方式、缩短停留、推迟开始时间或减少地点");
             return new PlannerModels.PlannerOutcome(List.of(), suggestions);
         }
@@ -143,6 +164,9 @@ public final class SpatiotemporalPlanner {
         }
     }
 
+    /** 起点站来源标签（模型不可指定；保存时由 PlanSaveService 落成/复用 place） */
+    private static final String SOURCE_ORIGIN = "USER_LOCATION";
+
     /** 单窗口内落定时间线：可行返回计分方案，不可行返回 null（尾部缓冲/头部衔接不足或超出窗口） */
     private static PlannerModels.PlannerSolution solve(FreeWindow window,
                                                        List<PlannerModels.PlannerPlace> order,
@@ -150,7 +174,9 @@ public final class SpatiotemporalPlanner {
                                                        long bufferAfter,
                                                        long headBuffer,
                                                        List<BusyEntryDto> busy,
-                                                       TravelInfoProvider provider) {
+                                                       TravelInfoProvider provider,
+                                                       PlannerModels.OriginPoint origin,
+                                                       boolean returnToStart) {
         LocalDateTime cursor = window.start();
         // 头部衔接：窗口恰好从某段忙碌结束点开始时，链条整体后推 headBuffer（如 14:00 下课不能 14:05 到远处集合）
         if (headBuffer > 0) {
@@ -168,38 +194,85 @@ public final class SpatiotemporalPlanner {
         List<PlannerModels.PlannerSegment> segments = new ArrayList<>();
         long travelTotal = 0;
         boolean anyEstimated = false;
-        PlannerModels.PlannerPlace previous = null;
-        for (int index = 0; index < order.size(); index++) {
-            PlannerModels.PlannerPlace place = order.get(index);
+
+        Double prevLng = null;
+        Double prevLat = null;
+        // 出发站：占用「从起点到首站」的交通时段（endTime 即抵达首站的时刻，供校验与展示对齐）
+        if (origin != null) {
+            RouteInfo outbound = provider.searchRoute(transportMode, origin.longitude(), origin.latitude(),
+                    order.get(0).longitude(), order.get(0).latitude());
+            long outMinutes = minutesOf(outbound);
+            boolean outEstimated = isEstimated(outbound);
+            anyEstimated |= outEstimated;
+            travelTotal += outMinutes;
+            LocalDateTime arrive = cursor.plusMinutes(outMinutes);
+            if (outMinutes > 0) {
+                segments.add(new PlannerModels.PlannerSegment(0, 1, transportMode,
+                        outbound.getDistanceMeters(), outMinutes, outEstimated, polylineOf(outbound)));
+            }
+            stops.add(new PlannerModels.PlannerStop(null, origin.name(), origin.longitude(), origin.latitude(),
+                    SOURCE_ORIGIN, null, cursor, arrive, 0, null));
+            cursor = arrive;
+            prevLng = origin.longitude();
+            prevLat = origin.latitude();
+        }
+
+        // 起点段已把 cursor 推到首站抵达时刻：首站不再重复计算"出发→首站"这一段
+        boolean outboundHandled = origin != null;
+        for (PlannerModels.PlannerPlace place : order) {
             long transitMinutes = 0;
             Double distance = null;
             boolean estimated = false;
             List<double[]> polyline = List.of();
-            if (previous != null) {
-                RouteInfo route = provider.searchRoute(transportMode, previous.longitude(), previous.latitude(),
+            int currentIndex = stops.size();
+            boolean hasPrev = prevLng != null;
+            if (hasPrev && !outboundHandled) {
+                RouteInfo route = provider.searchRoute(transportMode, prevLng, prevLat,
                         place.longitude(), place.latitude());
                 if (route.getDurationSeconds() != null) {
                     transitMinutes = Math.max(0, (route.getDurationSeconds() + 59) / 60);
                 }
                 distance = route.getDistanceMeters();
-                estimated = route.isEstimated() || "estimate".equals(route.getProvider());
-                polyline = route.getPolyline() == null ? List.of() : route.getPolyline();
+                estimated = isEstimated(route);
+                polyline = polylineOf(route);
                 if (transitMinutes > 0) {
-                    segments.add(new PlannerModels.PlannerSegment(index - 1, index, transportMode,
+                    segments.add(new PlannerModels.PlannerSegment(currentIndex - 1, currentIndex, transportMode,
                             distance, transitMinutes, estimated, polyline));
                 }
                 anyEstimated |= estimated;
                 travelTotal += transitMinutes;
                 cursor = cursor.plusMinutes(transitMinutes);
             }
+            outboundHandled = false;
             LocalDateTime stayStart = cursor;
             LocalDateTime stayEnd = cursor.plusMinutes(place.stayMinutes());
             stops.add(new PlannerModels.PlannerStop(place.placeId(), place.name(), place.longitude(),
                     place.latitude(), place.source(), place.sourceMapId(), stayStart, stayEnd,
-                    place.stayMinutes(), previous == null ? null : transportMode));
+                    place.stayMinutes(), hasPrev ? transportMode : null));
             cursor = stayEnd;
-            previous = place;
+            prevLng = place.longitude();
+            prevLat = place.latitude();
         }
+
+        // 返程段：回到起点并落一个停留 0 的收尾站（start=end=抵达时刻，供校验器对齐"前站 end → 后站 start"）
+        if (returnToStart && origin != null) {
+            RouteInfo inbound = provider.searchRoute(transportMode, prevLng, prevLat,
+                    origin.longitude(), origin.latitude());
+            long backMinutes = minutesOf(inbound);
+            boolean backEstimated = isEstimated(inbound);
+            anyEstimated |= backEstimated;
+            travelTotal += backMinutes;
+            LocalDateTime arrive = cursor.plusMinutes(backMinutes);
+            int currentIndex = stops.size();
+            if (backMinutes > 0) {
+                segments.add(new PlannerModels.PlannerSegment(currentIndex - 1, currentIndex, transportMode,
+                        inbound.getDistanceMeters(), backMinutes, backEstimated, polylineOf(inbound)));
+            }
+            stops.add(new PlannerModels.PlannerStop(null, origin.name() + "（返回）", origin.longitude(),
+                    origin.latitude(), SOURCE_ORIGIN, null, arrive, arrive, 0, transportMode));
+            cursor = arrive;
+        }
+
         long remaining = Duration.between(cursor, window.end()).toMinutes();
         if (remaining < bufferAfter) {
             return null;
@@ -218,6 +291,18 @@ public final class SpatiotemporalPlanner {
         String routeConfidence = segments.isEmpty() ? "NONE" : anyEstimated ? "ESTIMATED" : "AMAP";
         return new PlannerModels.PlannerSolution(0, stops, segments, travelTotal, remaining,
                 score, groupStops, routeConfidence);
+    }
+
+    private static long minutesOf(RouteInfo route) {
+        return route.getDurationSeconds() == null ? 0 : Math.max(0, (route.getDurationSeconds() + 59) / 60);
+    }
+
+    private static boolean isEstimated(RouteInfo route) {
+        return route.isEstimated() || "estimate".equals(route.getProvider());
+    }
+
+    private static List<double[]> polylineOf(RouteInfo route) {
+        return route.getPolyline() == null ? List.of() : route.getPolyline();
     }
 
     private record Permutation(List<PlannerModels.PlannerPlace> places) {

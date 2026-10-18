@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import LoginView from '../views/LoginView.vue'
+import AppShell from '../components/AppShell.vue'
 import MapListView from '../views/MapListView.vue'
 import MapWorkspaceView from '../views/MapWorkspaceView.vue'
 import FriendsView from '../views/FriendsView.vue'
@@ -10,16 +11,24 @@ const router = createRouter({
   history: createWebHistory(),
   routes: [
     { path: '/login', component: LoginView },
-    { path: '/', component: MapListView, meta: { auth: true } },
-    { path: '/maps/:id', component: MapWorkspaceView, meta: { auth: true } },
-    { path: '/friends', component: FriendsView, meta: { auth: true } },
-    { path: '/activities', component: ActivitiesView, meta: { auth: true } },
-    { path: '/assistant', component: AssistantView, meta: { auth: true } }
+    {
+      // 全局导航壳：登录后的所有页面共用同一个顶栏（品牌/导航/退出）
+      path: '/',
+      component: AppShell,
+      meta: { auth: true },
+      children: [
+        { path: '', component: MapListView },
+        { path: 'maps/:id', component: MapWorkspaceView },
+        { path: 'friends', component: FriendsView },
+        { path: 'activities', component: ActivitiesView },
+        { path: 'assistant', component: AssistantView }
+      ]
+    }
   ]
 })
 
 router.beforeEach((to) => {
-  if (to.meta.auth && !localStorage.getItem('accessToken')) {
+  if (to.matched.some((r) => r.meta.auth) && !localStorage.getItem('accessToken')) {
     return '/login'
   }
   if (to.path === '/login' && localStorage.getItem('accessToken')) {
