@@ -1,3 +1,4 @@
+import axios from 'axios'
 import http from './http'
 
 export const authApi = {
@@ -70,4 +71,20 @@ export const assistantApi = {
   savePlan: (id, body) => http.post(`/assistant/chats/${id}/plan/save`, body),
   revisePlan: (id, body) => http.post(`/assistant/chats/${id}/plan/revise`, body),
   route: (params) => http.get('/assistant/routes', { params })
+}
+
+export const traceApi = {
+  list: (params) => http.get('/agent/traces', { params }),
+  detail: (sessionId) => http.get(`/agent/traces/${sessionId}`),
+  events: (sessionId, params) => http.get(`/agent/traces/${sessionId}/events`, { params }),
+  /** 导出是 NDJSON 原始流，不能走统一 Result 拦截器；单独带 token 请求 blob */
+  exportJsonl: (sessionId) => {
+    const token = localStorage.getItem('accessToken')
+    return axios.get(`/api/agent/traces/${sessionId}/export`, {
+      params: { format: 'jsonl' },
+      responseType: 'blob',
+      timeout: 60000,
+      headers: token ? { Authorization: `Bearer ${token}` } : {}
+    }).then((res) => res.data)
+  }
 }

@@ -1,5 +1,6 @@
 package com.campus.ai.service;
 
+import com.campus.ai.config.LlmProperties;
 import com.campus.ai.dto.AiUserLocation;
 import com.campus.ai.dto.GeoEvent;
 import com.campus.ai.dto.PlanDto;
@@ -10,7 +11,12 @@ import com.campus.ai.llm.LlmResponse;
 import com.campus.ai.llm.LlmToolCall;
 import com.campus.ai.mapper.AiConversationMapper;
 import com.campus.ai.mapper.AiMessageMapper;
+import com.campus.ai.plan.PlanValidationException;
 import com.campus.ai.tool.AgentToolkit;
+import com.campus.ai.trace.adapter.TraceRun;
+import com.campus.ai.trace.domain.TraceStatus;
+import com.campus.ai.trace.dto.TraceTrigger;
+import com.campus.ai.trace.service.AgentTraceService;
 import com.campus.ai.travel.RouteCache;
 import com.campus.common.exception.BusinessException;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -117,6 +123,8 @@ public class AgentService {
     private final com.campus.ai.plan.PlanValidator planValidator;
     private final ObjectMapper objectMapper;
     private final RouteCache routeCache;
+    private final AgentTraceService traceService;
+    private final LlmProperties llmProperties;
     /** 阶段 E2 效率开关（默认关 = 与既往行为一致；性能报告对照用） */
     @Value("${campus.ai.efficiency.enabled:false}")
     private boolean efficiencyEnabled;
@@ -127,7 +135,9 @@ public class AgentService {
                         AiMessageMapper messageMapper,
                         com.campus.ai.plan.PlanValidator planValidator,
                         @Qualifier("redisObjectMapper") ObjectMapper objectMapper,
-                        RouteCache routeCache) {
+                        RouteCache routeCache,
+                        AgentTraceService traceService,
+                        LlmProperties llmProperties) {
         this.llmClient = llmClient;
         this.toolkit = toolkit;
         this.conversationMapper = conversationMapper;
@@ -135,11 +145,13 @@ public class AgentService {
         this.planValidator = planValidator;
         this.objectMapper = objectMapper;
         this.routeCache = routeCache;
+        this.traceService = traceService;
+        this.llmProperties = llmProperties;
     }
 
     /** 执行一轮对话；SSE 事件全部经 listener 输出 */
     public void run(AiConversation conversation, String userMessage, AgentChatListener listener) {
-        run(conversation, userMessage, listener, null);
+        run(conversation, userMessage, listener, null, TraceTrigger.chat());
     }
 
     /**
@@ -148,7 +160,15 @@ public class AgentService {
      */
     public void run(AiConversation conversation, String userMessage, AgentChatListener listener,
                     AiUserLocation userLocation) {
+        run(conversation, userMessage, listener, userLocation, TraceTrigger.chat());
+    }
+
+    /** 带追踪触发源的执行：群聊 @AI 显式传入 groupChat(mapId, groupId)，不依赖 ThreadLocal */
+    public void run(AiConversation conversation, String userMessage, AgentChatListener listener,
+                    AiUserLocation userLocation, TraceTrigger trigger) {
         RunTracker tracker = new RunTracker(conversation.getId(), conversation.getUserId());
+        TraceRun traceRun = traceService.beginRun(conversation, trigger,
+                userMessage == null ? 0 : userMessage.length(), userLocation != null, HISTORY_LIMIT);
         if (userLocation != null) {
             toolkit.setRunLocation(userLocation);
         }
@@ -171,6 +191,7 @@ public class AgentService {
                     tracker.cancelDone("round_start");
                     return;
                 }
+                traceRun.stepStart(round);
                 status(listener, tracker, "正在思考（第 " + round + " 轮）");
                 int remaining = MAX_ROUNDS - round;
                 if (remaining <= BUDGET_HINT_ROUNDS) {
@@ -180,11 +201,17 @@ public class AgentService {
                             : "（系统提示：工具调用已用 " + round + "/" + MAX_ROUNDS + " 轮、仅剩 " + remaining
                                     + " 轮；请尽快调用 submit_plan 或直接给出最终答复，不要再发起新的搜索。）"));
                 }
+                List<Map<String, Object>> schemas = toolkit.schemas();
+                long llmStart = System.nanoTime();
+                traceRun.llmRequest(messages.size(), schemas.size());
                 LlmResponse response;
                 try {
-                    response = llmClient.chat(messages, toolkit.schemas(), delta ->
+                    response = llmClient.chat(messages, schemas, delta ->
                             delta(listener, tracker, delta), listener::isCancelled);
+                    traceRun.llmResponse(response, elapsedMs(llmStart));
                 } catch (BusinessException ex) {
+                    traceRun.llmError(ex, elapsedMs(llmStart), listener.isCancelled());
+                    traceRun.stepEnd(TraceStatus.FAILED);
                     if (listener.isCancelled()) {
                         tracker.cancelDone("llm_cancelled");
                     } else {
@@ -193,17 +220,23 @@ public class AgentService {
                     }
                     return;
                 }
-                tracker.tokens(response.totalTokens());
+                if (response.totalTokens() != null) {
+                    tracker.tokens(response.totalTokens());
+                }
                 if (!response.toolCalls().isEmpty()) {
-                    boolean continueLoop = executeToolRound(messages, response, conversation, listener, tracker);
+                    boolean continueLoop = executeToolRound(messages, response, conversation, listener,
+                            tracker, traceRun);
                     if (!continueLoop) {
+                        traceRun.stepEnd(TraceStatus.CANCELLED);
                         tracker.cancelDone("cancelled_in_tool_round");
                         return;
                     }
+                    traceRun.stepEnd(TraceStatus.SUCCESS);
                     continue;
                 }
                 String content = response.content();
                 if (StringUtils.hasText(content)) {
+                    traceRun.stepEnd(TraceStatus.SUCCESS);
                     flushGeo(listener, tracker);
                     persistMessage(conversation.getId(), AiMessage.ROLE_ASSISTANT, content,
                             tracker.geoJson(), listener);
@@ -211,6 +244,7 @@ public class AgentService {
                     tracker.done(tracker.hasDraft ? "draft" : "answer");
                     return;
                 }
+                traceRun.stepEnd(TraceStatus.FAILED);
                 listener.onError("模型没有返回内容，请重试");
                 tracker.fail("empty_output");
                 return;
@@ -226,11 +260,20 @@ public class AgentService {
                 listener.onError("规划步数超限，请拆分需求再试");
                 tracker.exhausted();
             }
+        } catch (RuntimeException ex) {
+            tracker.fail("unhandled_exception");
+            throw ex;
         } finally {
             tracker.emit();
+            traceRun.finish(tracker.outcome(), tracker.stopCause(), tracker.rounds(),
+                    tracker.toolCount(), tracker.hasDraft());
             toolkit.clearRunLocation();
             toolkit.clearRunGeoCollector();
         }
+    }
+
+    private long elapsedMs(long startNano) {
+        return Math.max(0L, (System.nanoTime() - startNano) / 1_000_000L);
     }
 
     private List<Map<String, Object>> buildStartingMessages(String systemPrompt, Long conversationId) {
@@ -248,7 +291,8 @@ public class AgentService {
 
     /** 工具轮：回填 assistant(tool_calls) + 每个调用一条 tool 结果；返回 false 表示已取消 */
     private boolean executeToolRound(List<Map<String, Object>> messages, LlmResponse response,
-                                     AiConversation conversation, AgentChatListener listener, RunTracker tracker) {
+                                     AiConversation conversation, AgentChatListener listener,
+                                     RunTracker tracker, TraceRun traceRun) {
         List<LlmToolCall> calls = response.toolCalls();
         int executed = Math.min(calls.size(), TOOL_CALLS_PER_ROUND);
         List<Map<String, Object>> toolCallsJson = new ArrayList<>();
@@ -273,7 +317,7 @@ public class AgentService {
             status(listener, tracker, TOOL_SUBMIT_PLAN.equals(call.name())
                     ? "正在校验规划草稿"
                     : "正在查询：" + toolLabel(call.name()));
-            String result = executeTool(call, conversation, listener, tracker);
+            String result = executeTool(call, conversation, listener, tracker, traceRun);
             messages.add(Map.of("role", "tool", "tool_call_id", call.id(), "content", result));
         }
         if (calls.size() > executed) {
@@ -283,13 +327,21 @@ public class AgentService {
         return true;
     }
 
-    /** submit_plan 走草稿校验；其余工具按开关决定是否同参复用，全部纳入观测 */
+    /** submit_plan 走草稿校验；其余工具按开关决定是否同参复用，全部纳入观测与 Trace */
     private String executeTool(LlmToolCall call, AiConversation conversation,
-                               AgentChatListener listener, RunTracker tracker) {
+                               AgentChatListener listener, RunTracker tracker, TraceRun traceRun) {
         String name = call.name();
+        traceRun.toolCall(call.id(), name, call.arguments());
         if (TOOL_SUBMIT_PLAN.equals(name)) {
-            String result = handleSubmitPlan(call.arguments(), conversation, listener);
+            long start = System.nanoTime();
+            String result = handleSubmitPlan(call.arguments(), conversation, listener, traceRun);
+            long elapsed = elapsedMs(start);
             boolean accepted = result.contains("\"accepted\":true");
+            if (accepted) {
+                traceRun.toolResult(call.id(), name, result, elapsed, false);
+            } else {
+                traceRun.toolRejected(call.id(), name, "PLAN_REJECTED", elapsed);
+            }
             tracker.tool(name, accepted, false);
             if (accepted) {
                 tracker.draft();
@@ -309,10 +361,12 @@ public class AgentService {
             result = cached != null ? cached + DUPLICATE_CALL_NUDGE
                     : String.format("{\"error\":\"duplicate_call\",\"message\":\"本次规划已用完全相同的参数调用过 %s，"
                             + "结果不会变化；请基于已有结果继续——直接答复，或调用 submit_plan 提交草稿。\"}", name);
+            traceRun.toolResult(call.id(), name, result, 0L, true);
         } else {
             if (SEARCH_TOOLS.contains(name) && tracker.searchExecutions() >= SEARCH_EXECUTION_CAP) {
                 // 搜索预算兜底：换关键词绕开同参打回时，用尽搜索次数即强制收束
                 tracker.tool(name, false, false);
+                traceRun.toolRejected(call.id(), name, "SEARCH_BUDGET_EXHAUSTED", 0L);
                 return String.format(
                         "{\"error\":\"search_budget_exhausted\",\"message\":\"本次规划的地点搜索已用满 %d 次，"
                                 + "换关键词结果也不会变化；请基于已有结果继续——直接答复，或调用 submit_plan 提交草稿。\"}",
@@ -321,10 +375,20 @@ public class AgentService {
             if (SEARCH_TOOLS.contains(name)) {
                 tracker.countSearch();
             }
-            result = toolkit.execute(name, call.arguments());
+            long start = System.nanoTime();
+            try {
+                result = toolkit.execute(name, call.arguments());
+            } catch (RuntimeException ex) {
+                traceRun.toolError(call.id(), name, "TOOL_EXECUTION_ERROR", elapsedMs(start));
+                throw ex;
+            }
+            long elapsed = elapsedMs(start);
             if (result.contains("\"error\"")) {
+                traceRun.toolError(call.id(), name, result, elapsed);
                 // 观测：任何工具失败原因进 AI_RUN（诊断模型不收敛的根因）
                 tracker.noteToolError(result);
+            } else {
+                traceRun.toolResult(call.id(), name, result, elapsed, false);
             }
             // 真实执行后立刻把本轮地理事件推给前端（缓存复用不重复推）
             flushGeo(listener, tracker);
@@ -339,22 +403,39 @@ public class AgentService {
         return result;
     }
 
-    private String handleSubmitPlan(String arguments, AiConversation conversation, AgentChatListener listener) {
+    private String handleSubmitPlan(String arguments, AiConversation conversation,
+                                    AgentChatListener listener, TraceRun traceRun) {
+        int nextVersion = conversation.getPlanVersion() == null ? 1 : conversation.getPlanVersion() + 1;
         try {
-            PlanDto plan = planValidator.parseAndValidate(arguments, conversation.getUserId());
+            PlanDto plan;
+            try {
+                plan = planValidator.parseAndValidate(arguments, conversation.getUserId());
+            } catch (PlanValidationException ex) {
+                traceRun.validationFailed("SUBMIT", ex, nextVersion);
+                throw ex;
+            } catch (BusinessException ex) {
+                traceRun.validationFailed("SUBMIT", "PLAN_VALIDATION_FAILED", nextVersion);
+                throw ex;
+            }
+            traceRun.validationPassed("SUBMIT", plan, nextVersion);
             // 群语境盖章：groupId/sourceMapIds/来源标签/规划指纹由后端写入，模型不可指定
             toolkit.stampGroupPlanContext(plan);
             // 谱系活动只允许 revise 由后端写入，LLM 草稿一律不带
             plan.setLineageActivityId(null);
             String planJson = objectMapper.writeValueAsString(plan);
-            int nextVersion = conversation.getPlanVersion() == null ? 1 : conversation.getPlanVersion() + 1;
             conversationMapper.updatePlanResult(
                     conversation.getId(), planJson, nextVersion, AiConversation.STATUS_DRAFT);
+            traceRun.draft(plan, nextVersion, conversation.getId());
             listener.onPlan(plan);
             return "{\"accepted\":true,\"message\":\"草稿已生成并展示。请用一两句话说明看点与可修改之处\"}";
+        } catch (PlanValidationException ex) {
+            // 已在解析/校验处记录 plan/validate FAILED，这里只回填模型可读错误
+            return "{\"accepted\":false,\"error\":\"" + escape(ex.getMessage()) + "\"}";
         } catch (BusinessException ex) {
+            traceRun.validationFailed("SUBMIT", "DRAFT_SAVE_FAILED", nextVersion);
             return "{\"accepted\":false,\"error\":\"" + escape(ex.getMessage()) + "\"}";
         } catch (Exception ex) {
+            traceRun.validationFailed("SUBMIT", "DRAFT_SAVE_FAILED", nextVersion);
             log.warn("submit_plan 处理异常：{}", ex.toString());
             return "{\"accepted\":false,\"error\":\"草稿处理失败，请重试\"}";
         }
@@ -462,8 +543,10 @@ public class AgentService {
             this.rounds = round;
         }
 
-        void tokens(int tokens) {
-            this.tokensTotal += Math.max(tokens, 0);
+        void tokens(Integer tokens) {
+            if (tokens != null) {
+                this.tokensTotal += Math.max(tokens, 0);
+            }
         }
 
         void firstVisible() {
@@ -582,6 +665,26 @@ public class AgentService {
                 this.outcome = outcome;
                 this.stopCause = stopCause;
             }
+        }
+
+        String outcome() {
+            return outcome;
+        }
+
+        String stopCause() {
+            return stopCause;
+        }
+
+        int rounds() {
+            return rounds;
+        }
+
+        int toolCount() {
+            return tools.size();
+        }
+
+        boolean hasDraft() {
+            return hasDraft;
         }
 
         void emit() {

@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.campus.ai.trace.mapper.AgentTraceEventMapper">
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO agent_trace_event
+            (session_id, trace_id, seq, event_type, occurred_at_ms,
+             turn_no, step_no, call_id, parent_event_id, status,
+             duration_ms, tool_name, error_code, payload_json)
+        VALUES
+            (#{sessionId}, #{traceId}, #{seq}, #{eventType}, #{occurredAtMs},
+             #{turnNo}, #{stepNo}, #{callId}, #{parentEventId}, #{status},
+             #{durationMs}, #{toolName}, #{errorCode}, #{payloadJson})
+    </insert>
+
+    <sql id="eventColumns">
+        id,
+        session_id AS sessionId,
+        trace_id AS traceId,
+        seq,
+        event_type AS eventType,
+        occurred_at_ms AS occurredAtMs,
+        persisted_at AS persistedAt,
+        turn_no AS turnNo,
+        step_no AS stepNo,
+        call_id AS callId,
+        parent_event_id AS parentEventId,
+        status,
+        duration_ms AS durationMs,
+        tool_name AS toolName,
+        error_code AS errorCode,
+        payload_json AS payloadJson
+    </sql>
+
+    <select id="selectPage" resultType="com.campus.ai.trace.domain.AgentTraceEvent">
+        SELECT <include refid="eventColumns"/>
+        FROM agent_trace_event
+        WHERE session_id = #{sessionId}
+        <if test="type != null and type != ''">
+            AND event_type = #{type}
+        </if>
+        <if test="callId != null and callId != ''">
+            AND call_id = #{callId}
+        </if>
+        <if test="step != null">
+            AND step_no = #{step}
+        </if>
+        ORDER BY seq ASC
+        LIMIT #{size} OFFSET #{offset}
+    </select>
+
+    <select id="countPage" resultType="long">
+        SELECT COUNT(*)
+        FROM agent_trace_event
+        WHERE session_id = #{sessionId}
+        <if test="type != null and type != ''">
+            AND event_type = #{type}
+        </if>
+        <if test="callId != null and callId != ''">
+            AND call_id = #{callId}
+        </if>
+        <if test="step != null">
+            AND step_no = #{step}
+        </if>
+    </select>
+
+    <select id="selectExportBatch" resultType="com.campus.ai.trace.domain.AgentTraceEvent">
+        SELECT <include refid="eventColumns"/>
+        FROM agent_trace_event
+        WHERE session_id = #{sessionId}
+          AND seq &gt; #{afterSeq}
+        ORDER BY seq ASC
+        LIMIT #{size}
+    </select>
+
+    <select id="selectMaxTurn" resultType="java.lang.Integer">
+        SELECT COALESCE(MAX(turn_no), 0)
+        FROM agent_trace_event
+        WHERE session_id = #{sessionId}
+    </select>
+
+    <select id="selectDurations" resultType="com.campus.ai.trace.domain.AgentTraceEvent">
+        SELECT
+            event_type AS eventType,
+            tool_name AS toolName,
+            duration_ms AS durationMs
+        FROM agent_trace_event
+        WHERE session_id = #{sessionId}
+          AND duration_ms IS NOT NULL
+    </select>
+
+    <select id="selectPlanEvents" resultType="com.campus.ai.trace.domain.AgentTraceEvent">
+        SELECT
+            seq,
+            event_type AS eventType,
+            call_id AS callId,
+            payload_json AS payloadJson
+        FROM agent_trace_event
+        WHERE session_id = #{sessionId}
+          AND event_type IN ('plan/draft', 'plan/validate', 'plan/revise')
+        ORDER BY seq ASC
+    </select>
+</mapper>

@@ -21,7 +21,9 @@ const router = createRouter({
         { path: 'maps/:id', component: MapWorkspaceView },
         { path: 'friends', component: FriendsView },
         { path: 'activities', component: ActivitiesView },
-        { path: 'assistant', component: AssistantView }
+        { path: 'assistant', component: AssistantView },
+        // 执行追踪页面较大，懒加载避免进主包
+        { path: 'traces', component: () => import('../views/TraceCenterView.vue') }
       ]
     }
   ]

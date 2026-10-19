@@ -11,6 +11,7 @@
         </el-badge>
         <router-link to="/activities" class="nav-item" :class="{ active: isActive('/activities') }">活动日程</router-link>
         <router-link to="/assistant" class="nav-item" :class="{ active: isActive('/assistant') }">AI 助手</router-link>
+        <router-link to="/traces" class="nav-item" :class="{ active: isActive('/traces') }">执行追踪</router-link>
       </nav>
       <div class="app-topbar__right">
         <el-button text size="small" @click="logout">退出</el-button>

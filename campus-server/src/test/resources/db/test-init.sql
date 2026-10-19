@@ -324,3 +324,61 @@ CREATE TABLE IF NOT EXISTS message (
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     KEY idx_conv_created (conversation_id, created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS agent_trace_session (
+    id                  CHAR(36) PRIMARY KEY,
+    user_id             BIGINT NOT NULL,
+    conversation_id     BIGINT NULL,
+    shared_map_id       BIGINT NULL,
+    group_id            BIGINT NULL,
+    draft_id            BIGINT NULL,
+    trigger_source      VARCHAR(32) NOT NULL DEFAULT 'chat',
+    provider            VARCHAR(64) NULL,
+    model               VARCHAR(128) NULL,
+    status              VARCHAR(24) NOT NULL DEFAULT 'RUNNING',
+    started_at          DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    ended_at            DATETIME(3) NULL,
+    duration_ms         BIGINT NULL,
+    prompt_tokens       BIGINT NULL,
+    completion_tokens   BIGINT NULL,
+    total_tokens        BIGINT NULL,
+    event_count         INT NOT NULL DEFAULT 0,
+    tool_call_count     INT NOT NULL DEFAULT 0,
+    error_count         INT NOT NULL DEFAULT 0,
+    dropped_count       INT NOT NULL DEFAULT 0,
+    next_seq            BIGINT NOT NULL DEFAULT 0,
+    last_error_code     VARCHAR(128) NULL,
+    created_at          DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    updated_at          DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3)
+                        ON UPDATE CURRENT_TIMESTAMP(3),
+    INDEX idx_trace_user_time (user_id, started_at),
+    INDEX idx_trace_conversation (conversation_id, started_at),
+    INDEX idx_trace_map_time (shared_map_id, started_at),
+    INDEX idx_trace_group_time (group_id, started_at),
+    INDEX idx_trace_status_time (status, started_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS agent_trace_event (
+    id                  BIGINT AUTO_INCREMENT PRIMARY KEY,
+    session_id          CHAR(36) NOT NULL,
+    trace_id            CHAR(36) NOT NULL,
+    seq                 BIGINT NOT NULL,
+    event_type          VARCHAR(64) NOT NULL,
+    occurred_at_ms      BIGINT NOT NULL,
+    persisted_at        DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    turn_no             INT NULL,
+    step_no             INT NULL,
+    call_id             VARCHAR(128) NULL,
+    parent_event_id     BIGINT NULL,
+    status              VARCHAR(24) NULL,
+    duration_ms         BIGINT NULL,
+    tool_name           VARCHAR(128) NULL,
+    error_code          VARCHAR(128) NULL,
+    payload_json        JSON NOT NULL,
+    UNIQUE KEY uk_trace_session_seq (session_id, seq),
+    INDEX idx_trace_type_time (event_type, occurred_at_ms),
+    INDEX idx_trace_call (session_id, call_id),
+    INDEX idx_trace_request (trace_id, occurred_at_ms),
+    CONSTRAINT fk_trace_event_session FOREIGN KEY (session_id)
+        REFERENCES agent_trace_session(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

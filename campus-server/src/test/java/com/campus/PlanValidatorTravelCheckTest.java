@@ -2,6 +2,7 @@ package com.campus;
 
 import com.campus.ai.dto.PlanDto;
 import com.campus.ai.dto.PlanStop;
+import com.campus.ai.plan.PlanValidationException;
 import com.campus.ai.plan.PlanValidator;
 import com.campus.ai.travel.PoiItem;
 import com.campus.ai.travel.RouteInfo;
@@ -85,11 +86,20 @@ class PlanValidatorTravelCheckTest {
         // 真实步行 10 分钟、只留 8 分钟 → 拒绝；文案含"步行约 10 分钟"、"只留了 8 分钟"与最早可设时间
         String earliest = START.plusMinutes(30).plusSeconds(600).format(HHMMSS);
         assertThatThrownBy(() -> validator(provider(600L, false)).validate(planWithGapSeconds(8 * 60), 1L))
-                .isInstanceOf(BusinessException.class)
+                .isInstanceOf(PlanValidationException.class)
                 .hasMessageContaining("步行约 10 分钟")
                 .hasMessageContaining("只留了 8 分钟")
                 .hasMessageContaining("设为 " + earliest + " 或更晚")
-                .hasMessageContaining("未填写时按步行估算");
+                .hasMessageContaining("未填写时按步行估算")
+                .satisfies(ex -> {
+                    PlanValidationException pve = (PlanValidationException) ex;
+                    assertThat(pve.getRuleId()).isEqualTo("TRAVEL_TIME_CONFLICT");
+                    assertThat(pve.getDetails())
+                            .containsEntry("availableMinutes", 8L)
+                            .containsEntry("requiredMinutes", 10L)
+                            .containsEntry("fromSeq", 1)
+                            .containsEntry("toSeq", 2);
+                });
     }
 
     @Test

@@ -179,6 +179,32 @@ class LlmClientStreamContractTest {
     }
 
     @Test
+    void usagePromptCompletionAndTotalAreParsedWhenReturned() throws Exception {
+        Map<String, Object> root = new LinkedHashMap<>(choice(Map.of("content", "好的"), "stop"));
+        root.put("usage", Map.of("total_tokens", 30, "prompt_tokens", 20, "completion_tokens", 10));
+        String chunk = data(root) + "\n\n";
+        LlmResponse response = start(exchange -> writeStream(exchange,
+                chunk, "data: [DONE]\n\n"))
+                .chat(userMessage(), null, null, null);
+
+        assertThat(response.totalTokens()).isEqualTo(30);
+        assertThat(response.promptTokens()).isEqualTo(20);
+        assertThat(response.completionTokens()).isEqualTo(10);
+    }
+
+    @Test
+    void missingUsageLeavesTokensNullInsteadOfZero() throws Exception {
+        String chunk = data(choice(Map.of("content", "没有 usage"), "stop")) + "\n\n";
+        LlmResponse response = start(exchange -> writeStream(exchange,
+                chunk, "data: [DONE]\n\n"))
+                .chat(userMessage(), null, null, null);
+
+        assertThat(response.totalTokens()).isNull();
+        assertThat(response.promptTokens()).isNull();
+        assertThat(response.completionTokens()).isNull();
+    }
+
+    @Test
     void nonHttp200SurfacesStatusAndKey() throws Exception {
         LlmClient client = start(exchange ->
                 writeResponse(exchange, 500, "provider boom".getBytes(StandardCharsets.UTF_8)));

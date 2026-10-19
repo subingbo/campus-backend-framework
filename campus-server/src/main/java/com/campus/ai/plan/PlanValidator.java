@@ -19,17 +19,25 @@ import org.springframework.util.StringUtils;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 草稿独立校验层（评审 P0）：模型输出绝不直接入库。
  * Schema 字段 / 起止时间 / 站点顺序 / 坐标合法性 / placeId 存在性与可见性 / 业务约束全部在此把关。
  * P1.5 扩展：未知字段宽容解析（向后兼容）、来源/覆盖字段整形，站点间交通运输时间硬校验
  * （真实耗时 ≤ 站点间隔，两小时排不了三个地点），总交通耗时由重算覆写，不信任模型给值。
+ *
+ * <p>P0 Trace：所有失败改为 {@link PlanValidationException}，携带稳定 ruleId 与结构化 details；
+ * 用户可见文案与 HTTP code 保持不变。</p>
  */
 @Slf4j
 @Component
 public class PlanValidator {
+
+    /** 校验规则集合版本；plan/validate 事件记录它，便于后续规则演进对比 */
+    public static final String RULE_SET = "plan-v1";
 
     private static final List<String> CATEGORIES = List.of("MEETING", "COMPETITION", "OTHER");
     private static final List<String> TRANSPORTS = List.of("WALK", "RIDE", "DRIVE", "TRANSIT");
@@ -67,21 +75,21 @@ public class PlanValidator {
         try {
             plan = lenientMapper.readValue(planJson, PlanDto.class);
         } catch (Exception ex) {
-            throw new BusinessException(ResultCode.BAD_REQUEST.getCode(), "规划草稿 JSON 无法解析");
+            throw new PlanValidationException("PLAN_JSON_INVALID", "规划草稿 JSON 无法解析");
         }
         return validate(plan, userId);
     }
 
     public PlanDto validate(PlanDto plan, Long userId) {
         if (plan == null) {
-            throw new BusinessException(ResultCode.BAD_REQUEST.getCode(), "规划草稿为空");
+            throw new PlanValidationException("PLAN_EMPTY", "规划草稿为空");
         }
         if (!StringUtils.hasText(plan.getTitle())) {
-            throw new BusinessException(ResultCode.BAD_REQUEST.getCode(), "活动标题缺失");
+            throw new PlanValidationException("TITLE_MISSING", "活动标题缺失");
         }
         plan.setTitle(plan.getTitle().trim());
         if (plan.getTitle().length() > 128) {
-            throw new BusinessException(ResultCode.BAD_REQUEST.getCode(), "活动标题过长");
+            throw new PlanValidationException("TITLE_TOO_LONG", "活动标题过长");
         }
         if (plan.getSummary() != null) {
             plan.setSummary(plan.getSummary().trim());
@@ -94,57 +102,67 @@ public class PlanValidator {
         if (plan.getCategory() == null || plan.getCategory().isBlank()) {
             plan.setCategory("OTHER");
         } else if (!CATEGORIES.contains(plan.getCategory())) {
-            throw new BusinessException(ResultCode.BAD_REQUEST.getCode(), "活动类型无效");
+            throw new PlanValidationException("CATEGORY_INVALID", "活动类型无效");
         }
         if (plan.getStartTime() == null || plan.getEndTime() == null) {
-            throw new BusinessException(ResultCode.BAD_REQUEST.getCode(), "活动起止时间缺失");
+            throw new PlanValidationException("TIME_MISSING", "活动起止时间缺失");
         }
         if (!plan.getEndTime().isAfter(plan.getStartTime())) {
-            throw new BusinessException(ResultCode.BAD_REQUEST.getCode(), "活动结束时间必须晚于开始时间");
+            throw new PlanValidationException("TIME_ORDER_INVALID", "活动结束时间必须晚于开始时间");
         }
         if (plan.getStartTime().isBefore(LocalDateTime.now().minusMinutes(2))) {
-            throw new BusinessException(ResultCode.BAD_REQUEST.getCode(), "活动开始时间已过去，请调整为未来时间");
+            throw new PlanValidationException("TIME_IN_PAST", "活动开始时间已过去，请调整为未来时间");
         }
         if (plan.getMaxMembers() == null) {
             plan.setMaxMembers(20);
         }
         if (plan.getMaxMembers() < 1 || plan.getMaxMembers() > 500) {
-            throw new BusinessException(ResultCode.BAD_REQUEST.getCode(), "人数上限须在 1-500");
+            throw new PlanValidationException("MAX_MEMBERS_INVALID", "人数上限须在 1-500");
         }
         if (plan.getStops() == null || plan.getStops().isEmpty()) {
-            throw new BusinessException(ResultCode.BAD_REQUEST.getCode(), "行程站点至少 1 个");
+            throw new PlanValidationException("STOPS_EMPTY", "行程站点至少 1 个");
         }
         if (plan.getStops().size() > MAX_STOPS) {
-            throw new BusinessException(ResultCode.BAD_REQUEST.getCode(), "行程站点最多 " + MAX_STOPS + " 个");
+            throw new PlanValidationException("STOPS_TOO_MANY", "行程站点最多 " + MAX_STOPS + " 个");
         }
         LocalDateTime reached = null;
         for (int i = 0; i < plan.getStops().size(); i++) {
             PlanStop stop = plan.getStops().get(i);
             if (!StringUtils.hasText(stop.getName())) {
-                throw new BusinessException(ResultCode.BAD_REQUEST.getCode(), "第 " + (i + 1) + " 个站点缺少名称");
+                throw fail("STOP_NAME_MISSING", "第 " + (i + 1) + " 个站点缺少名称",
+                        Map.of("stopSeq", i + 1));
             }
             stop.setName(stop.getName().trim());
             if (stop.getName().length() > 128) {
                 stop.setName(stop.getName().substring(0, 128));
             }
             if (stop.getPlaceId() != null) {
-                Place place = placeService.requireActivePlace(stop.getPlaceId());
+                Place place;
+                try {
+                    place = placeService.requireActivePlace(stop.getPlaceId());
+                } catch (BusinessException ex) {
+                    throw new PlanValidationException(ex.getCode(), "PLACE_NOT_FOUND", ex.getMessage(),
+                            Map.of("stopSeq", i + 1, "placeId", stop.getPlaceId()));
+                }
                 stop.setLongitude(place.getLongitude().doubleValue());
                 stop.setLatitude(place.getLatitude().doubleValue());
             } else {
                 if (stop.getLongitude() == null || stop.getLatitude() == null) {
-                    throw new BusinessException(ResultCode.BAD_REQUEST.getCode(),
-                            "站点「" + stop.getName() + "」缺少地点或坐标");
+                    throw fail("STOP_LOCATION_MISSING",
+                            "站点「" + stop.getName() + "」缺少地点或坐标",
+                            Map.of("stopSeq", i + 1));
                 }
                 if (stop.getLongitude() < -180 || stop.getLongitude() > 180
                         || stop.getLatitude() < -90 || stop.getLatitude() > 90) {
-                    throw new BusinessException(ResultCode.BAD_REQUEST.getCode(),
-                            "站点「" + stop.getName() + "」坐标无效");
+                    throw fail("STOP_COORD_INVALID",
+                            "站点「" + stop.getName() + "」坐标无效",
+                            Map.of("stopSeq", i + 1));
                 }
             }
             if (stop.getTransportMode() != null && !TRANSPORTS.contains(stop.getTransportMode())) {
-                throw new BusinessException(ResultCode.BAD_REQUEST.getCode(),
-                        "站点「" + stop.getName() + "」交通方式无效");
+                throw fail("STOP_TRANSPORT_INVALID",
+                        "站点「" + stop.getName() + "」交通方式无效",
+                        Map.of("stopSeq", i + 1));
             }
             if (stop.getSource() != null && !SOURCES.contains(stop.getSource())) {
                 // 模型给的来源标签只保留可识别值；权威覆写在提交盖章阶段
@@ -156,22 +174,26 @@ public class PlanValidator {
             }
             if (stop.getStartTime() != null) {
                 if (stop.getStartTime().isBefore(plan.getStartTime())) {
-                    throw new BusinessException(ResultCode.BAD_REQUEST.getCode(),
-                            "站点「" + stop.getName() + "」早于活动开始时间");
+                    throw fail("STOP_TIME_BEFORE_ACTIVITY",
+                            "站点「" + stop.getName() + "」早于活动开始时间",
+                            Map.of("stopSeq", i + 1));
                 }
                 if (reached != null && stop.getStartTime().isBefore(reached)) {
-                    throw new BusinessException(ResultCode.BAD_REQUEST.getCode(), "站点时间顺序不正确");
+                    throw fail("STOP_TIME_ORDER_INVALID", "站点时间顺序不正确",
+                            Map.of("stopSeq", i + 1));
                 }
                 reached = stop.getStartTime();
             }
             if (stop.getEndTime() != null) {
                 if (stop.getStartTime() != null && stop.getEndTime().isBefore(stop.getStartTime())) {
-                    throw new BusinessException(ResultCode.BAD_REQUEST.getCode(),
-                            "站点「" + stop.getName() + "」结束时间早于开始时间");
+                    throw fail("STOP_END_BEFORE_START",
+                            "站点「" + stop.getName() + "」结束时间早于开始时间",
+                            Map.of("stopSeq", i + 1));
                 }
                 if (stop.getEndTime().isAfter(plan.getEndTime())) {
-                    throw new BusinessException(ResultCode.BAD_REQUEST.getCode(),
-                            "站点「" + stop.getName() + "」晚于活动结束时间");
+                    throw fail("STOP_END_AFTER_ACTIVITY",
+                            "站点「" + stop.getName() + "」晚于活动结束时间",
+                            Map.of("stopSeq", i + 1));
                 }
                 if (reached == null || stop.getEndTime().isAfter(reached)) {
                     reached = stop.getEndTime();
@@ -186,7 +208,12 @@ public class PlanValidator {
         if (plan.getReferenceMapId() != null) {
             // 复用共享地图的可见性校验：非成员且非公开即拒绝（防止引用他人地图）。
             // 校验可能发生在群聊 agent 线程（无 SecurityContext），必须显式传 userId
-            sharedMapService.getMapDetailAs(plan.getReferenceMapId(), userId);
+            try {
+                sharedMapService.getMapDetailAs(plan.getReferenceMapId(), userId);
+            } catch (BusinessException ex) {
+                throw new PlanValidationException(ex.getCode(), "REFERENCE_MAP_FORBIDDEN",
+                        ex.getMessage(), Map.of("mapId", plan.getReferenceMapId()));
+            }
         }
         return plan;
     }
@@ -196,20 +223,23 @@ public class PlanValidator {
         if (plan.getSourceMapIds() != null) {
             List<Long> distinct = plan.getSourceMapIds().stream().distinct().toList();
             if (distinct.size() > 8) {
-                throw new BusinessException(ResultCode.BAD_REQUEST.getCode(), "方案关联共享地图最多 8 张");
+                throw fail("SOURCE_MAP_TOO_MANY", "方案关联共享地图最多 8 张",
+                        Map.of("limit", 8, "actual", distinct.size()));
             }
             plan.setSourceMapIds(distinct);
         }
         if (plan.getSelectedPlaceIds() != null) {
             List<Long> distinct = plan.getSelectedPlaceIds().stream().distinct().toList();
             if (distinct.size() > 16) {
-                throw new BusinessException(ResultCode.BAD_REQUEST.getCode(), "方案选用地点过多");
+                throw fail("PLACE_TOO_MANY", "方案选用地点过多",
+                        Map.of("limit", 16, "actual", distinct.size()));
             }
             plan.setSelectedPlaceIds(distinct);
         }
         if (plan.getAvailabilityCoverage() != null) {
             if (plan.getAvailabilityCoverage().size() > 100) {
-                throw new BusinessException(ResultCode.BAD_REQUEST.getCode(), "忙闲覆盖数据异常");
+                throw fail("COVERAGE_TOO_LARGE", "忙闲覆盖数据异常",
+                        Map.of("limit", 100, "actual", plan.getAvailabilityCoverage().size()));
             }
             List<PlanDto.PlanCoverage> coverage = new ArrayList<>();
             for (PlanDto.PlanCoverage item : plan.getAvailabilityCoverage()) {
@@ -263,9 +293,15 @@ public class PlanValidator {
             if ("TRANSIT".equals(mode)) {
                 continue; // 公交暂无可靠路线接口，不作为硬校验依据
             }
-            RouteInfo route = travelInfoProvider.searchRoute(mode,
-                    current.getLongitude(), current.getLatitude(),
-                    next.getLongitude(), next.getLatitude());
+            RouteInfo route;
+            try {
+                route = travelInfoProvider.searchRoute(mode,
+                        current.getLongitude(), current.getLatitude(),
+                        next.getLongitude(), next.getLatitude());
+            } catch (BusinessException ex) {
+                throw failWithCode(ex.getCode(), "ROUTE_ESTIMATE_FAILED", ex.getMessage(),
+                        Map.of("fromSeq", i + 1, "toSeq", i + 2));
+            }
             if (route.getDurationSeconds() == null) {
                 continue;
             }
@@ -288,11 +324,20 @@ public class PlanValidator {
             // 文案给出可执行的"最早开始时间"与交通方式口径（未填 transportMode 按步行估算）
             if (gapSeconds < travelSeconds) {
                 LocalDateTime earliest = current.getEndTime().plusSeconds(travelSeconds);
-                throw new BusinessException(ResultCode.BAD_REQUEST.getCode(), String.format(
+                Map<String, Object> details = new LinkedHashMap<>();
+                details.put("fromSeq", i + 1);
+                details.put("toSeq", i + 2);
+                details.put("transportMode", mode);
+                details.put("availableMinutes", Math.max(0, gapSeconds) / 60);
+                details.put("requiredMinutes", travelMinutes);
+                details.put("earliestStart", earliest.format(HHMMSS));
+                throw new PlanValidationException(ResultCode.BAD_REQUEST.getCode(),
+                        "TRAVEL_TIME_CONFLICT", String.format(
                         "「%s」→「%s」%s约 %d 分钟，但时间表只留了 %d 分钟；请把「%s」的开始时间设为 %s 或更晚"
                                 + "（该段按目标站交通方式计算，未填写时按步行估算）",
                         current.getName(), next.getName(), transportLabel(mode), travelMinutes,
-                        Math.max(0, gapSeconds) / 60, next.getName(), earliest.format(HHMMSS)));
+                        Math.max(0, gapSeconds) / 60, next.getName(), earliest.format(HHMMSS)),
+                        details);
             }
         }
         if (!segments.isEmpty()) {
@@ -309,5 +354,14 @@ public class PlanValidator {
             case "TRANSIT" -> "公交";
             default -> "步行";
         };
+    }
+
+    private PlanValidationException fail(String ruleId, String message, Map<String, Object> details) {
+        return new PlanValidationException(ResultCode.BAD_REQUEST.getCode(), ruleId, message, details);
+    }
+
+    private PlanValidationException failWithCode(int code, String ruleId, String message,
+                                                 Map<String, Object> details) {
+        return new PlanValidationException(code, ruleId, message, details);
     }
 }

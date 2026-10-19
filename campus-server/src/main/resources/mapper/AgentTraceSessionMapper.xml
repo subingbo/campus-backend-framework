@@ -1,0 +1,179 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.campus.ai.trace.mapper.AgentTraceSessionMapper">
+
+    <insert id="insert">
+        INSERT INTO agent_trace_session
+            (id, user_id, conversation_id, shared_map_id, group_id, draft_id,
+             trigger_source, provider, model, status, started_at,
+             event_count, tool_call_count, error_count, dropped_count, next_seq)
+        VALUES
+            (#{id}, #{userId}, #{conversationId}, #{sharedMapId}, #{groupId}, #{draftId},
+             #{triggerSource}, #{provider}, #{model}, #{status}, #{startedAt},
+             0, 0, 0, 0, 0)
+    </insert>
+
+    <sql id="sessionColumns">
+        id,
+        user_id AS userId,
+        conversation_id AS conversationId,
+        shared_map_id AS sharedMapId,
+        group_id AS groupId,
+        draft_id AS draftId,
+        trigger_source AS triggerSource,
+        provider,
+        model,
+        status,
+        started_at AS startedAt,
+        ended_at AS endedAt,
+        duration_ms AS durationMs,
+        prompt_tokens AS promptTokens,
+        completion_tokens AS completionTokens,
+        total_tokens AS totalTokens,
+        event_count AS eventCount,
+        tool_call_count AS toolCallCount,
+        error_count AS errorCount,
+        dropped_count AS droppedCount,
+        next_seq AS nextSeq,
+        last_error_code AS lastErrorCode,
+        created_at AS createdAt,
+        updated_at AS updatedAt
+    </sql>
+
+    <select id="selectById" resultType="com.campus.ai.trace.domain.AgentTraceSession">
+        SELECT <include refid="sessionColumns"/>
+        FROM agent_trace_session
+        WHERE id = #{id}
+        LIMIT 1
+    </select>
+
+    <select id="selectByIdAndUser" resultType="com.campus.ai.trace.domain.AgentTraceSession">
+        SELECT <include refid="sessionColumns"/>
+        FROM agent_trace_session
+        WHERE id = #{id} AND user_id = #{userId}
+        LIMIT 1
+    </select>
+
+    <select id="selectLatestByConversation" resultType="com.campus.ai.trace.domain.AgentTraceSession">
+        SELECT <include refid="sessionColumns"/>
+        FROM agent_trace_session
+        WHERE conversation_id = #{conversationId}
+        ORDER BY started_at DESC, created_at DESC
+        LIMIT 1
+    </select>
+
+    <select id="selectPage" resultType="com.campus.ai.trace.domain.AgentTraceSession">
+        SELECT <include refid="sessionColumns"/>
+        FROM agent_trace_session
+        WHERE user_id = #{userId}
+        <if test="status != null and status != ''">
+            AND status = #{status}
+        </if>
+        ORDER BY started_at DESC, created_at DESC
+        LIMIT #{size} OFFSET #{offset}
+    </select>
+
+    <select id="countPage" resultType="long">
+        SELECT COUNT(*)
+        FROM agent_trace_session
+        WHERE user_id = #{userId}
+        <if test="status != null and status != ''">
+            AND status = #{status}
+        </if>
+    </select>
+
+    <select id="selectNextSeqForUpdate" resultType="java.lang.Long">
+        SELECT next_seq
+        FROM agent_trace_session
+        WHERE id = #{id}
+        FOR UPDATE
+    </select>
+
+    <update id="allocateSeq">
+        UPDATE agent_trace_session
+        SET next_seq = #{newSeq},
+            event_count = event_count + 1,
+            updated_at = NOW(3)
+        WHERE id = #{id}
+    </update>
+
+    <update id="incrementToolCall">
+        UPDATE agent_trace_session
+        SET tool_call_count = tool_call_count + 1,
+            updated_at = NOW(3)
+        WHERE id = #{id}
+    </update>
+
+    <update id="incrementError">
+        UPDATE agent_trace_session
+        SET error_count = error_count + 1,
+            updated_at = NOW(3)
+        WHERE id = #{id}
+    </update>
+
+    <update id="addTokens">
+        UPDATE agent_trace_session
+        <set>
+            <if test="prompt != null">
+                prompt_tokens = COALESCE(prompt_tokens, 0) + #{prompt},
+            </if>
+            <if test="completion != null">
+                completion_tokens = COALESCE(completion_tokens, 0) + #{completion},
+            </if>
+            <if test="total != null">
+                total_tokens = COALESCE(total_tokens, 0) + #{total},
+            </if>
+            updated_at = NOW(3)
+        </set>
+        WHERE id = #{id}
+    </update>
+
+    <update id="bindDraft">
+        UPDATE agent_trace_session
+        SET draft_id = COALESCE(draft_id, #{draftId}),
+            updated_at = NOW(3)
+        WHERE id = #{id}
+    </update>
+
+    <update id="bindContext">
+        UPDATE agent_trace_session
+        SET shared_map_id = COALESCE(shared_map_id, #{sharedMapId}),
+            group_id = COALESCE(group_id, #{groupId}),
+            updated_at = NOW(3)
+        WHERE id = #{id}
+    </update>
+
+    <update id="finish">
+        UPDATE agent_trace_session
+        SET status = #{status},
+            ended_at = #{endedAt},
+            duration_ms = #{durationMs},
+            last_error_code = #{lastErrorCode},
+            updated_at = NOW(3)
+        WHERE id = #{id} AND status = 'RUNNING'
+    </update>
+
+    <update id="incrementDropped">
+        UPDATE agent_trace_session
+        SET dropped_count = dropped_count + #{count},
+            updated_at = NOW(3)
+        WHERE id = #{id}
+    </update>
+
+    <select id="selectStaleRunning" resultType="java.lang.String">
+        SELECT id
+        FROM agent_trace_session
+        WHERE status = 'RUNNING'
+          AND started_at &lt; #{cutoff}
+        ORDER BY started_at
+        LIMIT #{limit}
+    </select>
+
+    <delete id="deleteOlderThan">
+        DELETE FROM agent_trace_session
+        WHERE started_at &lt; #{cutoff}
+        ORDER BY started_at
+        LIMIT #{limit}
+    </delete>
+</mapper>

@@ -4,6 +4,7 @@ import com.campus.ai.dto.PlanDto;
 import com.campus.ai.entity.AiConversation;
 import com.campus.ai.mapper.AiConversationMapper;
 import com.campus.ai.tool.AgentToolkit;
+import com.campus.ai.trace.dto.TraceTrigger;
 import com.campus.map.entity.SharedMap;
 import com.campus.map.mapper.MapMemberMapper;
 import com.campus.map.mapper.SharedMapMapper;
@@ -79,11 +80,11 @@ public class GroupAgentService {
             return false;
         }
         long groupId = map.getGroupId();
-        pool.submit(() -> runForGroup(askerId, conversation.getId(), groupId, prompt));
+        pool.submit(() -> runForGroup(askerId, conversation.getId(), mapId, groupId, prompt));
         return true;
     }
 
-    private void runForGroup(Long askerId, Long conversationId, long groupId, String prompt) {
+    private void runForGroup(Long askerId, Long conversationId, Long mapId, long groupId, String prompt) {
         AiConversation conversation = new AiConversation();
         conversation.setUserId(askerId);
         conversation.setStatus(AiConversation.STATUS_CHATTING);
@@ -102,7 +103,8 @@ public class GroupAgentService {
         try {
             // 场景 D 续聊：把 24h 内该群上一轮草稿与 AGENT 回复带进本轮输入，支持“把第二个方案创建成活动”
             String effectivePrompt = prompt + continuationContext(askerId, groupId, conversationId);
-            agentService.run(prepared, effectivePrompt, listener);
+            agentService.run(prepared, effectivePrompt, listener, null,
+                    TraceTrigger.groupChat(mapId, groupId));
         } catch (Exception ex) {
             log.error("@AI 规划异常 conversation={}：{}", conversationId, ex.toString());
         } finally {

@@ -2,7 +2,6 @@ package com.campus.ai.llm;
 
 import com.campus.ai.config.LlmProperties;
 import com.campus.common.exception.BusinessException;
-import com.campus.common.result.ResultCode;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
@@ -48,7 +47,7 @@ public class LlmClient {
                             BooleanSupplier cancelled) {
         if (properties.getApiKey() == null || properties.getApiKey().isBlank()) {
             log.error("campus.llm.api-key 未配置（application-secrets.properties 或环境变量 DASHSCOPE_API_KEY）");
-            throw new BusinessException(ResultCode.INTERNAL_ERROR.getCode(), "AI 助手未配置模型 API Key");
+            throw new LlmClientException("LLM_NOT_CONFIGURED", null, "AI 助手未配置模型 API Key");
         }
         Map<String, Object> body = new HashMap<>();
         body.put("model", properties.getModel());
@@ -66,14 +65,16 @@ public class LlmClient {
         TreeMap<Integer, String> toolNames = new TreeMap<>();
         TreeMap<Integer, String> toolArgs = new TreeMap<>();
         String finishReason = null;
-        int totalTokens = 0;
+        Integer totalTokens = null;
+        Integer promptTokens = null;
+        Integer completionTokens = null;
         try {
             HttpResponse<InputStream> response =
                     httpClient.send(request, HttpResponse.BodyHandlers.ofInputStream());
             if (response.statusCode() != 200) {
                 String error = new String(response.body().readAllBytes(), StandardCharsets.UTF_8);
                 log.error("LLM 调用失败 HTTP {} body={}", response.statusCode(), abbreviate(error));
-                throw new BusinessException(ResultCode.INTERNAL_ERROR.getCode(),
+                throw new LlmClientException("LLM_HTTP_ERROR", response.statusCode(),
                         "模型服务暂时不可用（HTTP " + response.statusCode() + "）");
             }
             try (BufferedReader reader = new BufferedReader(
@@ -81,7 +82,7 @@ public class LlmClient {
                 String line;
                 while ((line = reader.readLine()) != null) {
                     if (cancelled != null && cancelled.getAsBoolean()) {
-                        throw new BusinessException(ResultCode.INTERNAL_ERROR.getCode(), "客户端已取消");
+                        throw new LlmClientException("LLM_CANCELLED", null, "客户端已取消");
                     }
                     if (!line.startsWith("data:")) {
                         continue;
@@ -103,7 +104,16 @@ public class LlmClient {
                     }
                     JsonNode usage = chunk.path("usage");
                     if (usage.isObject()) {
-                        totalTokens = usage.path("total_tokens").asInt(totalTokens);
+                        // 只记录服务端实际返回的用量；缺字段保持 null，不伪造 0
+                        if (usage.has("total_tokens")) {
+                            totalTokens = usage.path("total_tokens").asInt();
+                        }
+                        if (usage.has("prompt_tokens")) {
+                            promptTokens = usage.path("prompt_tokens").asInt();
+                        }
+                        if (usage.has("completion_tokens")) {
+                            completionTokens = usage.path("completion_tokens").asInt();
+                        }
                     }
                     JsonNode choice = chunk.path("choices").path(0);
                     JsonNode delta = choice.path("delta");
@@ -147,9 +157,12 @@ public class LlmClient {
         } catch (java.io.IOException | InterruptedException ex) {
             if (ex instanceof InterruptedException) {
                 Thread.currentThread().interrupt();
+                throw new LlmClientException("LLM_INTERRUPTED", null, "模型调用被中断");
             }
             log.error("LLM 调用异常：{}", ex.toString());
-            throw new BusinessException(ResultCode.INTERNAL_ERROR.getCode(), "模型调用失败或超时，请稍后重试");
+            String errorType = ex instanceof java.net.http.HttpTimeoutException
+                    ? "LLM_TIMEOUT" : "LLM_IO_ERROR";
+            throw new LlmClientException(errorType, null, "模型调用失败或超时，请稍后重试");
         }
 
         List<LlmToolCall> toolCallList = new ArrayList<>();
@@ -167,7 +180,9 @@ public class LlmClient {
                 content.toString(),
                 finishReason == null ? "stop" : finishReason,
                 toolCallList,
-                totalTokens);
+                totalTokens,
+                promptTokens,
+                completionTokens);
     }
 
     private HttpRequest buildRequest(Map<String, Object> body) {
@@ -179,7 +194,7 @@ public class LlmClient {
                     .POST(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(body), StandardCharsets.UTF_8))
                     .build();
         } catch (Exception ex) {
-            throw new BusinessException(ResultCode.INTERNAL_ERROR.getCode(), "模型请求构造失败");
+            throw new LlmClientException("LLM_REQUEST_BUILD_ERROR", null, "模型请求构造失败");
         }
     }
 

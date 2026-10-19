@@ -19,3 +19,22 @@ springdoc:
     path: /v3/api-docs
   swagger-ui:
     path: /swagger-ui.html
+
+campus:
+  agent:
+    trace:
+      # P0 执行追踪：默认开启；部署前必须先执行 db/migration/20261019_01__create_agent_trace.sql
+      enabled: true
+      level: SUMMARY          # OFF / SUMMARY / DEBUG（P0 DEBUG 不额外采集原文）
+      max-payload-bytes: 16384
+      writer:
+        queue-capacity: 2000
+        batch-size: 50
+        flush-timeout-ms: 3000
+      retention:
+        detail-days: 30
+        stale-running-minutes: 120
+        cleanup-cron: "0 30 3 * * *"
+      export:
+        enabled: true
+        page-size: 500

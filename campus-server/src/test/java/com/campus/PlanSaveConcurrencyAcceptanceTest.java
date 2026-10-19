@@ -91,8 +91,8 @@ class PlanSaveConcurrencyAcceptanceTest {
         registry.add("spring.datasource.password", MYSQL::getPassword);
         registry.add("spring.data.redis.host", REDIS::getHost);
         registry.add("spring.data.redis.port", () -> REDIS.getMappedPort(6379).toString());
-        // 并发用例每线程一个事务连接同时持有，池容必须 ≥ 并发数
-        registry.add("spring.datasource.hikari.maximum-pool-size", () -> "12");
+        // 并发用例每线程一个业务事务连接 + Trace 的独立短事务，池容留出余量
+        registry.add("spring.datasource.hikari.maximum-pool-size", () -> "20");
     }
 
     @MockitoBean

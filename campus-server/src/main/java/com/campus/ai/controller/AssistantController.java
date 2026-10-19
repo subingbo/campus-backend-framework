@@ -17,6 +17,8 @@ import com.campus.ai.plan.PlanValidator;
 import com.campus.ai.service.AgentChatListener;
 import com.campus.ai.service.AgentService;
 import com.campus.ai.service.PlanSaveService;
+import com.campus.ai.trace.dto.TraceTrigger;
+import com.campus.ai.trace.service.AgentTraceService;
 import com.campus.ai.travel.RouteInfo;
 import com.campus.ai.travel.TravelInfoProvider;
 import com.campus.common.exception.BusinessException;
@@ -76,6 +78,7 @@ public class AssistantController {
     private final AiConversationMapper conversationMapper;
     private final AiMessageMapper messageMapper;
     private final RateLimiter rateLimiter;
+    private final AgentTraceService traceService;
     private final @Qualifier("redisObjectMapper") ObjectMapper objectMapper;
 
     @Operation(summary = "创建规划会话")
@@ -134,7 +137,8 @@ public class AssistantController {
         SSE_POOL.submit(() -> {
             SecurityContextHolder.getContext().setAuthentication(authentication);
             try {
-                agentService.run(conversation, request.getContent(), listener, request.getUserLocation());
+                agentService.run(conversation, request.getContent(), listener, request.getUserLocation(),
+                        TraceTrigger.chat());
             } catch (Exception ex) {
                 log.error("Agent 执行异常 conversation={}：{}", conversation.getId(), ex.toString());
                 if (!cancelled.get()) {
@@ -151,6 +155,9 @@ public class AssistantController {
     @PostMapping("/chats/{id}/plan/save")
     public Result<PlanSaveResponse> savePlan(@PathVariable Long id,
                                              @RequestBody(required = false) PlanSaveRequest request) {
+        // 在进入 @Transactional 保存前预创建 trace session：避免业务事务内额外申请连接
+        AiConversation conversation = requireOwned(id);
+        traceService.ensureSessionForConversation(conversation, TraceTrigger.save(), true);
         return Result.success(planSaveService.save(id,
                 request == null ? null : request.getExpectedPlanVersion()));
     }
@@ -158,6 +165,8 @@ public class AssistantController {
     @Operation(summary = "修订草稿（前端编辑后重校验 + 版本+1；expectedPlanVersion 不符返回 409；asNewDraft=true 时复制为新草稿以便另建活动）")
     @PostMapping("/chats/{id}/plan/revise")
     public Result<RevisePlanResponse> revisePlan(@PathVariable Long id, @Valid @RequestBody RevisePlanRequest request) {
+        AiConversation conversation = requireOwned(id);
+        traceService.ensureSessionForConversation(conversation, TraceTrigger.revise(), false);
         return Result.success(planSaveService.revise(id, request.getPlan(),
                 request.getExpectedPlanVersion(), request.getAsNewDraft()));
     }

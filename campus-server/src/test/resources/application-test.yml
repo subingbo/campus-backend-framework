@@ -3,6 +3,16 @@ campus:
     secret: test-jwt-secret-key-for-integration-tests-32b
     access-token-expiration: 1800
     refresh-token-expiration: 604800
+  agent:
+    trace:
+      enabled: true
+      writer:
+        queue-capacity: 10000
+        batch-size: 100
+        # 并发/1 万事件测试需要等待较多顺序 INSERT；生产默认 3000 不变
+        flush-timeout-ms: 15000
+      retention:
+        cleanup-cron: "0 0 3 * * *"
 
 springdoc:
   api-docs:
