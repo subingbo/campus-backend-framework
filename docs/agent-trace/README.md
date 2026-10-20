@@ -174,6 +174,19 @@ npm --prefix campus-web run build
 `campus-web/src/views/TraceCenterView.vue`、`campus-web/src/api/index.js`（`traceApi`）、
 `campus-web/src/router/index.js`、`campus-web/src/components/AppShell.vue`。
 
+### 9.1 P2-A 执行链模型
+
+新增纯读执行链组装（无新表/无 API）：
+
+- `campus-server/src/main/java/com/campus/ai/trace/execution/`：
+  `TraceExecutionNode`、`TraceExecutionNodeKind`、`TraceLinkConfidence`、
+  `TraceExecutionDiagnostics`、`TraceExecutionAssembly`、`TraceExecutionAssembler`；
+- 按 `seq` 建 SESSION/RUN/TURN/STEP，按 `callId` 配对工具，按 `traceId+turn+step` FIFO 配对 LLM，
+  规划事件按 draftVersion/operation 结构化；
+- 缺失开始/结束、seq gap、重复 callId、未知事件、payload 解析失败全部进入诊断，不补造执行事实；
+- 节点属性走显式白名单，不复制聊天正文/地点/坐标/日程/密钥；
+- 详见 [execution-model.md](execution-model.md)。
+
 ## 10. 不在本轮范围
 
 - 工具响应快照、离线 Stub Replay、模型 A/B 对照（P2）。
