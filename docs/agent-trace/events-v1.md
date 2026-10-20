@@ -35,7 +35,7 @@
 | `step/start` | round | 每轮 Agent 循环 |
 | `step/end` | round、status | 每轮结束 |
 | `llm/request` | provider、model、maxTokens、messageCount、toolCount、stream | 无 prompt 文本 |
-| `llm/response` | finishReason、toolCallCount、toolNames、contentLength、prompt/completion/totalTokens | token 未返回则缺省/null |
+| `llm/response` | model、finishReason、toolCallCount、toolNames、contentLength、prompt/completion/totalTokens | token 未返回则字段缺省；成本估算要求每次响应都有 prompt/completion 且模型唯一 |
 | `llm/error` | errorType、httpStatus、cancelled | 无原始响应体 |
 | `llm/retry` | — | P0 保留；当前 LlmClient 无重试 |
 | `tool/call` | input（白名单摘要） | callId 关联 |
@@ -82,6 +82,12 @@
 {"schemaVersion":1,"type":"plan/validate","sessionId":"...","traceId":"...","seq":22,"time":1792400160,"turn":1,"step":3,"status":"SUCCESS","data":{"phase":"SUBMIT","passed":true,"ruleSet":"plan-v1","stopCount":1,"draftVersion":1,"hasReferenceMap":false}}
 {"schemaVersion":1,"type":"activity/created","sessionId":"...","traceId":"...","seq":35,"time":1792400161,"turn":1,"status":"SUCCESS","data":{"draftId":1,"operation":"CREATE","activityId":1,"draftVersion":1,"idempotentReuse":false}}
 ```
+
+## 4.1 成本相关字段（新增，schemaVersion 仍为 1）
+
+- `llm/response.data` 现在包含 `model`、`promptTokens`、`completionTokens`、`totalTokens`。
+- 这些字段只用于 usage 完整性与读取时成本估算，不含原文/坐标。
+- 2026-10-20 之前导出的旧 Trace 没有 response 级 `model/token` 字段，成本会保守判为不可估算；事件查看/导出不受影响。
 
 ## 5. 版本变更规则
 

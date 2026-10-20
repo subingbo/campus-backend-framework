@@ -13,6 +13,7 @@ import com.campus.ai.trace.dto.TraceContext;
 import com.campus.ai.trace.dto.TraceDraftVersionView;
 import com.campus.ai.trace.dto.TraceEventRecord;
 import com.campus.ai.trace.dto.TraceEventView;
+import com.campus.ai.trace.dto.TraceLlmUsageStat;
 import com.campus.ai.trace.dto.TraceRequest;
 import com.campus.ai.trace.dto.TraceSessionView;
 import com.campus.ai.trace.dto.TraceStartCommand;
@@ -22,7 +23,9 @@ import com.campus.ai.trace.mapper.AgentTraceSessionMapper;
 import com.campus.ai.trace.security.TraceDataRedactor;
 import com.campus.ai.trace.store.AgentTraceWriter;
 import com.campus.ai.trace.store.TraceEventStore;
+import com.campus.common.exception.BusinessException;
 import com.campus.common.result.PageResult;
+import com.campus.common.result.ResultCode;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
@@ -34,6 +37,7 @@ import java.io.OutputStream;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -60,6 +64,7 @@ public class AgentTraceServiceImpl implements AgentTraceService {
     private final AgentTraceProperties properties;
     private final LlmProperties llmProperties;
     private final ObjectMapper objectMapper;
+    private final TraceCostCalculator costCalculator;
 
     private final ConcurrentHashMap<Long, Object> conversationLocks = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Object> sessionLocks = new ConcurrentHashMap<>();
@@ -77,7 +82,8 @@ public class AgentTraceServiceImpl implements AgentTraceService {
                                  AgentTraceExportService exportService,
                                  AgentTraceProperties properties,
                                  LlmProperties llmProperties,
-                                 @Qualifier("redisObjectMapper") ObjectMapper objectMapper) {
+                                 @Qualifier("redisObjectMapper") ObjectMapper objectMapper,
+                                 TraceCostCalculator costCalculator) {
         this.sessionMapper = sessionMapper;
         this.eventMapper = eventMapper;
         this.store = store;
@@ -88,6 +94,7 @@ public class AgentTraceServiceImpl implements AgentTraceService {
         this.properties = properties;
         this.llmProperties = llmProperties;
         this.objectMapper = objectMapper;
+        this.costCalculator = costCalculator;
     }
 
     // ---------- 写入侧 ----------
@@ -220,11 +227,13 @@ public class AgentTraceServiceImpl implements AgentTraceService {
                 return;
             }
             long duration = durationMs(session);
+            long effectiveDropped = safeLong(session.getDroppedCount())
+                    + writer.pendingDroppedCount(sessionId);
             Map<String, Object> data = new LinkedHashMap<>();
             data.put("status", actualStatus);
             data.put("reason", reason);
             data.put("durationMs", duration);
-            data.put("droppedCount", session.getDroppedCount());
+            data.put("droppedCount", effectiveDropped);
             record(TraceEventRecord.builder()
                     .sessionId(sessionId)
                     .traceId(UUID.randomUUID().toString())
@@ -297,7 +306,8 @@ public class AgentTraceServiceImpl implements AgentTraceService {
 
     @Override
     public TraceSessionView getSession(String sessionId, Long requesterUserId) {
-        TraceSessionView view = toView(accessPolicy.requireReadable(sessionId, requesterUserId));
+        AgentTraceSession session = accessPolicy.requireReadable(sessionId, requesterUserId);
+        TraceSessionView view = toView(session, loadUsageStats(List.of(session)).get(session.getId()));
         enrichDetail(view, sessionId);
         return view;
     }
@@ -312,27 +322,43 @@ public class AgentTraceServiceImpl implements AgentTraceService {
             statusFilter = null;
         }
         long total = sessionMapper.countPage(requesterUserId, statusFilter);
-        List<TraceSessionView> list = sessionMapper.selectPage(requesterUserId, statusFilter,
-                        (safePage - 1) * safeSize, safeSize)
-                .stream().map(this::toView).toList();
+        List<AgentTraceSession> sessions = sessionMapper.selectPage(requesterUserId, statusFilter,
+                (safePage - 1) * safeSize, safeSize);
+        Map<String, TraceLlmUsageStat> usageStats = loadUsageStats(sessions);
+        List<TraceSessionView> list = sessions.stream()
+                .map(session -> toView(session, usageStats.get(session.getId())))
+                .toList();
         return PageResult.of(list, safePage, safeSize, total);
     }
 
     @Override
     public PageResult<TraceEventView> listEvents(String sessionId, Long requesterUserId,
                                                  String type, String callId, Integer step,
-                                                 int page, int size) {
+                                                 Long afterSeq, int page, int size) {
         accessPolicy.requireReadable(sessionId, requesterUserId);
+        if (afterSeq != null && afterSeq < 0) {
+            throw new BusinessException(ResultCode.BAD_REQUEST.getCode(), "afterSeq 不能为负数");
+        }
         int safePage = Math.max(1, page);
         int safeSize = Math.min(200, Math.max(1, size));
         String typeFilter = type == null || type.isBlank() ? null : type.trim();
         String callFilter = callId == null || callId.isBlank() ? null : callId.trim();
         Integer stepFilter = step == null || step < 0 ? null : step;
         long total = eventMapper.countPage(sessionId, typeFilter, callFilter, stepFilter);
-        List<TraceEventView> list = eventMapper.selectPage(sessionId, typeFilter, callFilter,
-                        stepFilter, (safePage - 1) * safeSize, safeSize)
-                .stream().map(this::toEventView).toList();
-        return PageResult.of(list, safePage, safeSize, total);
+        List<AgentTraceEvent> rows;
+        int responsePage;
+        if (afterSeq != null) {
+            // 增量模式：afterSeq 优先于 page，page 固定返回 1
+            rows = eventMapper.selectAfterSeq(sessionId, typeFilter, callFilter, stepFilter,
+                    afterSeq, safeSize);
+            responsePage = 1;
+        } else {
+            rows = eventMapper.selectPage(sessionId, typeFilter, callFilter, stepFilter,
+                    (safePage - 1) * safeSize, safeSize);
+            responsePage = safePage;
+        }
+        List<TraceEventView> list = rows.stream().map(this::toEventView).toList();
+        return PageResult.of(list, responsePage, safeSize, total);
     }
 
     @Override
@@ -452,7 +478,32 @@ public class AgentTraceServiceImpl implements AgentTraceService {
         }
     }
 
-    private TraceSessionView toView(AgentTraceSession session) {
+    private Map<String, TraceLlmUsageStat> loadUsageStats(List<AgentTraceSession> sessions) {
+        if (sessions == null || sessions.isEmpty()) {
+            return Map.of();
+        }
+        List<String> ids = sessions.stream()
+                .map(AgentTraceSession::getId)
+                .filter(id -> id != null && !id.isBlank())
+                .toList();
+        if (ids.isEmpty()) {
+            return Map.of();
+        }
+        try {
+            Map<String, TraceLlmUsageStat> result = new HashMap<>();
+            for (TraceLlmUsageStat stat : eventMapper.selectLlmUsageStats(ids)) {
+                if (stat != null && stat.getSessionId() != null) {
+                    result.put(stat.getSessionId(), stat);
+                }
+            }
+            return result;
+        } catch (Throwable ex) {
+            warnFailure("selectLlmUsageStats", ex);
+            return Map.of();
+        }
+    }
+
+    private TraceSessionView toView(AgentTraceSession session, TraceLlmUsageStat usage) {
         TraceSessionView view = new TraceSessionView();
         view.setSessionId(session.getId());
         view.setConversationId(session.getConversationId());
@@ -473,10 +524,27 @@ public class AgentTraceServiceImpl implements AgentTraceService {
         view.setEventCount(session.getEventCount());
         view.setToolCallCount(session.getToolCallCount());
         view.setErrorCount(session.getErrorCount());
-        view.setDroppedCount(session.getDroppedCount());
+        long pendingEvents = writer.pendingCount(session.getId());
+        long effectiveDropped = safeLong(session.getDroppedCount())
+                + writer.pendingDroppedCount(session.getId());
+        view.setDroppedCount((int) Math.min(Integer.MAX_VALUE, effectiveDropped));
         view.setLastErrorCode(session.getLastErrorCode());
-        view.setComplete(TraceSessionView.isComplete(session.getStatus(), session.getDroppedCount()));
+        view.setLastSeq(session.getNextSeq() == null ? 0L : session.getNextSeq());
+        view.setPendingEvents(pendingEvents);
+        view.setComplete(TraceSessionView.isComplete(session.getStatus(),
+                view.getDroppedCount(), pendingEvents));
+        TraceCostCalculator.CostResult cost = costCalculator.calculate(
+                session.getModel(), session.getPromptTokens(), session.getCompletionTokens(),
+                usage, effectiveDropped);
+        view.setEstimatedCost(cost.amount());
+        view.setCostCurrency(cost.currency());
+        view.setCostStatus(cost.status());
+        view.setCostPricingVersion(cost.pricingVersion());
         return view;
+    }
+
+    private long safeLong(Number value) {
+        return value == null ? 0L : Math.max(0L, value.longValue());
     }
 
     private TraceEventView toEventView(AgentTraceEvent event) {

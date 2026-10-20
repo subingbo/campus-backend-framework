@@ -13,6 +13,14 @@ campus:
         flush-timeout-ms: 15000
       retention:
         cleanup-cron: "0 0 3 * * *"
+      pricing:
+        enabled: true
+        currency: CNY
+        version: "test-1"
+        models:
+          qwen-plus:
+            input-per-million: 1.0
+            output-per-million: 2.0
 
 springdoc:
   api-docs:

@@ -51,7 +51,7 @@ public interface AgentTraceService {
 
     PageResult<TraceEventView> listEvents(String sessionId, Long requesterUserId,
                                           String type, String callId, Integer step,
-                                          int page, int size);
+                                          Long afterSeq, int page, int size);
 
     void exportJsonl(String sessionId, Long requesterUserId, OutputStream out) throws IOException;
 

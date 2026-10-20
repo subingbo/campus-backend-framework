@@ -41,7 +41,9 @@ public class AgentTraceWriter {
     private final BlockingQueue<Object> queue;
     private final int batchSize;
     private final long flushTimeoutMs;
-    private final ConcurrentHashMap<String, AtomicLong> droppedCounts = new ConcurrentHashMap<>();
+    private final long criticalOfferTimeoutMs;
+    private final ConcurrentHashMap<String, Long> droppedCounts = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Long> pendingCounts = new ConcurrentHashMap<>();
     private final AtomicBoolean running = new AtomicBoolean(false);
     private final AtomicLong failureCount = new AtomicLong();
 
@@ -54,6 +56,8 @@ public class AgentTraceWriter {
         this.queue = new ArrayBlockingQueue<>(Math.min(100_000, Math.max(16, capacity)));
         this.batchSize = Math.min(500, Math.max(1, properties.getWriter().getBatchSize()));
         this.flushTimeoutMs = Math.max(200L, properties.getWriter().getFlushTimeoutMs());
+        this.criticalOfferTimeoutMs = Math.max(50L,
+                properties.getWriter().getCriticalOfferTimeoutMs());
     }
 
     @PostConstruct
@@ -92,21 +96,47 @@ public class AgentTraceWriter {
                 || !running.get()) {
             return;
         }
+        String sessionId = record.getSessionId();
+        // 先计数再入队，避免消费者先 decrement 造成 phantom pending
+        incrementPending(sessionId);
         if (queue.offer(record)) {
             return;
         }
+        decrementPending(sessionId);
+
         if (record.isCritical()) {
+            // 关键事件尽量排在已入队事件之后；有界等待，避免无限阻塞业务线程
+            long deadline = System.currentTimeMillis() + criticalOfferTimeoutMs;
+            while (System.currentTimeMillis() < deadline) {
+                incrementPending(sessionId);
+                boolean offered = false;
+                try {
+                    offered = queue.offer(record, RETRY_OFFER_MILLIS, TimeUnit.MILLISECONDS);
+                } catch (InterruptedException ex) {
+                    Thread.currentThread().interrupt();
+                }
+                if (offered) {
+                    return;
+                }
+                decrementPending(sessionId);
+                if (Thread.currentThread().isInterrupted()) {
+                    break;
+                }
+            }
+            log.warn("Trace 队列持续满，关键事件同步落库可能造成 seq 顺序偏移 "
+                    + "type={} session={} timeoutMs={}", record.getType(), sessionId,
+                    criticalOfferTimeoutMs);
             try {
                 store.persist(record);
                 return;
             } catch (TraceSessionMissingException ex) {
-                log.debug("Trace session 已删除，跳过关键事件 {}", record.getSessionId());
+                log.debug("Trace session 已删除，跳过关键事件 {}", sessionId);
                 return;
             } catch (Throwable ex) {
-                warnFailure(record.getType(), record.getSessionId(), ex);
+                warnFailure(record.getType(), sessionId, ex);
             }
         }
-        recordDrop(record.getSessionId());
+        recordDrop(sessionId);
     }
 
     /** 等待队列中此前的事件全部落库；测试与优雅关闭使用 */
@@ -135,9 +165,7 @@ public class AgentTraceWriter {
 
     /** 供测试/诊断：当前尚未落库的丢弃计数快照 */
     public Map<String, Long> droppedSnapshot() {
-        Map<String, Long> snapshot = new ConcurrentHashMap<>();
-        droppedCounts.forEach((sessionId, count) -> snapshot.put(sessionId, count.get()));
-        return snapshot;
+        return new ConcurrentHashMap<>(droppedCounts);
     }
 
     public boolean isRunning() {
@@ -190,24 +218,57 @@ public class AgentTraceWriter {
         } catch (Throwable ex) {
             recordDrop(record.getSessionId());
             warnFailure(record.getType(), record.getSessionId(), ex);
+        } finally {
+            decrementPending(record.getSessionId());
         }
     }
 
+    /** 会话级待落库事件数；终态会话只有在该值为 0 时才说明尾部真正同步完成 */
+    public long pendingCount(String sessionId) {
+        if (sessionId == null || sessionId.isBlank()) {
+            return 0L;
+        }
+        Long count = pendingCounts.get(sessionId);
+        return count == null ? 0L : Math.max(0L, count);
+    }
+
+    /** 尚未持久化为 trace/partial 的丢弃计数（单 JVM 内存态） */
+    public long pendingDroppedCount(String sessionId) {
+        if (sessionId == null || sessionId.isBlank()) {
+            return 0L;
+        }
+        Long count = droppedCounts.get(sessionId);
+        return count == null ? 0L : Math.max(0L, count);
+    }
+
+    private void incrementPending(String sessionId) {
+        if (sessionId == null || sessionId.isBlank()) {
+            return;
+        }
+        pendingCounts.compute(sessionId, (key, count) -> count == null ? 1L : count + 1L);
+    }
+
+    private void decrementPending(String sessionId) {
+        if (sessionId == null || sessionId.isBlank()) {
+            return;
+        }
+        pendingCounts.computeIfPresent(sessionId, (key, count) -> count <= 1L ? null : count - 1L);
+    }
+
     private void flushDroppedCounters() {
-        for (Map.Entry<String, AtomicLong> entry : droppedCounts.entrySet()) {
-            String sessionId = entry.getKey();
-            long count = entry.getValue().get();
-            if (count <= 0) {
-                droppedCounts.remove(sessionId, entry.getValue());
+        for (String sessionId : List.copyOf(droppedCounts.keySet())) {
+            Long snapshot = droppedCounts.get(sessionId);
+            if (snapshot == null || snapshot <= 0L) {
+                droppedCounts.remove(sessionId, snapshot);
                 continue;
             }
             try {
-                store.persistPartial(sessionId, count);
-                if (entry.getValue().addAndGet(-count) <= 0) {
-                    droppedCounts.remove(sessionId, entry.getValue());
-                }
+                store.persistPartial(sessionId, snapshot);
+                // 只减去本次快照；并发期间新增的增量保留到下一轮
+                droppedCounts.computeIfPresent(sessionId, (key, count) ->
+                        count <= snapshot ? null : count - snapshot);
             } catch (TraceSessionMissingException ex) {
-                droppedCounts.remove(sessionId, entry.getValue());
+                droppedCounts.remove(sessionId);
             } catch (Throwable ex) {
                 warnFailure("trace/partial", sessionId, ex);
             }
@@ -218,7 +279,7 @@ public class AgentTraceWriter {
         if (sessionId == null || sessionId.isBlank()) {
             return;
         }
-        droppedCounts.computeIfAbsent(sessionId, key -> new AtomicLong()).incrementAndGet();
+        droppedCounts.compute(sessionId, (key, count) -> count == null ? 1L : count + 1L);
     }
 
     private void warnFailure(String type, String sessionId, Throwable ex) {

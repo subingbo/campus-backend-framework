@@ -33,6 +33,17 @@ campus:
   amap:
     # 高德「Web服务」key（区别于前端的 JS API key）；值同上
     web-key: ${AMAP_WEB_KEY:}
+  agent:
+    trace:
+      pricing:
+        # 演示费率，不是账单价；请按实际百炼/模型账单更新，并同步 version
+        enabled: true
+        currency: CNY
+        version: "demo-2026-10"
+        models:
+          qwen-plus:
+            input-per-million: 0.8
+            output-per-million: 2.0
 
 logging:
   level:

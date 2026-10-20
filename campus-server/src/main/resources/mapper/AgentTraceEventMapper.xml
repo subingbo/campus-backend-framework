@@ -65,6 +65,24 @@
         </if>
     </select>
 
+    <select id="selectAfterSeq" resultType="com.campus.ai.trace.domain.AgentTraceEvent">
+        SELECT <include refid="eventColumns"/>
+        FROM agent_trace_event
+        WHERE session_id = #{sessionId}
+          AND seq &gt; #{afterSeq}
+        <if test="type != null and type != ''">
+            AND event_type = #{type}
+        </if>
+        <if test="callId != null and callId != ''">
+            AND call_id = #{callId}
+        </if>
+        <if test="step != null">
+            AND step_no = #{step}
+        </if>
+        ORDER BY seq ASC
+        LIMIT #{size}
+    </select>
+
     <select id="selectExportBatch" resultType="com.campus.ai.trace.domain.AgentTraceEvent">
         SELECT <include refid="eventColumns"/>
         FROM agent_trace_event
@@ -72,6 +90,31 @@
           AND seq &gt; #{afterSeq}
         ORDER BY seq ASC
         LIMIT #{size}
+    </select>
+
+    <select id="selectLlmUsageStats" resultType="com.campus.ai.trace.dto.TraceLlmUsageStat">
+        SELECT
+            session_id AS sessionId,
+            COUNT(*) AS responseCount,
+            SUM(CASE
+                    WHEN JSON_EXTRACT(payload_json, '$.promptTokens') IS NULL
+                      OR JSON_TYPE(JSON_EXTRACT(payload_json, '$.promptTokens')) = 'NULL'
+                      OR JSON_EXTRACT(payload_json, '$.completionTokens') IS NULL
+                      OR JSON_TYPE(JSON_EXTRACT(payload_json, '$.completionTokens')) = 'NULL'
+                    THEN 1 ELSE 0 END) AS missingUsageCount,
+            SUM(CASE
+                    WHEN JSON_EXTRACT(payload_json, '$.model') IS NULL
+                      OR JSON_TYPE(JSON_EXTRACT(payload_json, '$.model')) = 'NULL'
+                    THEN 1 ELSE 0 END) AS missingModelCount,
+            COUNT(DISTINCT JSON_UNQUOTE(JSON_EXTRACT(payload_json, '$.model'))) AS modelCount,
+            MAX(JSON_UNQUOTE(JSON_EXTRACT(payload_json, '$.model'))) AS model
+        FROM agent_trace_event
+        WHERE event_type = 'llm/response'
+          AND session_id IN
+        <foreach collection="sessionIds" item="id" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+        GROUP BY session_id
     </select>
 
     <select id="selectMaxTurn" resultType="java.lang.Integer">

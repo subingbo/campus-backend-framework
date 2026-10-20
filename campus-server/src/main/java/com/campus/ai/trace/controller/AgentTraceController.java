@@ -60,9 +60,10 @@ public class AgentTraceController {
             @RequestParam(defaultValue = "100") int size,
             @RequestParam(required = false) String type,
             @RequestParam(required = false) String callId,
-            @RequestParam(required = false) Integer step) {
+            @RequestParam(required = false) Integer step,
+            @RequestParam(required = false) Long afterSeq) {
         return Result.success(traceService.listEvents(sessionId, SecurityUtils.getUserId(),
-                type, callId, step, page, size));
+                type, callId, step, afterSeq, page, size));
     }
 
     @Operation(summary = "导出 JSONL（Content-Type: application/x-ndjson）")

@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -63,7 +64,74 @@ class AgentTraceWriterTest {
             assertThat(writer.flushNow()).isTrue();
             assertThat(store.persisted).isNotEmpty();
             assertThat(store.partialCounts).isNotEmpty();
+            assertThat(writer.pendingCount("s1")).isZero();
+            assertThat(writer.droppedSnapshot()).isEmpty();
         } finally {
+            writer.shutdown();
+        }
+    }
+
+    @Test
+    void criticalEventWaitsBehindEarlierQueuedEvents() throws Exception {
+        FakeStore store = new FakeStore();
+        store.blockFirst = new CountDownLatch(1);
+        AgentTraceProperties properties = props(2);
+        properties.getWriter().setCriticalOfferTimeoutMs(2000);
+        AgentTraceWriter writer = new AgentTraceWriter(store, properties);
+        writer.start();
+        try {
+            writer.enqueue(event("s1", "llm/request", false));
+            assertThat(store.firstPersistStarted.await(2, TimeUnit.SECONDS)).isTrue();
+            for (int i = 0; i < 16; i++) {
+                writer.enqueue(event("s1", "tool/result", false));
+            }
+
+            Thread critical = new Thread(
+                    () -> writer.enqueue(event("s1", "session/end", true)));
+            critical.start();
+            Thread.sleep(100);
+            assertThat(store.persisted).isEmpty();
+            assertThat(writer.pendingCount("s1")).isPositive();
+
+            store.blockFirst.countDown();
+            critical.join(3000);
+            assertThat(writer.flushNow()).isTrue();
+            assertThat(store.persisted).hasSize(18);
+            assertThat(store.persisted.get(0).getType()).isEqualTo("llm/request");
+            assertThat(store.persisted.get(17).getType()).isEqualTo("session/end");
+            assertThat(writer.pendingCount("s1")).isZero();
+        } finally {
+            store.blockFirst.countDown();
+            writer.shutdown();
+        }
+    }
+
+    @Test
+    void criticalEventFallsBackOnlyAfterBoundedWait() throws Exception {
+        FakeStore store = new FakeStore();
+        store.blockFirst = new CountDownLatch(1);
+        AgentTraceProperties properties = props(1);
+        properties.getWriter().setCriticalOfferTimeoutMs(100);
+        AgentTraceWriter writer = new AgentTraceWriter(store, properties);
+        writer.start();
+        try {
+            writer.enqueue(event("s1", "llm/request", false));
+            assertThat(store.firstPersistStarted.await(2, TimeUnit.SECONDS)).isTrue();
+            for (int i = 0; i < 16; i++) {
+                writer.enqueue(event("s1", "tool/result", false));
+            }
+
+            writer.enqueue(event("s1", "session/end", true));
+            // 前一条仍在阻塞；关键事件等待超时后同步落库
+            assertThat(store.persisted)
+                    .extracting(TraceEventRecord::getType)
+                    .contains("session/end");
+
+            store.blockFirst.countDown();
+            assertThat(writer.flushNow()).isTrue();
+            assertThat(writer.pendingCount("s1")).isZero();
+        } finally {
+            store.blockFirst.countDown();
             writer.shutdown();
         }
     }
@@ -98,6 +166,7 @@ class AgentTraceWriterTest {
             }
             assertThat(writer.flushNow()).isTrue();
             assertThat(store.persisted).hasSize(5);
+            assertThat(writer.pendingCount("s3")).isZero();
         } finally {
             writer.shutdown();
         }
@@ -107,7 +176,10 @@ class AgentTraceWriterTest {
 
         private final List<TraceEventRecord> persisted = new CopyOnWriteArrayList<>();
         private final List<Long> partialCounts = new CopyOnWriteArrayList<>();
+        private final AtomicBoolean first = new AtomicBoolean(true);
+        private final CountDownLatch firstPersistStarted = new CountDownLatch(1);
         private volatile CountDownLatch block;
+        private volatile CountDownLatch blockFirst;
         private volatile boolean failNext;
 
         @Override
@@ -120,6 +192,15 @@ class AgentTraceWriterTest {
             if (latch != null) {
                 try {
                     latch.await(3, TimeUnit.SECONDS);
+                } catch (InterruptedException ex) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+            CountDownLatch firstLatch = blockFirst;
+            if (firstLatch != null && first.compareAndSet(true, false)) {
+                firstPersistStarted.countDown();
+                try {
+                    firstLatch.await(3, TimeUnit.SECONDS);
                 } catch (InterruptedException ex) {
                     Thread.currentThread().interrupt();
                 }

@@ -36,7 +36,13 @@ GET /api/agent/traces?page=1&size=20&status=COMPLETED
         "toolCallCount": 3,
         "errorCount": 0,
         "droppedCount": 0,
-        "complete": true
+        "lastSeq": 36,
+        "pendingEvents": 0,
+        "complete": true,
+        "estimatedCost": 0.00092,
+        "costCurrency": "CNY",
+        "costStatus": "KNOWN",
+        "costPricingVersion": "demo-2026-10"
       }
     ],
     "page": 1,
@@ -46,8 +52,24 @@ GET /api/agent/traces?page=1&size=20&status=COMPLETED
 }
 ```
 
-`complete` 由服务端判定：`status == COMPLETED && dropped_count == 0`。
+`complete` 由服务端判定：`status == COMPLETED`、effective `dropped_count == 0` 且 `pendingEvents == 0`。
+effective dropped 包含 writer 中尚未持久化的丢弃计数。
 `totalTokens` / `promptTokens` / `completionTokens` 在模型服务端未返回时为 `null`，不是 0。
+`lastSeq` 是已落盘的最后事件序号（复用 `agent_trace_session.next_seq`），自动刷新用它判断尾部是否追平。
+`pendingEvents` 是仍在 writer 队列中、尚未落库的事件数；终态会话只有 `pendingEvents=0` 且事件数追平
+`lastSeq` 时才可认为尾部同步完成。该计数是**当前应用实例内存态**；多实例部署下只代表本实例，
+当前项目按单实例假设。
+
+成本字段为读取时估算，不落库：
+
+- `costStatus=KNOWN`：模型唯一且与会话模型一致、所有 `llm/response` 都有 prompt/completion Token、费率配置有效；`estimatedCost` 才非空。
+- `PARTIAL`：存在丢弃事件（含尚未落库的 drop），Token 可能不完整；金额为 null，不能宣称完整成本。
+- `UNKNOWN_MODEL`：模型缺失、混合或与会话模型不一致（旧 Trace 通常属于此类）。
+- `UNKNOWN_RATE`：模型无费率或费率非法。
+- `UNKNOWN_TOKENS`：Token 缺失/负数，或 usage 不完整。
+- `DISABLED`：成本核算关闭。
+- 未知状态时 `estimatedCost=null`，前端显示“不可估算”，不会用 0 冒充；已知零成本仍可返回 0。
+- 成本只按当前 `campus.agent.trace.pricing` 费率计算，费率变化后历史会按新费率重算，`costPricingVersion` 用于标注口径。
 
 ## 2. 会话详情
 
@@ -103,6 +125,9 @@ GET /api/agent/traces/{sessionId}/events?page=1&size=100&type=tool/result&callId
 - `size` 默认 100，最大 200。
 - `type` 精确匹配 `domain/action`；`callId` 精确定位一次工具调用；`step` 精确匹配步骤。
 - 按 `seq ASC`。
+- `afterSeq` 可选，用于自动刷新增量追加；存在时**优先于 `page`**，`page` 被忽略且响应 `page=1`。只返回 `seq > afterSeq` 的事件，仍应用 `type/callId/step` 过滤；`total` 始终是当前筛选条件下的全量计数。
+- `afterSeq` 为负数返回 HTTP 400；越权/不存在仍在查询前返回 404。
+- 增量不是历史分页：历史加载继续用 `page`；客户端必须分别维护历史进度和增量游标。
 
 ```json
 {
@@ -167,6 +192,7 @@ TOKEN="Bearer ..."
 curl -H "Authorization: $TOKEN" "http://localhost:8080/api/agent/traces?page=1&size=20"
 curl -H "Authorization: $TOKEN" "http://localhost:8080/api/agent/traces/<sessionId>"
 curl -H "Authorization: $TOKEN" "http://localhost:8080/api/agent/traces/<sessionId>/events?size=200"
+curl -H "Authorization: $TOKEN" "http://localhost:8080/api/agent/traces/<sessionId>/events?afterSeq=36&size=200"
 curl -H "Authorization: $TOKEN" -o session.jsonl \
   "http://localhost:8080/api/agent/traces/<sessionId>/export?format=jsonl"
 ```

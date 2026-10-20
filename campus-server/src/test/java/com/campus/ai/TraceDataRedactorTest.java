@@ -47,6 +47,20 @@ class TraceDataRedactorTest {
     }
 
     @Test
+    void llmUsageSummaryKeepsModelAndTokenCounts() {
+        Map<String, Object> safe = redactor.sanitize(Map.of(
+                "model", "qwen-plus",
+                "promptTokens", 520,
+                "completionTokens", 200,
+                "totalTokens", 720));
+
+        assertThat(safe).containsEntry("model", "qwen-plus")
+                .containsEntry("promptTokens", 520)
+                .containsEntry("completionTokens", 200)
+                .containsEntry("totalTokens", 720);
+    }
+
+    @Test
     void sanitizeReplacesChineseFreeTextWithLength() {
         Map<String, Object> safe = redactor.sanitize(Map.of("reason", "这里有一个地点名"));
         assertThat(safe.get("reason")).isEqualTo("[text:8]");

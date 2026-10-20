@@ -204,6 +204,86 @@ class AgentTraceFlowAcceptanceTest {
         JsonNode traceDetail = json(get("/api/agent/traces/" + session.getId()).header("Authorization", auth));
         assertThat(traceDetail.path("data").path("status").asText()).isEqualTo("COMPLETED");
         assertThat(traceDetail.path("data").path("complete").asBoolean()).isTrue();
+        assertThat(traceDetail.path("data").path("lastSeq").asLong()).isEqualTo(session.getNextSeq());
+        assertThat(traceDetail.path("data").path("pendingEvents").asLong()).isZero();
+        // 成本：test profile 费率 1.0/2.0 CNY 每百万 Token → 520*1 + 200*2 = 0.000920
+        assertThat(traceDetail.path("data").path("costStatus").asText()).isEqualTo("KNOWN");
+        assertThat(traceDetail.path("data").path("costCurrency").asText()).isEqualTo("CNY");
+        assertThat(traceDetail.path("data").path("costPricingVersion").asText()).isEqualTo("test-1");
+        assertThat(traceDetail.path("data").path("estimatedCost").decimalValue())
+                .isEqualByComparingTo(new java.math.BigDecimal("0.000920"));
+
+        // 列表也返回成本与水位
+        JsonNode traceList = json(get("/api/agent/traces").param("page", "1").param("size", "20")
+                .header("Authorization", auth));
+        JsonNode listed = traceList.path("data").path("list").get(0);
+        assertThat(listed.path("sessionId").asText()).isEqualTo(session.getId());
+        assertThat(listed.path("lastSeq").asLong()).isEqualTo(session.getNextSeq());
+        assertThat(listed.path("costStatus").asText()).isEqualTo("KNOWN");
+
+        // afterSeq：只返回 seq 之后的事件，顺序/过滤/分页语义正确
+        long cursor = events.get(events.size() / 2).getSeq();
+        JsonNode afterSeqPage = json(get("/api/agent/traces/" + session.getId() + "/events")
+                .param("afterSeq", String.valueOf(cursor))
+                .param("size", "200")
+                .param("page", "9")
+                .header("Authorization", auth));
+        JsonNode afterSeqList = afterSeqPage.path("data").path("list");
+        assertThat(afterSeqPage.path("data").path("page").asInt()).isEqualTo(1);
+        assertThat(afterSeqPage.path("data").path("total").asLong()).isEqualTo(events.size());
+        assertThat(afterSeqList).isNotEmpty();
+        long previous = cursor;
+        java.util.Set<Long> seenSeq = new java.util.HashSet<>();
+        for (JsonNode item : afterSeqList) {
+            long seq = item.path("seq").asLong();
+            assertThat(seq).isGreaterThan(cursor);
+            assertThat(seq).isGreaterThan(previous);
+            assertThat(seenSeq.add(seq)).isTrue();
+            previous = seq;
+        }
+        JsonNode emptyTail = json(get("/api/agent/traces/" + session.getId() + "/events")
+                .param("afterSeq", String.valueOf(events.get(events.size() - 1).getSeq()))
+                .header("Authorization", auth));
+        assertThat(emptyTail.path("data").path("list")).isEmpty();
+        mockMvc.perform(get("/api/agent/traces/" + session.getId() + "/events")
+                        .param("afterSeq", "-1")
+                        .header("Authorization", auth))
+                .andExpect(status().isBadRequest());
+
+        // 带筛选的增量连续拉取：数量受限、严格递增、无重复，最终覆盖全部匹配事件
+        long toolResultCount = events.stream()
+                .filter(e -> "tool/result".equals(e.getEventType())).count();
+        long filterCursor = 0;
+        long collected = 0;
+        while (true) {
+            JsonNode filteredPage = json(get("/api/agent/traces/" + session.getId() + "/events")
+                    .param("type", "tool/result")
+                    .param("afterSeq", String.valueOf(filterCursor))
+                    .param("size", "2")
+                    .header("Authorization", auth));
+            JsonNode filteredList = filteredPage.path("data").path("list");
+            assertThat(filteredList.size()).isLessThanOrEqualTo(2);
+            if (filteredList.isEmpty()) {
+                break;
+            }
+            for (JsonNode item : filteredList) {
+                assertThat(item.path("type").asText()).isEqualTo("tool/result");
+                assertThat(item.path("seq").asLong()).isGreaterThan(filterCursor);
+                filterCursor = item.path("seq").asLong();
+                collected++;
+            }
+        }
+        assertThat(collected).isEqualTo(toolResultCount);
+
+        // step 过滤也参与 afterSeq 增量查询
+        JsonNode stepPage = json(get("/api/agent/traces/" + session.getId() + "/events")
+                .param("step", "1")
+                .param("afterSeq", "0")
+                .param("size", "200")
+                .header("Authorization", auth));
+        for (JsonNode item : stepPage.path("data").path("list")) {
+            assertThat(item.path("step").asInt()).isEqualTo(1);
+        }
         mockMvc.perform(get("/api/agent/traces/" + session.getId() + "/events")
                         .header("Authorization", auth).param("size", "200"))
                 .andExpect(status().isOk())
@@ -246,6 +326,9 @@ class AgentTraceFlowAcceptanceTest {
         assertThat(parsed).hasSize(events.size() + 1);
         assertThat(parsed.get(0).path("type").asText()).isEqualTo("trace/meta");
         assertThat(parsed.get(0).path("data").path("complete").asBoolean()).isTrue();
+        assertThat(parsed.get(0).path("data").path("pendingEvents").asLong()).isZero();
+        assertThat(parsed.get(0).path("data").path("lastSeq").asLong())
+                .isEqualTo(session.getNextSeq());
         assertThat(parsed.get(1).path("type").asText()).isEqualTo("session/start");
         assertThat(exported.getResponse().getContentAsString())
                 .doesNotContain("校园漫步", "图书馆", "113.38", "Bearer", "sk-");
@@ -349,6 +432,10 @@ class AgentTraceFlowAcceptanceTest {
 
         String otherAuth = registerAndLogin("trace_other_" + System.nanoTime());
         mockMvc.perform(get("/api/agent/traces/" + session.getId()).header("Authorization", otherAuth))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/agent/traces/" + session.getId() + "/events")
+                        .param("afterSeq", "0")
+                        .header("Authorization", otherAuth))
                 .andExpect(status().isNotFound());
         mockMvc.perform(get("/api/agent/traces/" + session.getId() + "/export")
                         .header("Authorization", otherAuth))

@@ -6,6 +6,7 @@
         <div>
           <h2 class="trace-title">执行追踪</h2>
           <p class="trace-sub">Agent 每次规划真实发生了什么：模型、工具、地图/路线/忙闲、草稿校验与保存。</p>
+          <p v-if="listUpdatedAt" class="trace-muted">最后更新 {{ fmtTime(listUpdatedAt) }}</p>
         </div>
         <div class="trace-actions">
           <el-select v-model="statusFilter" size="small" clearable placeholder="全部状态" @change="loadSessions(1)">
@@ -18,10 +19,31 @@
         </div>
       </header>
 
-      <el-empty
-        v-if="!loading && !sessions.length"
-        description="还没有追踪记录。去「AI 助手」发起一次规划，并确认后端已执行 Trace 迁移。"
+      <el-alert
+        v-if="(listError || listPollError) && sessions.length"
+        :title="`刷新失败：${listError || listPollError}`"
+        type="warning"
+        show-icon
+        :closable="false"
+        class="trace-alert"
       />
+
+      <el-result
+        v-if="!loading && listError && !sessions.length"
+        icon="error"
+        title="加载追踪列表失败"
+        :sub-title="listError"
+      >
+        <template #extra>
+          <el-button type="primary" @click="loadSessions(1)">重试</el-button>
+        </template>
+      </el-result>
+      <el-empty
+        v-else-if="!loading && !sessions.length"
+        :description="statusFilter ? '当前筛选没有记录' : '还没有追踪记录。去「AI 助手」发起一次规划，并确认后端已执行 Trace 迁移。'"
+      >
+        <el-button v-if="statusFilter" size="small" @click="clearStatusFilter">清除筛选</el-button>
+      </el-empty>
       <div v-else class="trace-card">
         <el-table
           v-loading="loading"
@@ -50,10 +72,23 @@
           <el-table-column label="Token" width="96">
             <template #default="{ row }">{{ fmtTokens(row.totalTokens) }}</template>
           </el-table-column>
+          <el-table-column label="估算成本" width="104">
+            <template #default="{ row }">
+              <el-tooltip :content="costHint(row)" placement="top">
+                <span :class="{ 'trace-muted': row.costStatus !== 'KNOWN' }">{{ fmtCost(row) }}</span>
+              </el-tooltip>
+            </template>
+          </el-table-column>
           <el-table-column label="事件 / 工具" width="118">
             <template #default="{ row }">
               <span>{{ row.eventCount ?? 0 }} / {{ row.toolCallCount ?? 0 }}</span>
-              <el-tag v-if="row.errorCount" size="small" type="danger" effect="plain" class="ml4">{{ row.errorCount }} 错</el-tag>
+              <el-tooltip
+                v-if="row.errorCount"
+                :content="row.lastErrorCode ? `最近错误：${row.lastErrorCode}` : '存在错误'"
+                placement="top"
+              >
+                <el-tag size="small" type="danger" effect="plain" class="ml4">{{ row.errorCount }} 错</el-tag>
+              </el-tooltip>
             </template>
           </el-table-column>
           <el-table-column label="完整性" width="104">
@@ -91,17 +126,46 @@
           <h2 class="trace-title">会话详情</h2>
           <el-tag size="small" :type="statusTagType(selected.status)" effect="dark">{{ statusLabel(selected.status) }}</el-tag>
           <el-tag size="small" :type="completenessType(selected)" effect="plain">
-            {{ selected.status === 'RUNNING' ? '进行中' : (selected.complete ? '完整追踪' : '不完整') }}
+            {{ selected.status === 'RUNNING' ? '进行中' : (selected.pendingEvents > 0 ? '同步中' : (selected.complete ? '完整追踪' : '不完整')) }}
+          </el-tag>
+          <el-tag v-if="syncStateLabel(syncState)" size="small" :type="syncStateType(syncState)" effect="plain">
+            {{ syncStateLabel(syncState) }}
           </el-tag>
           <span class="trace-muted trace-mono">{{ selected.sessionId }}</span>
+          <span class="trace-muted">详情 {{ fmtTime(detailUpdatedAt) }} · 事件 {{ fmtTime(eventsUpdatedAt) }}</span>
         </div>
         <div class="trace-actions">
-          <el-button size="small" :loading="eventsLoading" @click="reloadEvents">刷新</el-button>
+          <el-button size="small" :loading="refreshing" @click="refreshDetail(true)">刷新</el-button>
           <el-button size="small" type="primary" :loading="exporting" @click="exportJsonl">导出 JSONL</el-button>
         </div>
       </header>
 
-      <div class="trace-summary">
+      <el-alert
+        v-if="detailError"
+        :title="`详情刷新失败：${detailError}`"
+        type="warning"
+        show-icon
+        :closable="false"
+        class="trace-alert"
+      />
+      <el-alert
+        v-if="drainStalled"
+        title="末尾事件可能尚未同步，点击刷新继续"
+        type="warning"
+        show-icon
+        :closable="false"
+        class="trace-alert"
+      />
+      <el-alert
+        v-if="syncState === 'partial' && unloadedCount > 0"
+        :title="`还有 ${unloadedCount} 条历史事件未加载；自动刷新暂不追加，避免形成缺口`"
+        type="info"
+        show-icon
+        :closable="false"
+        class="trace-alert"
+      />
+
+      <div v-loading="detailLoading" class="trace-summary">
         <div class="trace-stat">
           <span class="trace-stat__label">端到端耗时</span>
           <strong>{{ fmtDuration(selected.durationMs) }}</strong>
@@ -114,6 +178,11 @@
           </small>
         </div>
         <div class="trace-stat">
+          <span class="trace-stat__label">估算成本</span>
+          <strong :class="{ 'trace-muted': selected.costStatus !== 'KNOWN' }">{{ fmtCost(selected) }}</strong>
+          <small>{{ costHint(selected) }}</small>
+        </div>
+        <div class="trace-stat">
           <span class="trace-stat__label">事件</span>
           <strong>{{ selected.eventCount ?? 0 }}</strong>
         </div>
@@ -124,6 +193,7 @@
         <div class="trace-stat">
           <span class="trace-stat__label">错误</span>
           <strong :class="{ 'trace-danger': selected.errorCount }">{{ selected.errorCount ?? 0 }}</strong>
+          <small v-if="selected.lastErrorCode">{{ selected.lastErrorCode }}</small>
         </div>
         <div class="trace-stat">
           <span class="trace-stat__label">丢失事件</span>
@@ -195,7 +265,7 @@
       </div>
 
       <div class="trace-toolbar">
-        <el-select v-model="typeFilter" size="small" clearable placeholder="全部事件" @change="reloadEvents">
+        <el-select v-model="typeFilter" size="small" clearable placeholder="全部事件" @change="applyFilters">
           <el-option v-for="t in typeOptions" :key="t" :label="eventLabel(t)" :value="t" />
         </el-select>
         <el-input
@@ -204,10 +274,19 @@
           clearable
           placeholder="按 callId 过滤"
           class="trace-call-filter"
-          @keyup.enter="reloadEvents"
-          @clear="reloadEvents"
+          @keyup.enter="applyFilters"
+          @clear="applyFilters"
         />
-        <el-button size="small" @click="reloadEvents">应用</el-button>
+        <el-input
+          v-model="stepFilter"
+          size="small"
+          clearable
+          placeholder="步骤"
+          class="trace-step-filter"
+          @keyup.enter="applyFilters"
+          @clear="applyFilters"
+        />
+        <el-button size="small" @click="applyFilters">应用</el-button>
         <span class="trace-muted">共 {{ eventTotal }} 条，已加载 {{ events.length }} 条</span>
         <div class="trace-view-switch">
           <el-radio-group v-model="viewMode" size="small">
@@ -217,8 +296,26 @@
         </div>
       </div>
 
+      <el-alert
+        v-if="eventsError && events.length"
+        :title="`事件刷新失败：${eventsError}`"
+        type="warning"
+        show-icon
+        :closable="false"
+        class="trace-alert"
+      />
+      <el-result
+        v-if="eventsError && !events.length && !eventsLoading"
+        icon="error"
+        title="加载事件失败"
+        :sub-title="eventsError"
+      >
+        <template #extra>
+          <el-button type="primary" @click="applyFilters">重试</el-button>
+        </template>
+      </el-result>
       <el-empty
-        v-if="viewMode === 'timeline' && !eventsLoading && !groups.length"
+        v-else-if="viewMode === 'timeline' && !eventsLoading && !groups.length"
         description="暂无事件"
       />
       <div v-else-if="viewMode === 'timeline'" v-loading="eventsLoading" class="trace-groups">
@@ -255,8 +352,12 @@
             </el-timeline-item>
           </el-timeline>
         </section>
-        <div v-if="events.length < eventTotal" class="trace-more">
+        <div v-if="!historyExhausted && events.length < eventTotal" class="trace-more">
           <el-button size="small" :loading="eventsLoading" @click="loadMoreEvents">加载更多</el-button>
+          <span class="trace-muted ml4">还有 {{ unloadedCount }} 条未加载</span>
+        </div>
+        <div v-else-if="historyExhausted && events.length" class="trace-more trace-muted">
+          已加载全部 {{ eventTotal }} 条
         </div>
       </div>
       <el-empty
@@ -288,8 +389,12 @@
             </div>
           </div>
         </section>
-        <div v-if="events.length < eventTotal" class="trace-more">
+        <div v-if="!historyExhausted && events.length < eventTotal" class="trace-more">
           <el-button size="small" :loading="eventsLoading" @click="loadMoreEvents">加载更多</el-button>
+          <span class="trace-muted ml4">还有 {{ unloadedCount }} 条未加载</span>
+        </div>
+        <div v-else-if="historyExhausted && events.length" class="trace-more trace-muted">
+          已加载全部 {{ eventTotal }} 条
         </div>
       </div>
     </template>
@@ -297,12 +402,11 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { traceApi } from '../api'
-
-const PAGE_SIZE = 20
-const EVENT_PAGE_SIZE = 200
+import { useTraceSync } from '../composables/useTraceSync'
+import { costHint, formatCost as fmtCost } from '../utils/traceFormat'
 
 const EVENT_LABELS = {
   'session/start': '会话开始',
@@ -337,22 +441,45 @@ const EVENT_LABELS = {
 }
 const typeOptions = Object.keys(EVENT_LABELS)
 
-const sessions = ref([])
-const total = ref(0)
-const page = ref(1)
-const pageSize = PAGE_SIZE
-const statusFilter = ref('')
-const loading = ref(false)
+const {
+  sessions,
+  total,
+  page,
+  pageSize,
+  statusFilter,
+  loading,
+  listError,
+  listPollError,
+  listUpdatedAt,
+  selected,
+  detailLoading,
+  detailError,
+  detailUpdatedAt,
+  refreshing,
+  events,
+  eventTotal,
+  eventsLoading,
+  eventsError,
+  eventsUpdatedAt,
+  typeFilter,
+  callIdFilter,
+  stepFilter,
+  viewMode,
+  historyExhausted,
+  drainStalled,
+  syncState,
+  unloadedCount,
+  loadSessions,
+  openSession,
+  loadMoreEvents,
+  applyFilters,
+  refreshDetail,
+  backToList,
+  clearStatusFilter,
+  dispose
+} = useTraceSync({ traceApi })
 
-const selected = ref(null)
-const events = ref([])
-const eventTotal = ref(0)
-const eventPage = ref(1)
-const eventsLoading = ref(false)
-const typeFilter = ref('')
-const callIdFilter = ref('')
 const exporting = ref(false)
-const viewMode = ref('timeline')
 
 const groups = computed(() => {
   const result = []
@@ -503,71 +630,6 @@ function routeConfidenceLabel(value) {
   return { REAL: '实测', ESTIMATE: '估算', UNKNOWN: '未知' }[value] || value
 }
 
-async function loadSessions(targetPage = 1) {
-  page.value = Math.max(1, Number(targetPage) || 1)
-  loading.value = true
-  try {
-    const params = { page: page.value, size: pageSize }
-    if (statusFilter.value) params.status = statusFilter.value
-    const result = await traceApi.list(params)
-    sessions.value = result?.list || []
-    total.value = result?.total || 0
-  } catch (error) {
-    ElMessage.error(error.message || '加载追踪列表失败')
-  } finally {
-    loading.value = false
-  }
-}
-
-async function openSession(row) {
-  try {
-    selected.value = await traceApi.detail(row.sessionId)
-    typeFilter.value = ''
-    callIdFilter.value = ''
-    await loadEvents(1, true)
-  } catch (error) {
-    ElMessage.error(error.message || '加载会话详情失败')
-  }
-}
-
-async function loadEvents(targetPage = 1, replace = true) {
-  if (!selected.value) return
-  eventsLoading.value = true
-  try {
-    const params = { page: targetPage, size: EVENT_PAGE_SIZE }
-    if (typeFilter.value) params.type = typeFilter.value
-    if (callIdFilter.value?.trim()) params.callId = callIdFilter.value.trim()
-    const result = await traceApi.events(selected.value.sessionId, params)
-    const list = result?.list || []
-    eventTotal.value = result?.total || 0
-    const merged = replace ? list : events.value.concat(list)
-    const seen = new Set()
-    events.value = merged.filter((event) => {
-      if (seen.has(event.seq)) return false
-      seen.add(event.seq)
-      return true
-    })
-    eventPage.value = targetPage
-  } catch (error) {
-    ElMessage.error(error.message || '加载事件失败')
-  } finally {
-    eventsLoading.value = false
-  }
-}
-
-function reloadEvents() {
-  loadEvents(1, true)
-}
-
-function loadMoreEvents() {
-  loadEvents(eventPage.value + 1, false)
-}
-
-function backToList() {
-  selected.value = null
-  loadSessions(page.value)
-}
-
 async function exportJsonl() {
   if (!selected.value) return
   exporting.value = true
@@ -634,11 +696,13 @@ function statusTagType(status) {
 
 function completenessLabel(row) {
   if (row.status === 'RUNNING') return '进行中'
+  if (row.pendingEvents > 0) return '同步中'
   return row.complete ? '完整' : '不完整'
 }
 
 function completenessType(row) {
   if (row.status === 'RUNNING') return 'info'
+  if (row.pendingEvents > 0) return 'warning'
   return row.complete ? 'success' : 'warning'
 }
 
@@ -660,6 +724,13 @@ function triggerLabel(source) {
 
 function fmtTime(value) {
   if (value == null) return '—'
+  if (Array.isArray(value)) {
+    const [year, month, day, hour = 0, minute = 0, second = 0, nano = 0] = value
+    const date = new Date(year, month - 1, day, hour, minute, second, Math.floor(nano / 1e6))
+    return Number.isNaN(date.getTime())
+      ? String(value)
+      : date.toLocaleString('zh-CN', { hour12: false })
+  }
   if (typeof value === 'number') {
     return new Date(value).toLocaleString('zh-CN', { hour12: false })
   }
@@ -677,6 +748,23 @@ function fmtTokens(value) {
   if (value == null) return '未返回'
   const number = Number(value)
   return Number.isFinite(number) ? number.toLocaleString('zh-CN') : String(value)
+}
+
+function syncStateLabel(state) {
+  return {
+    running: '自动刷新中',
+    draining: '正在同步尾部事件',
+    caughtUp: '已同步',
+    stalled: '同步未完成',
+    partial: '历史未加载完'
+  }[state] || ''
+}
+
+function syncStateType(state) {
+  if (state === 'caughtUp') return 'success'
+  if (state === 'stalled') return 'danger'
+  if (state === 'draining') return 'warning'
+  return 'info'
 }
 
 function hasData(event) {
@@ -746,6 +834,7 @@ function eventSummary(event) {
 }
 
 onMounted(() => loadSessions(1))
+onUnmounted(dispose)
 </script>
 
 <style scoped>
@@ -840,6 +929,12 @@ onMounted(() => loadSessions(1))
 }
 .trace-call-filter {
   width: 200px;
+}
+.trace-step-filter {
+  width: 92px;
+}
+.trace-alert {
+  margin-bottom: 12px;
 }
 .trace-groups {
   display: flex;
@@ -1041,7 +1136,8 @@ onMounted(() => loadSessions(1))
   .trace-stat--wide {
     grid-column: span 1;
   }
-  .trace-call-filter {
+  .trace-call-filter,
+  .trace-step-filter {
     width: 100%;
   }
   .trace-view-switch {

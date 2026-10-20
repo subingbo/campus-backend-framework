@@ -25,6 +25,7 @@ P0 只保存**解释业务所需的最小事实**：ID、计数、耗时、状�
 - 工具结果：结果数量、地点 ID（最多 10 个）、provider、是否估算、耗时、`accepted`、`available`；
 - 计划：草稿 ID/版本、站点数、来源地图 ID、约束状态、路线置信度；
 - 校验：ruleId、数值型 details（可用/所需分钟、站点序号、最早开始时间）；
+- 模型响应：model、prompt/completion/total Token 数（用于成本估算，不含 prompt/回答原文）；
 - 保存：活动 ID、草稿版本、operation、幂等命中标记。
 
 字符串值只允许安全字符集（枚举/ID/时间/模型名等），中文或自由文本替换为 `[text:N]`；

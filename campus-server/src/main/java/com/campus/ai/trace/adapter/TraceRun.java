@@ -126,10 +126,14 @@ public final class TraceRun {
                 }
             }
         }
-        Map<String, Object> data = data("finishReason", response.finishReason(),
+        Map<String, Object> data = data("model", model,
+                "finishReason", response.finishReason(),
                 "toolCallCount", toolNames.size(),
                 "toolNames", toolNames,
-                "contentLength", response.content() == null ? 0 : response.content().length());
+                "contentLength", response.content() == null ? 0 : response.content().length(),
+                "promptTokens", response.promptTokens(),
+                "completionTokens", response.completionTokens(),
+                "totalTokens", response.totalTokens());
         record(AgentEventType.LLM_RESPONSE, TraceStatus.SUCCESS, null, durationMs, null, null,
                 toLong(response.promptTokens()), toLong(response.completionTokens()),
                 toLong(response.totalTokens()), null, data, false);

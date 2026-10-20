@@ -6,6 +6,7 @@ import com.campus.ai.trace.domain.AgentTraceEvent;
 import com.campus.ai.trace.domain.AgentTraceSession;
 import com.campus.ai.trace.dto.TraceSessionView;
 import com.campus.ai.trace.mapper.AgentTraceEventMapper;
+import com.campus.ai.trace.store.AgentTraceWriter;
 import com.campus.common.exception.BusinessException;
 import com.campus.common.result.ResultCode;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -37,15 +38,18 @@ public class AgentTraceExportService {
     private final TraceAccessPolicy accessPolicy;
     private final AgentTraceProperties properties;
     private final ObjectMapper objectMapper;
+    private final AgentTraceWriter traceWriter;
 
     public AgentTraceExportService(AgentTraceEventMapper eventMapper,
                                    TraceAccessPolicy accessPolicy,
                                    AgentTraceProperties properties,
-                                   @Qualifier("redisObjectMapper") ObjectMapper objectMapper) {
+                                   @Qualifier("redisObjectMapper") ObjectMapper objectMapper,
+                                   AgentTraceWriter traceWriter) {
         this.eventMapper = eventMapper;
         this.accessPolicy = accessPolicy;
         this.properties = properties;
         this.objectMapper = objectMapper;
+        this.traceWriter = traceWriter;
     }
 
     public void exportJsonl(String sessionId, Long requesterUserId, OutputStream out) throws IOException {
@@ -54,10 +58,15 @@ public class AgentTraceExportService {
         }
         AgentTraceSession session = accessPolicy.requireReadable(sessionId, requesterUserId);
         int pageSize = Math.min(1000, Math.max(50, properties.getExport().getPageSize()));
-        boolean complete = TraceSessionView.isComplete(session.getStatus(), session.getDroppedCount());
+        long pendingEvents = traceWriter.pendingCount(sessionId);
+        long effectiveDropped = safeLong(session.getDroppedCount())
+                + traceWriter.pendingDroppedCount(sessionId);
+        int droppedForView = (int) Math.min(Integer.MAX_VALUE, effectiveDropped);
+        boolean complete = TraceSessionView.isComplete(session.getStatus(),
+                droppedForView, pendingEvents);
 
         BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(out, StandardCharsets.UTF_8));
-        writeLine(writer, metaLine(session, complete));
+        writeLine(writer, metaLine(session, complete, effectiveDropped, pendingEvents));
         long afterSeq = 0L;
         while (true) {
             List<AgentTraceEvent> batch = eventMapper.selectExportBatch(sessionId, afterSeq, pageSize);
@@ -76,11 +85,14 @@ public class AgentTraceExportService {
         writer.flush();
     }
 
-    private Map<String, Object> metaLine(AgentTraceSession session, boolean complete) {
+    private Map<String, Object> metaLine(AgentTraceSession session, boolean complete,
+                                         long effectiveDropped, long pendingEvents) {
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("status", session.getStatus());
         data.put("eventCount", session.getEventCount());
-        data.put("droppedCount", session.getDroppedCount());
+        data.put("lastSeq", session.getNextSeq());
+        data.put("pendingEvents", pendingEvents);
+        data.put("droppedCount", effectiveDropped);
         data.put("complete", complete);
         data.put("model", session.getModel());
         data.put("startedAt", iso(session.getStartedAt()));
@@ -128,6 +140,10 @@ public class AgentTraceExportService {
         }
         line.put("data", dataNode(event.getPayloadJson()));
         return line;
+    }
+
+    private long safeLong(Number value) {
+        return value == null ? 0L : Math.max(0L, value.longValue());
     }
 
     private JsonNode dataNode(String payloadJson) {

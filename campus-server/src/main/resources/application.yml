@@ -31,6 +31,7 @@ campus:
         queue-capacity: 2000
         batch-size: 50
         flush-timeout-ms: 3000
+        critical-offer-timeout-ms: 500
       retention:
         detail-days: 30
         stale-running-minutes: 120
@@ -38,3 +39,8 @@ campus:
       export:
         enabled: true
         page-size: 500
+      # 成本估算：费率由部署方按真实账单维护；未配置模型时显示“不可估算”
+      pricing:
+        enabled: true
+        currency: CNY
+        version: config

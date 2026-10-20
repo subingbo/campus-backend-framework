@@ -74,7 +74,7 @@ mvn -pl campus-server -am spring-boot:run
 
 其余按模块分布：共享地图与群组（下节）、地点与地点圈、动态/评论/点赞、好友与会话消息、活动、举报、搜索、管理端（`/api/admin/**`）、WebSocket（`/ws`）。完整清单见 Swagger UI 的「校园业务」分组。
 
-## Agent Trace（P0 执行追踪）
+## Agent Trace（P0/P1 执行追踪）
 
 Agent 每次规划会由 Spring Boot 在真实执行点记录事件（session/turn/step、LLM、工具、地图/路线/忙闲、
 草稿校验、确认保存、SSE 终态），写入 `agent_trace_session` / `agent_trace_event`，并可按需导出 JSONL。
@@ -84,13 +84,14 @@ LLM 不参与写日志；Trace 写入失败不影响主业务。
 |------|------|------|
 | GET  | `/api/agent/traces` | 我的追踪会话列表（分页/状态筛选） |
 | GET  | `/api/agent/traces/{sessionId}` | 会话详情（完整性、Token、工具数、错误数、耗时统计、草稿版本摘要） |
-| GET  | `/api/agent/traces/{sessionId}/events` | 事件分页（按 seq 升序，可按 type/callId/step 筛选） |
+| GET  | `/api/agent/traces/{sessionId}/events` | 事件分页（按 seq 升序，可按 type/callId/step 筛选；`afterSeq` 增量追加） |
 | GET  | `/api/agent/traces/{sessionId}/export?format=jsonl` | 流式导出 JSONL |
 
 - 前端入口：登录后顶栏「执行追踪」→ `/traces`（会话列表 + Turn/Step 时间线/并行工具泳道 +
-  耗时 p50/p95 指标卡 + 草稿版本 diff + JSONL 下载；路由懒加载）。
+  耗时 p50/p95 指标卡 + 草稿版本 diff + 自动刷新/终态尾部补拉 + 成本估算 + JSONL 下载；路由懒加载）。
 - 仅本人可读；非本人/不存在 404。
 - 默认保存脱敏摘要：不保存聊天原文、地点名/地址/备注、精确经纬度/轨迹、JWT/API Key。
+- 成本按 `campus.agent.trace.pricing` 读取时估算；旧 Trace/混合模型/缺 usage 显示“不可估算”。
 - 部署前先执行迁移：`campus-server/src/main/resources/db/migration/20261019_01__create_agent_trace.sql`。
 - 详细说明：[docs/agent-trace/README.md](docs/agent-trace/README.md)、
   [事件协议](docs/agent-trace/events-v1.md)、[隐私](docs/agent-trace/privacy.md)、

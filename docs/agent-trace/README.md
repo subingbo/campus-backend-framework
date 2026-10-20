@@ -84,10 +84,20 @@ campus.agent.trace:
   export:
     enabled: true
     page-size: 500
+  pricing:
+    enabled: true
+    currency: CNY
+    version: demo-2026-10
+    models:
+      qwen-plus:
+        input-per-million: 0.8
+        output-per-million: 2.0
 ```
 
 - 关闭 `enabled` 或 `level: OFF` 后，所有入口退化为 no-op，业务完全不受影响。
 - 测试 profile 在 `src/test/resources/application-test.yml` 中提高队列容量并固定清理 cron。
+- `pricing` 只影响读取时成本估算，不落库；`application-dev.yml` 的 qwen-plus 数值是**演示费率**，请按实际账单更新并同步 `version`。没有费率时返回 `UNKNOWN_RATE`/“不可估算”，不会写 0。
+- 成本只在“单模型 + 每次 `llm/response` 都有 prompt/completion Token”时计算；旧 Trace 或混合模型保守返回不可估算。
 
 ## 5. 数据库迁移与回滚
 
@@ -111,11 +121,14 @@ DROP TABLE IF EXISTS agent_trace_session;
 
 ## 6. 可靠性
 
-- 业务线程只做脱敏 + 入队；关键终态在队列满时同步 fallback。
-- 单消费者按入队顺序落库；seq 由 DB 行锁保证多线程/多实例不重复。
+- 业务线程只做脱敏 + 入队；普通事件入队前先计入 `pendingEvents`，避免计数与消费竞态。
+- 关键终态在队列满时先做有界等待（默认 500ms），尽量排在已入队事件之后；只有超时才同步 fallback，
+  并记录可能造成 `seq` 顺序偏移的告警。
+- 单消费者按入队顺序落库；`seq` 由 DB 行锁 + 同一事务分配，提交顺序即可见顺序。
 - 单条写入失败只累计 `dropped_count` 并限频告警，不杀死消费者，不影响业务。
-- 关闭应用时有上限 drain；未落库事件可观测。
-- `complete` 由服务端判定：`status == COMPLETED` 且 `dropped_count == 0`。
+- `pendingEvents` 与未落库 drop 计数是单 JVM 内存态；进程重启后队列事件可能丢失，不能仅凭 `status`
+  判断跨重启完整性。
+- `complete` 由服务端判定：`status == COMPLETED` 且 effective `dropped_count == 0` 且 `pendingEvents == 0`。
 
 ## 7. 访问与隐私
 
@@ -131,6 +144,7 @@ mvn -pl campus-server -am -DskipTests compile
 mvn -pl campus-server -am -Dtest=TraceDataRedactorTest,AgentTraceWriterTest test
 mvn -pl campus-server -am -Dtest=AgentTraceFlowAcceptanceTest,AgentTraceConcurrencyTest test
 mvn -pl campus-server -am test
+npm --prefix campus-web run test:trace
 npm --prefix campus-web run build
 ```
 
@@ -148,6 +162,10 @@ npm --prefix campus-web run build
 - 耗时指标卡（P1 增强）：详情响应 `stats`，按类型/工具给出次数、平均、p50、p95、合计；
 - 草稿版本卡（P1 增强）：详情响应 `draftVersions`，相邻版本对比站点数、总行程、路线置信度、地点增删、校验通过/规则与修订变更；
 - 并行工具泳道（P1 增强）：时间线/泳道可切换，按轮分组、每个 `callId` 一条泳道，`tool/call→result` 与 `llm/request→response` 配对成横条，错误红色、进行中显示起点标记；纯 CSS 实现，无图表库依赖；
+- 自动刷新与尾部补拉（P1 收尾）：列表/详情仅在 `RUNNING` 时每 8 秒轮询；会话进入终态后继续按 `lastSeq`/`pendingEvents` 补拉尾部事件（writer 队列未清空也算未完成），每轮最多 3 页，追不平则短间隔重试，超限明确提示“末尾事件可能尚未同步”；详情与事件的更新时间/错误分别记录；
+- 两套游标：历史分页只更新历史进度，`afterSeq` 增量只更新增量游标；历史未加载完时不自动追加，避免事件缺口；切换会话/筛选时旧响应按 epoch+filterSignature 丢弃；
+- `step` 筛选、最近错误码、错误/空态区分、可重试；
+- 成本估算（P1 收尾）：列表/详情展示按配置费率计算的会话成本；模型/Token 前提不完整或旧 Trace 显示“不可估算”，已知零成本显示 ¥0.00；费率版本随响应返回；
 - 导出：直接下载 `session-<id>.jsonl`；
 - Token 未返回显示「未返回」，不显示 0；不完整追踪显示降级标记；
 - 路由懒加载：`TraceCenterView` 独立 chunk，不进主包。
@@ -161,11 +179,13 @@ npm --prefix campus-web run build
 - 工具响应快照、离线 Stub Replay、模型 A/B 对照（P2）。
 - OpenTelemetry / Jaeger 接入（P3）。
 - 管理员跨用户诊断读取、群成员共享读取（需要单独权限与产品规则）。
-- Token 成本估算（需真实 usage 与费率）。
 
 ## 11. 已知边界
 
 - `LlmClient` 当前没有重试；`llm/retry` 类型保留，P0 不会伪造重试事件。
+- 成本是读取时按当前费率估算，不落库；旧 Trace 缺少 response 级 model/token 时显示“不可估算”。
+- 自动刷新是 8 秒轮询，不是实时推送；终态尾部补拉有重试上限，超限需手动刷新。
+- `pendingEvents` 是当前实例 writer 内存计数；多实例部署下只代表本实例，当前项目按单实例假设。
 - `parentEventId` P0 不填（异步 writer 不返回 eventId）。
 - 单实例假设用于会话解析/清理；多实例下 seq 仍由 DB 行锁保证唯一。
 - 空闲窗口只记录数量/来源/未知成员数，不记录具体个人日程时间；详细方案在 `ai_conversation.plan_json`。
