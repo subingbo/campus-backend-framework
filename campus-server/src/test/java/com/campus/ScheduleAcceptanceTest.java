@@ -218,6 +218,19 @@ class ScheduleAcceptanceTest {
                         .content(scheduleJson("医生复诊", slot.plusHours(2), slot.plusHours(3), "细节隐私")))
                 .andExpect(status().isOk());
 
+        // 我的日程页：owner 能看到自己加入的群，默认未授权
+        MvcResult optionsBefore = mockMvc.perform(get("/api/schedules/share")
+                        .header("Authorization", tokens.get("sch03_owner")))
+                .andExpect(status().isOk())
+                .andReturn();
+        JsonNode beforeOptions = objectMapper.readTree(optionsBefore.getResponse().getContentAsString())
+                .path("data");
+        JsonNode optionBefore = optionByGroup(beforeOptions, groupId);
+        assertThat(optionBefore.path("granted").asBoolean()).isFalse();
+        assertThat(optionBefore.path("mapId").asLong()).isPositive();
+        assertThat(optionBefore.path("groupName").asText()).isNotBlank();
+        assertThat(optionBefore.path("myRole").asText()).isNotBlank();
+
         // stranger 未授权（viewer/group 均未授权 stranger 看到的目标——反向：查看者 stranger 无授权，包括明细）
         // 第一次：owner 未授权 → viewer 的群体视图里 owner=UNKNOWN 且不泄露时段
         MvcResult beforeGrant = mockMvc.perform(get("/api/schedules/group-busy")
@@ -249,6 +262,23 @@ class ScheduleAcceptanceTest {
         assertThat(after.path("known").toString()).contains("\"startTime\"");
         assertThat(after.path("known").toString()).doesNotContain("医生复诊").doesNotContain("细节隐私");
 
+        MvcResult optionsGranted = mockMvc.perform(get("/api/schedules/share")
+                        .header("Authorization", tokens.get("sch03_owner")))
+                .andExpect(status().isOk())
+                .andReturn();
+        JsonNode grantedOption = optionByGroup(
+                objectMapper.readTree(optionsGranted.getResponse().getContentAsString()).path("data"),
+                groupId);
+        assertThat(grantedOption.path("granted").asBoolean()).isTrue();
+        assertThat(grantedOption.hasNonNull("grantedAt")).isTrue();
+
+        // 非成员不能向该群授权
+        mockMvc.perform(put("/api/schedules/share")
+                        .header("Authorization", tokens.get("sch03_stranger"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"targetType\":\"GROUP\",\"targetId\":" + groupId + ",\"grant\":true}"))
+                .andExpect(status().isForbidden());
+
         // 撤销授权 → 回到 UNKNOWN
         mockMvc.perform(put("/api/schedules/share")
                         .header("Authorization", tokens.get("sch03_owner"))
@@ -265,6 +295,15 @@ class ScheduleAcceptanceTest {
         JsonNode revoked = objectMapper.readTree(afterRevoke.getResponse().getContentAsString()).path("data");
         assertThat(revoked.path("unknownUserIds").toString()).contains(String.valueOf(owner));
 
+        MvcResult optionsRevoked = mockMvc.perform(get("/api/schedules/share")
+                        .header("Authorization", tokens.get("sch03_owner")))
+                .andExpect(status().isOk())
+                .andReturn();
+        JsonNode revokedOption = optionByGroup(
+                objectMapper.readTree(optionsRevoked.getResponse().getContentAsString()).path("data"),
+                groupId);
+        assertThat(revokedOption.path("granted").asBoolean()).isFalse();
+
         // stranger 对同授权直接查询也只有 viewer 视角；异群体使用 owner 的单查端点（/busy）不可行——403/404 已由 owner-only 保证
         mockMvc.perform(get("/api/schedules/busy")
                         .header("Authorization", tokens.get("sch03_stranger"))
@@ -275,6 +314,15 @@ class ScheduleAcceptanceTest {
     }
 
     // ---------- 脚手架 ----------
+
+    private JsonNode optionByGroup(JsonNode options, long groupId) {
+        for (JsonNode option : options) {
+            if (option.path("groupId").asLong() == groupId) {
+                return option;
+            }
+        }
+        return objectMapper.createObjectNode();
+    }
 
     private String scheduleJson(String title, LocalDateTime start, LocalDateTime end, String note) {
         return """

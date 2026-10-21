@@ -45,6 +45,11 @@ export const activityApi = {
   declineInvite: (inviteId) => http.post(`/activity-invites/${inviteId}/decline`)
 }
 
+export const scheduleApi = {
+  shareOptions: () => http.get('/schedules/share'),
+  setShare: (payload) => http.put('/schedules/share', payload)
+}
+
 export const friendApi = {
   list: () => http.get('/friends'),
   requests: () => http.get('/friends/requests'),

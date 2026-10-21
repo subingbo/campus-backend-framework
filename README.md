@@ -50,6 +50,20 @@ mvn -pl campus-server -am spring-boot:run
 |--------|----------|-------|
 | admin  | admin123 | ADMIN |
 
+## 演示数据（20 用户 / 3 地图群聊）
+
+后端启动后执行：
+
+```bash
+node tools/seed-demo.mjs              # 创建/补齐演示数据
+node tools/seed-demo.mjs --verify-only # 只校验，不写入
+```
+
+- 账号：`demo01`–`demo20`，统一密码 `demo1234`；主演示账号 `demo01`，Map B 用 `demo08`，Map C 用 `demo15`。
+- 3 张 `[DEMO]` 地图/群聊、16 个地点、38 条群/私聊消息、5 个活动、6 条动态、6 条日程。
+- 脚本非破坏性、可重复执行；不会删除现有用户/地图，也不会自动触发 `@AI`。
+- 详细账号、地图分配和演示顺序见 [docs/demo-accounts.md](docs/demo-accounts.md)。
+
 ## 核心接口（脚手架基础设施 · campus-framework）
 
 | 方法   | 路径                 | 说明           |

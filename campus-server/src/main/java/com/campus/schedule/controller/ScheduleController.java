@@ -4,6 +4,7 @@ import com.campus.common.result.Result;
 import com.campus.schedule.dto.BusyEntryDto;
 import com.campus.schedule.dto.GroupBusyDto;
 import com.campus.schedule.dto.SaveScheduleRequest;
+import com.campus.schedule.dto.ScheduleShareOption;
 import com.campus.schedule.dto.ShareScheduleRequest;
 import com.campus.schedule.entity.PersonalSchedule;
 import com.campus.schedule.service.ScheduleService;
@@ -67,6 +68,12 @@ public class ScheduleController {
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime from,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime to) {
         return Result.success(scheduleService.myBusy(SecurityUtils.getUserId(), from, to));
+    }
+
+    @Operation(summary = "我的群忙闲授权选项（当前用户加入的群 + 是否已授权）")
+    @GetMapping("/share")
+    public Result<List<ScheduleShareOption>> shareOptions() {
+        return Result.success(scheduleService.listGroupShareOptions(SecurityUtils.getUserId()));
     }
 
     @Operation(summary = "设置/撤销忙闲共享授权（FREE_BUSY 仅时段，不暴露内容）")

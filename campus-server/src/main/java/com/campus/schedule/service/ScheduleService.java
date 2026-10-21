@@ -8,6 +8,7 @@ import com.campus.map.mapper.SharedMapMapper;
 import com.campus.schedule.dto.BusyEntryDto;
 import com.campus.schedule.dto.GroupBusyDto;
 import com.campus.schedule.dto.SaveScheduleRequest;
+import com.campus.schedule.dto.ScheduleShareOption;
 import com.campus.schedule.dto.ShareScheduleRequest;
 import com.campus.schedule.entity.PersonalSchedule;
 import com.campus.schedule.entity.ScheduleSharePermission;
@@ -98,12 +99,21 @@ public class ScheduleService {
                 if (map == null) {
                     throw new BusinessException(ResultCode.NOT_FOUND.getCode(), "群组不存在");
                 }
+                if (mapMemberMapper.selectByMapAndUser(map.getId(), userId) == null) {
+                    throw new BusinessException(ResultCode.FORBIDDEN.getCode(),
+                            "只能向自己加入的群组授权忙闲");
+                }
             }
             sharePermissionMapper.upsert(userId, targetType, request.getTargetId(),
                     ScheduleSharePermission.LEVEL_FREE_BUSY);
         } else {
             sharePermissionMapper.delete(userId, targetType, request.getTargetId());
         }
+    }
+
+    /** 当前用户加入的群地图 + 是否已授予 FREE_BUSY（供我的日程页开关） */
+    public List<ScheduleShareOption> listGroupShareOptions(Long userId) {
+        return sharePermissionMapper.selectGroupOptions(userId);
     }
 
     /** owner 是否已把 FREE_BUSY 授予目标（USER 本人 / GROUP 群组） */

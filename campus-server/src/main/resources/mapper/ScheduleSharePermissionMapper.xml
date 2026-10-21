@@ -34,4 +34,24 @@
           AND target_id = #{targetId}
         LIMIT 1
     </select>
+
+    <select id="selectGroupOptions" resultType="com.campus.schedule.dto.ScheduleShareOption">
+        SELECT cg.id AS groupId,
+               cg.name AS groupName,
+               sm.id AS mapId,
+               sm.name AS mapName,
+               cg.visibility AS visibility,
+               mm.role AS myRole,
+               CASE WHEN p.id IS NULL THEN 0 ELSE 1 END AS granted,
+               p.created_at AS grantedAt
+        FROM shared_map sm
+        INNER JOIN campus_group cg ON cg.id = sm.group_id
+        INNER JOIN map_member mm ON mm.map_id = sm.id AND mm.user_id = #{userId}
+        LEFT JOIN schedule_share_permission p
+               ON p.owner_user_id = #{userId}
+              AND p.target_type = 'GROUP'
+              AND p.target_id = cg.id
+              AND p.permission_level = 'FREE_BUSY'
+        ORDER BY sm.updated_at DESC, sm.id DESC
+    </select>
 </mapper>

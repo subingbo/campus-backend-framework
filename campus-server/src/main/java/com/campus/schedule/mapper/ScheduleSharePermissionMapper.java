@@ -1,8 +1,11 @@
 package com.campus.schedule.mapper;
 
+import com.campus.schedule.dto.ScheduleShareOption;
 import com.campus.schedule.entity.ScheduleSharePermission;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
+
+import java.util.List;
 
 @Mapper
 public interface ScheduleSharePermissionMapper {
@@ -26,4 +29,7 @@ public interface ScheduleSharePermissionMapper {
     ScheduleSharePermission selectByOwnerAndTarget(@Param("ownerUserId") Long ownerUserId,
                                                    @Param("targetType") String targetType,
                                                    @Param("targetId") Long targetId);
+
+    /** 当前用户加入的群地图 + 是否已授予 FREE_BUSY */
+    List<ScheduleShareOption> selectGroupOptions(@Param("userId") Long userId);
 }

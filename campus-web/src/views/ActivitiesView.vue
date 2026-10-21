@@ -45,6 +45,41 @@
       </el-tab-pane>
 
       <el-tab-pane label="我的日程" name="schedule">
+        <div class="section share-section">
+          <div class="share-head">
+            <h3>忙闲共享（供群规划使用）</h3>
+            <el-tag size="small" effect="plain">{{ grantedCount }} 个群已授权</el-tag>
+          </div>
+          <p class="hint share-note">
+            开启后，本群成员和 @AI 规划只能看到你的忙碌时间段，不会看到日程标题、备注或具体内容。
+            默认关闭；未授权的成员在群规划中会标记为未知，方案会被标注为暂定。
+          </p>
+          <div v-loading="shareLoading" class="share-list">
+            <div v-for="option in shareOptions" :key="option.groupId" class="share-row">
+              <div class="share-row__main">
+                <strong>{{ option.groupName || option.mapName }}</strong>
+                <span class="hint">
+                  {{ option.mapName }} · {{ roleText(option.myRole) }}
+                  · {{ option.visibility === 'PUBLIC' ? '公开地图' : '成员可见' }}
+                </span>
+                <span v-if="option.granted && option.grantedAt" class="hint">
+                  授权于 {{ fmt(option.grantedAt) }}
+                </span>
+              </div>
+              <div class="share-row__action">
+                <el-switch
+                  :model-value="option.granted"
+                  :loading="!!shareSaving[option.groupId]"
+                  @change="(value) => toggleShare(option, value)"
+                />
+                <span class="hint">{{ option.granted ? '已授权' : '未授权' }}</span>
+              </div>
+            </div>
+            <p v-if="!shareLoading && !shareOptions.length" class="hint empty">
+              先创建或加入一张共享地图，才能设置群忙闲共享。
+            </p>
+          </div>
+        </div>
         <template v-for="group in scheduleGroups" :key="group.label">
           <div class="section" v-if="group.items.length">
             <h3>{{ group.label }}</h3>
@@ -177,7 +212,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useRouter } from 'vue-router'
-import { activityApi, placeApi } from '../api'
+import { activityApi, placeApi, scheduleApi } from '../api'
 import { myUserId, on } from '../composables/useChatSocket'
 import ActivityEntryCard from '../components/ActivityEntryCard.vue'
 import ActivityFormDialog from '../components/ActivityFormDialog.vue'
@@ -187,11 +222,51 @@ const router = useRouter()
 const tab = ref('calendar')
 const mine = ref([])
 const pendingInvites = ref([])
+const shareOptions = ref([])
+const shareLoading = ref(false)
+const shareSaving = ref({})
 let removers = []
 const myId = myUserId()
 
 function isCreatorOf(a) {
   return myId != null && a.creatorId === myId
+}
+
+const grantedCount = computed(() => shareOptions.value.filter((item) => item.granted).length)
+
+async function loadShareOptions() {
+  shareLoading.value = true
+  try {
+    shareOptions.value = (await scheduleApi.shareOptions()) || []
+  } catch (e) {
+    ElMessage.error(e.message || '加载忙闲共享设置失败')
+  } finally {
+    shareLoading.value = false
+  }
+}
+
+async function toggleShare(option, value) {
+  if (!option?.groupId || shareSaving.value[option.groupId]) return
+  shareSaving.value = { ...shareSaving.value, [option.groupId]: true }
+  try {
+    await scheduleApi.setShare({
+      targetType: 'GROUP',
+      targetId: option.groupId,
+      grant: value
+    })
+    option.granted = value
+    option.grantedAt = value ? new Date().toISOString() : null
+    ElMessage.success(value
+      ? `已授权「${option.groupName}」读取忙闲时段`
+      : `已撤销「${option.groupName}」忙闲共享`)
+  } catch (e) {
+    ElMessage.error(e.message || '设置忙闲共享失败')
+    await loadShareOptions()
+  } finally {
+    const next = { ...shareSaving.value }
+    delete next[option.groupId]
+    shareSaving.value = next
+  }
 }
 
 /** ===== 日历视图：格子按日聚合我的活动 ===== */
@@ -393,7 +468,7 @@ async function declineInvite(i) {
 }
 
 onMounted(async () => {
-  await Promise.all([loadMine(), loadInvites()])
+  await Promise.all([loadMine(), loadInvites(), loadShareOptions()])
   removers = [
     on('ACTIVITY_REMINDER', (frame) => {
       ElMessage.warning(frame.summary)
@@ -457,6 +532,49 @@ onUnmounted(() => {
   margin: 0 0 12px;
   font-size: 15px;
   color: rgba(0, 0, 0, 0.9);
+}
+.share-section {
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 2px 12px rgba(31, 56, 88, 0.06);
+}
+.share-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+.share-head h3 {
+  margin: 0;
+}
+.share-note {
+  margin: 0 0 12px;
+  line-height: 1.6;
+}
+.share-list {
+  min-height: 40px;
+}
+.share-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 0;
+  border-top: 1px solid rgba(0, 0, 0, 0.06);
+}
+.share-row__main {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.share-row__action {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
 }
 .row {
   display: flex;
