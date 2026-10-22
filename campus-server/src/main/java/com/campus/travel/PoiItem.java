@@ -1,4 +1,4 @@
-package com.campus.ai.travel;
+package com.campus.travel;
 
 import lombok.Data;
 

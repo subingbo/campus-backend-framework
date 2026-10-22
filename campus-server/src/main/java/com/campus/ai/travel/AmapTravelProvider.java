@@ -5,6 +5,9 @@ import com.campus.ai.constant.AiRedisKey;
 import com.campus.common.exception.BusinessException;
 import com.campus.common.result.ResultCode;
 import com.campus.common.util.GeoUtils;
+import com.campus.travel.PoiItem;
+import com.campus.travel.RouteInfo;
+import com.campus.travel.TravelInfoProvider;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
@@ -32,14 +35,15 @@ import java.util.Set;
 @Component
 public class AmapTravelProvider implements TravelInfoProvider {
 
-    private static final Set<String> SUPPORTED_MODES = Set.of("WALK", "RIDE", "DRIVE");
+    private static final Set<String> SUPPORTED_MODES = Set.of("WALK", "RIDE", "DRIVE", "TAXI", "TRANSIT");
     private static final String BASE_URL = "https://restapi.amap.com";
-    /** 本地估算使用的平均速度 m/s：步行 ~1.25，骑行 ~3.3，驾车 ~8.3（校园/市区路况偏保守） */
-    private static final Map<String, Double> ESTIMATE_SPEED = Map.of("WALK", 1.25, "RIDE", 3.3, "DRIVE", 8.3);
+    /** 本地估算使用的平均速度 m/s：步行 ~1.25，骑行 ~3.3，驾车/打车 ~8.3，公交 ~4.2（校园/市区路况偏保守） */
+    private static final Map<String, Double> ESTIMATE_SPEED =
+            Map.of("WALK", 1.25, "RIDE", 3.3, "DRIVE", 8.3, "TAXI", 8.3, "TRANSIT", 4.2);
     private static final Duration HTTP_TIMEOUT = Duration.ofSeconds(6);
-    /** v5 路径规划端点资源名与模式枚举不同名（walk → walking） */
+    /** v5 路径规划端点资源名与模式枚举不同名（walk → walking）；打车复用驾车路径 */
     private static final Map<String, String> MODE_PATH =
-            Map.of("WALK", "walking", "RIDE", "riding", "DRIVE", "driving");
+            Map.of("WALK", "walking", "RIDE", "riding", "DRIVE", "driving", "TAXI", "driving");
 
     private final AmapProperties amapProperties;
     private final RouteCache routeCache;
@@ -66,8 +70,9 @@ public class AmapTravelProvider implements TravelInfoProvider {
         validateCoord("终点", toLng, toLat);
 
         if (mode.equals("TRANSIT")) {
-            // 公交整合路线需要城市区划码且 schema 复杂，本期明确不支持而非编造
-            throw new BusinessException(ResultCode.BAD_REQUEST.getCode(), "暂不支持公交路线查询，请用步行/骑行/驾车");
+            // 公交整合路线需要城市区划码且 schema 复杂：按公交平均速度估算并显式标记 estimated，
+            // 让规划器可以把它当作“参考耗时”，但绝不宣称真实公交路线已验证。
+            return estimate(mode, fromLng, fromLat, toLng, toLat);
         }
 
         String cacheKey = AiRedisKey.route(mode, fromLng, fromLat, toLng, toLat);

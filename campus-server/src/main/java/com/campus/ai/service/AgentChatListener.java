@@ -10,6 +10,10 @@ public interface AgentChatListener {
 
     void onStatus(String stage);
 
+    /** 每次工具执行后回调（群聊用于推送进度；默认忽略） */
+    default void onTool(String toolName) {
+    }
+
     void onDelta(String text);
 
     void onPlan(PlanDto plan);

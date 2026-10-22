@@ -43,6 +43,7 @@ import { reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { authApi } from '../api'
+import { beginSession } from '../api/authSession'
 
 const router = useRouter()
 const mode = ref('login')
@@ -60,8 +61,7 @@ async function submit() {
       })
     }
     const tokens = await authApi.login({ username: form.username, password: form.password })
-    localStorage.setItem('accessToken', tokens.accessToken)
-    localStorage.setItem('refreshToken', tokens.refreshToken)
+    beginSession(tokens)
     ElMessage.success('登录成功')
     router.push('/')
   } catch (e) {

@@ -1,7 +1,7 @@
 package com.campus.ai.planner;
 
-import com.campus.ai.travel.RouteInfo;
-import com.campus.ai.travel.TravelInfoProvider;
+import com.campus.travel.RouteInfo;
+import com.campus.travel.TravelInfoProvider;
 import com.campus.schedule.dto.BusyEntryDto;
 
 import java.time.Duration;
@@ -30,8 +30,8 @@ public final class SpatiotemporalPlanner {
     public static final long DEFAULT_STAY_MINUTES = 60;
     /** 默认站点高度（终点后必须保留的缓冲，覆盖回程与后续日程衔接） */
     public static final long DEFAULT_BUFFER_MINUTES = 10;
-    /** 交通段支持的出行方式（TRANSIT 无 v5 接口，不做联合求解） */
-    public static final List<String> SUPPORTED_MODES = List.of("WALK", "RIDE", "DRIVE");
+    /** 交通段支持的出行方式（公交按估算参与求解，结果标记 estimated） */
+    public static final List<String> SUPPORTED_MODES = List.of("WALK", "RIDE", "DRIVE", "TAXI", "TRANSIT");
 
     private SpatiotemporalPlanner() {
     }
@@ -72,7 +72,7 @@ public final class SpatiotemporalPlanner {
             return noSolution("时间窗口无效");
         }
         if (transportMode == null || !SUPPORTED_MODES.contains(transportMode)) {
-            return noSolution("交通方式仅支持 WALK / RIDE / DRIVE（公交暂不支持联合求解）");
+            return noSolution("交通方式仅支持 WALK / RIDE / DRIVE / TAXI / TRANSIT");
         }
         if (candidates == null || candidates.isEmpty()) {
             return noSolution("至少需要一个候选地点（共建地图或系统地点）");

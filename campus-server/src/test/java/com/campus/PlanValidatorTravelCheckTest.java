@@ -4,9 +4,9 @@ import com.campus.ai.dto.PlanDto;
 import com.campus.ai.dto.PlanStop;
 import com.campus.ai.plan.PlanValidationException;
 import com.campus.ai.plan.PlanValidator;
-import com.campus.ai.travel.PoiItem;
-import com.campus.ai.travel.RouteInfo;
-import com.campus.ai.travel.TravelInfoProvider;
+import com.campus.travel.PoiItem;
+import com.campus.travel.RouteInfo;
+import com.campus.travel.TravelInfoProvider;
 import com.campus.common.exception.BusinessException;
 import com.campus.map.service.SharedMapService;
 import com.campus.place.service.PlaceService;
@@ -16,6 +16,7 @@ import org.junit.jupiter.api.Test;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -118,5 +119,77 @@ class PlanValidatorTravelCheckTest {
         PlanDto validated = validator(provider(578L, false)).validate(planWithGapSeconds(580), 1L);
         assertThat(validated.getRouteConfidence()).isEqualTo("AMAP");
         assertThat(validated.getTotalTravelMinutes()).isEqualTo(10);
+    }
+
+    @Test
+    void missingStopTimeMarksPartialInsteadOfClaimingVerified() {
+        PlanDto plan = planWithGapSeconds(600);
+        plan.getStops().get(1).setStartTime(null);
+
+        PlanDto validated = validator(provider(600L, false)).validate(plan, 1L);
+
+        assertThat(validated.getRouteConfidence()).isEqualTo("PARTIAL");
+        assertThat(validated.getWarnings()).anyMatch(w -> w.contains("未做交通校验"));
+    }
+
+    @Test
+    void providerErrorStillFailsAiValidation() {
+        TravelInfoProvider failing = new TravelInfoProvider() {
+            @Override
+            public RouteInfo searchRoute(String mode, double fromLng, double fromLat, double toLng, double toLat) {
+                throw new BusinessException(500, "route down");
+            }
+
+            @Override
+            public List<PoiItem> searchPoi(String keyword, Double nearLng, Double nearLat, Integer radiusMeters) {
+                return List.of();
+            }
+        };
+
+        assertThatThrownBy(() -> validator(failing).validate(planWithGapSeconds(600), 1L))
+                .isInstanceOf(PlanValidationException.class)
+                .satisfies(ex -> assertThat(((PlanValidationException) ex).getRuleId())
+                        .isEqualTo("ROUTE_ESTIMATE_FAILED"));
+    }
+
+    @Test
+    void infeasibleLegWinsOverProviderError() {
+        AtomicInteger calls = new AtomicInteger();
+        TravelInfoProvider mixed = new TravelInfoProvider() {
+            @Override
+            public RouteInfo searchRoute(String mode, double fromLng, double fromLat, double toLng, double toLat) {
+                if (calls.getAndIncrement() == 0) {
+                    RouteInfo route = new RouteInfo();
+                    route.setDurationSeconds(600L);
+                    route.setDistanceMeters(1000.0);
+                    route.setProvider("amap");
+                    return route;
+                }
+                throw new BusinessException(500, "route down");
+            }
+
+            @Override
+            public List<PoiItem> searchPoi(String keyword, Double nearLng, Double nearLat, Integer radiusMeters) {
+                return List.of();
+            }
+        };
+
+        PlanDto plan = new PlanDto();
+        plan.setTitle("优先级");
+        plan.setStartTime(START);
+        plan.setEndTime(START.plusHours(4));
+        LocalDateTime aEnd = START.plusMinutes(30);
+        PlanStop a = stop("A 点", 113.38, START, aEnd, null);
+        LocalDateTime bStart = aEnd.plusMinutes(5);
+        PlanStop b = stop("B 点", 113.39, bStart, bStart.plusMinutes(60), "WALK");
+        LocalDateTime cStart = bStart.plusMinutes(90);
+        PlanStop c = stop("C 点", 113.40, cStart, cStart.plusMinutes(60), "WALK");
+        plan.setStops(List.of(a, b, c));
+
+        assertThatThrownBy(() -> validator(mixed).validate(plan, 1L))
+                .isInstanceOf(PlanValidationException.class)
+                .hasMessageContaining("只留了 5 分钟")
+                .satisfies(ex -> assertThat(((PlanValidationException) ex).getRuleId())
+                        .isEqualTo("TRAVEL_TIME_CONFLICT"));
     }
 }

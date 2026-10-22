@@ -10,6 +10,18 @@
 - MyBatis（XML Mapper，无 MyBatis-Plus）
 - springdoc-openapi 2.8 + Swagger UI（接口文档按「脚手架基础设施 / 校园业务」分组）
 
+## 文档地图
+
+| 文档 | 用途 |
+|---|---|
+| [docs/项目全流程说明.md](docs/项目全流程说明.md) | **当前权威**：操作文档、用户操作流程、业务流程、数据流程 |
+| [docs/体验与流程问题清单.md](docs/体验与流程问题清单.md) | 使用不顺的 P0/P1/P2 问题、技术风险与修复路线 |
+| [docs/操作逻辑与业务流程说明.md](docs/操作逻辑与业务流程说明.md) | 2026-10-17 版深度参考（Agent 细节仍可查，最新口径以全流程说明为准） |
+| [docs/调试指南.md](docs/调试指南.md) | 本地启动、切号、造数、查库 |
+| [docs/演示账号与数据总表.md](docs/演示账号与数据总表.md) | 演示账号/地图/日程自动生成快照 |
+| [docs/agent-trace/README.md](docs/agent-trace/README.md) | Agent Trace 权威文档 |
+| [docs/开发工作报告.md](docs/开发工作报告.md) | 历史开发日志 |
+
 ## 快速开始
 
 ### 1. 启动依赖
@@ -57,12 +69,14 @@ mvn -pl campus-server -am spring-boot:run
 ```bash
 node tools/seed-demo.mjs              # 创建/补齐演示数据
 node tools/seed-demo.mjs --verify-only # 只校验，不写入
+node tools/demo-report.mjs            # 只读导出账号/地图/日程总表
+node tools/demo-report.mjs --verify   # 校验每人地图、日程、忙闲授权
 ```
 
 - 账号：`demo01`–`demo20`，统一密码 `demo1234`；主演示账号 `demo01`，Map B 用 `demo08`，Map C 用 `demo15`。
-- 3 张 `[DEMO]` 地图/群聊、16 个地点、38 条群/私聊消息、5 个活动、6 条动态、6 条日程。
+- 3 张 `[DEMO]` 地图/群聊、16 个地点、38 条群/私聊消息、5 个活动、6 条动态、**40 条个人日程**（每人 2 条），20 人全部授予群忙闲。
 - 脚本非破坏性、可重复执行；不会删除现有用户/地图，也不会自动触发 `@AI`。
-- 详细账号、地图分配和演示顺序见 [docs/demo-accounts.md](docs/demo-accounts.md)。
+- 详细账号、地图分配和演示顺序见 [docs/demo-accounts.md](docs/demo-accounts.md)；完整数据表见 [docs/演示账号与数据总表.md](docs/演示账号与数据总表.md)；启动/切号/调试见 [docs/调试指南.md](docs/调试指南.md)。
 
 ## 核心接口（脚手架基础设施 · campus-framework）
 
@@ -106,7 +120,7 @@ LLM 不参与写日志；Trace 写入失败不影响主业务。
 - 仅本人可读；非本人/不存在 404。
 - 默认保存脱敏摘要：不保存聊天原文、地点名/地址/备注、精确经纬度/轨迹、JWT/API Key。
 - 成本按 `campus.agent.trace.pricing` 读取时估算；旧 Trace/混合模型/缺 usage 显示“不可估算”。
-- 部署前先执行迁移：`campus-server/src/main/resources/db/migration/20261019_01__create_agent_trace.sql`。
+- 部署前先执行迁移：`campus-server/src/main/resources/db/migration/20261019_01__create_agent_trace.sql`、`20261022_01__add_message_client_msg_id.sql`（聊天幂等列）、`20261022_02__add_group_agent_plan.sql`（群规划快照）。启动时 `SchemaPreconditionChecker` 会校验这三项前置结构，缺失即 fail-fast 并给出迁移路径。
 - 详细说明：[docs/agent-trace/README.md](docs/agent-trace/README.md)、
   [事件协议](docs/agent-trace/events-v1.md)、[隐私](docs/agent-trace/privacy.md)、
   [API](docs/agent-trace/api.md)、[脱敏样例](docs/agent-trace/sample-session.jsonl)。
@@ -226,7 +240,7 @@ Java Haversine 精确筛选 ≤ 5m
 - **页面**：`/assistant`（左对话流式 + 右地图站点折线/时间线卡片 + 保存为活动）；全局顶栏导航壳（`campus-web/src/components/AppShell.vue`）提供「AI 助手」入口，工作台与群聊 AI 卡片均跳同一处。
 - **新增接口（校园业务分组）**：`/api/assistant/chats*`（会话与 SSE 消息，event= status/delta/plan/**geo**/done/error；消息体可带 `userLocation`，含 `source: device|manual`）、`POST /api/assistant/chats/{id}/plan/save`（草稿→活动，幂等）、`GET /api/assistant/routes`（站间折线，与规划同源缓存）。
 - **Agent**：DashScope OpenAI 兼容模式 + function calling，13 个工具（2026-10-18 新增 `get_my_location`：/assistant 输入区「📍 位置」开关打开后，前端每条消息附实时定位快照注入本轮工具语境；个人会话「参考地图」支持多选，注入多张图名优先级）
-- **对话即地图（2026-10-18）**：工具查到/路过的地点、真实路线与"我的位置"会实时画到右侧地图并生成可点击 chip（点 chip 居中并开浮窗，共建/收藏点可跳「在共建地图打开」）；点空白处关浮窗、点地图标记同样开浮窗。定位不准可点「纠偏」在地图上点选真实位置（优先于 GPS、localStorage 记忆、可清除）。AI 回复用 Markdown 渲染（marked + DOMPurify）。地图上的点/路线/我位置随助手消息落库（`ai_message.geo_json`），刷新与重开历史会话会一并回放。历史会话用输入区上方的「会话 ▾」切换（标题/草稿·已保存徽标/时间，当前会话高亮）。草稿提交已**直点化**：信息够时模型直接 `submit_plan`（不再停下来请示用户），草稿一生成立即弹出「草稿已生成」确认弹窗（一键保存为活动）；模型若仍发出确认式问句，气泡下会出现「提交吧/先不提交」快捷键。回复下的地点芯片会**同点合并**（同一地点只出现一次，带地点 ID 的版本优先）；最后查看的会话记在本地，刷新/重进页面回到你正看的会话。芯片**按行程路线顺序排列**：命中行程站的芯片排前并带站序号角标（①②③…），其余按工具时间足迹跟后。后端带三道收敛护栏：同参重复调用直接打回（duplicate_call）、搜索类工具单次规划限 6 次真实执行（search_budget_exhausted）、第 8 轮起注入“预算将尽”提示；所有工具失败原因进 AI_RUN 观测日志。（共建地图语义检索/地点上下文/个人地图/系统地点/路线/POI/忙闲/空闲求解/时空联合规划 plan_itinerary/提交草稿）——群聊 @AI 由后端盖章 groupId/sourceMapIds/来源标签与规划指纹；`SpatiotemporalPlanner` 确定性联合求解（共同空闲 + 高德真实交通 + 停留 + 收尾缓冲，LLM 不判可行性）；`PlanValidator` 校验含站点间交通运输硬校验；保存链路带群体二次校验（退群/地图变化/忙闲变化 → 409 重新确认）与 revise 无变更守卫；限流 `ai:chat` 10 次/分钟；预算 14 轮/每轮 5 工具。
+- **对话即地图（2026-10-18）**：工具查到/路过的地点、真实路线与"我的位置"会实时画到右侧地图并生成可点击 chip（点 chip 居中并开浮窗，共建/收藏点可跳「在共建地图打开」）；点空白处关浮窗、点地图标记同样开浮窗。定位不准可点「纠偏」在地图上点选真实位置（优先于 GPS、localStorage 记忆、可清除）。AI 回复用 Markdown 渲染（marked + DOMPurify）。地图上的点/路线/我位置随助手消息落库（`ai_message.geo_json`），刷新与重开历史会话会一并回放。历史会话用输入区上方的「会话 ▾」切换（标题/草稿·已保存徽标/时间，当前会话高亮）。草稿提交已**直点化**：信息够时模型直接 `submit_plan`（不再停下来请示用户），草稿一生成立即弹出「草稿已生成」确认弹窗（一键保存为活动）；模型若仍发出确认式问句，气泡下会出现「提交吧/先不提交」快捷键。回复下的地点芯片会**同点合并**（同一地点只出现一次，带地点 ID 的版本优先）；最后查看的会话记在本地，刷新/重进页面回到你正看的会话。芯片**按行程路线顺序排列**：命中行程站的芯片排前并带站序号角标（①②③…），其余按工具时间足迹跟后。后端带三道收敛护栏：同参重复调用直接打回（duplicate_call）、搜索类工具单次规划限 6 次真实执行（search_budget_exhausted）、第 8 轮起注入“预算将尽”提示；所有工具失败原因进 AI_RUN 观测日志。（共建地图语义检索/地点上下文/个人地图/系统地点/路线/POI/忙闲/空闲求解/时空联合规划 plan_itinerary/提交草稿）——群聊 @AI 由后端盖章 groupId/sourceMapIds/来源标签与规划指纹；`SpatiotemporalPlanner` 确定性联合求解（共同空闲 + 高德真实交通 + 停留 + 收尾缓冲，LLM 不判可行性）；`PlanValidator` 校验含站点间交通三态硬校验（不可行/未核验/PARTIAL）；保存链路带群体二次校验（退群/地图变化/忙闲变化 → 409 重新确认）与 revise 无变更守卫；限流 `ai:chat` 10 次/分钟；预算 14 轮/每轮 5 工具。
 - **多站行程**：`activity_stop` 表（GCJ-02，`uk_activity_seq`），创建/编辑活动支持可选 `stops`；详情与「我的日程」带出时间线；签到/邀请/提醒仍挂主活动。
 - **手动创建活动（2026-10-18）**：活动日程页「＋ 新建活动」——选已有地点，或「地图点选新建」（mini 地图点选 + 命名/分类，自动先建地点再建活动，5 米查重自动复用）；表单可选填 ≤8 站行程（站点选地点 + 时间/交通/备注；编辑时整体替换，纯坐标站只读保留）。工作台「安排活动」入口保留。
 - **存量库迁移**（initdb.d 不会对旧库重跑）：
@@ -234,6 +248,11 @@ Java Haversine 精确筛选 ≤ 5m
 ```bash
 docker compose exec -T mysql mysql -ucampus -pcampus123 campus < campus-server/src/main/resources/db/migration/20261015_01__create_activity_stop.sql
 docker compose exec -T mysql mysql -ucampus -pcampus123 campus < campus-server/src/main/resources/db/migration/20261015_02__create_ai_tables.sql
+docker compose exec -T mysql mysql -ucampus -pcampus123 campus < campus-server/src/main/resources/db/migration/20261016_01__create_personal_schedule.sql
+docker compose exec -T mysql mysql -ucampus -pcampus123 campus < campus-server/src/main/resources/db/migration/20261018_01__add_ai_message_geo_json.sql
+docker compose exec -T mysql mysql -ucampus -pcampus123 campus < campus-server/src/main/resources/db/migration/20261019_01__create_agent_trace.sql
+docker compose exec -T mysql mysql -ucampus -pcampus123 campus < campus-server/src/main/resources/db/migration/20261022_01__add_message_client_msg_id.sql
+docker compose exec -T mysql mysql -ucampus -pcampus123 campus < campus-server/src/main/resources/db/migration/20261022_02__add_group_agent_plan.sql
 ```
 
 - **密钥配置**：真实 key 放 git 忽略的 `campus-server/src/main/resources/application-secrets.properties`（`DASHSCOPE_API_KEY` / `AMAP_WEB_KEY`），`application.yml` 经 `spring.config.import: optional:` 引入；也可直接配同名环境变量覆盖。高德这边是**Web服务**类型 key（与前端 JS key 不同）。
@@ -249,23 +268,23 @@ docker compose exec -T mysql mysql -ucampus -pcampus123 campus < campus-server/s
 - **个人日程**：`personal_schedule` 表 CRUD（`/api/schedules`），activity（已报名/创建）为第二忙碌来源——忙碌视图=两者联合（不复制存储）。
 - **免费忙闲授权**：`/api/schedules/share`（USER/GROUP 目标，FREE_BUSY 等级=仅时段不露标题）；`GET /api/schedules/group-busy` 返回 known（含未知）视图，未授权成员不视为有空。
 - **时间求解器**：`com.campus.ai.planner.FreeWindowSolver`（区间合并+补集+时长筛选，计划 §5.2）。
-- **Agent 工具（共 7+1）**：新增 `get_my_schedule` / `find_free_windows`；群聊语境下 `find_free_windows` 返回群体忙闲+coverage（由后端 ws 会话注入 viewerId/groupId，模型不可指定身份）。
+- **Agent 工具（共 13 个 = 12 个可执行工具 + `submit_plan`）**：新增 `get_my_schedule` / `find_free_windows` / `plan_itinerary` / `get_my_location` 等；群聊语境下 `find_free_windows` 返回群体忙闲+coverage（由后端 ws 会话注入 viewerId/groupId，模型不可指定身份）。
 - **群聊 @AI**：地图群聊发送 `@AI 帮我们……` → 复用 AgentService 规划 → 群内收到 AGENT 消息 + `AGENT_PLAN_CARD` 帧（前端 ChatPanel 渲染）；规划者可在 `/assistant` 编辑（v2）并保存为活动。
 - **草稿编辑**：`POST /api/assistant/chats/{id}/plan/revise`（行锁+重校验+版本+1，expectedPlanVersion 不符返回 409），前端计划卡支持标题/时间/站点时间/备注/删除/排序编辑。
 
 ### 启动与迁移
 
 - 全新初始化：`schema.sql` 已含全部表。
-- 存量库：执行 `db/migration/20261016_01__create_personal_schedule.sql`（个人日程+授权表）；此前若未执行 20261015 两个迁移，一并执行。
+- 存量库：执行 `db/migration/20261016_01__create_personal_schedule.sql`（个人日程+授权表）；此前若未执行 20261015 两个迁移，一并执行；2026-10-22 起还需执行 `20261022_01__add_message_client_msg_id.sql`（聊天幂等）与 `20261022_02__add_group_agent_plan.sql`（群规划快照）。
 - 演示脚本：`node tools/phase-g-demo.mjs demoGX .ai-run/phase-g-demoGX.jsonl`；话术见 `docs/比赛演示脚本.md`。
 
 ### 已知限制（V1）
 
 - 群聊 `AGENT_GEO` 地理帧只实时不回放（个人会话的点与路线随助手消息 `geo_json` 落库，刷新可回放）；
 - 群体忙闲的授权对象只对 GROUP 生效（USER 粒度已建模型、控制面待接）；`@AI` 卡片不做离线补推（在线帧收，历史见 AGENT 消息正文）；
-- `find_free_windows` 群体分支不把" apenas 已邀未报名"计入忙碌；TRANSIT 仍不支持（沿用阶段 D 语义）；
+- `find_free_windows` 群体分支不把“已邀未报名”计入忙碌；TRANSIT 已支持但按 15km/h 估算（标记 `estimated`），TAXI 复用驾车路径；
 - 演示话术默认 qwen-plus（真调用），离线兜底见演示脚本文档头部。
 
 ## 延伸阅读
 
-- [操作逻辑与业务流程说明](docs/操作逻辑与业务流程说明.md)：系统怎么跑起来、各业务模块的操作逻辑，重点是「安排 Agent」的两条入口与线程身份、工具循环与 12 个工具、草稿生命周期的四处防线、端到端时序，以及数据流程（29 张表 / Redis key / WebSocket 帧 / 第三方调用）与 20 条容易搞错的点。
+- [操作逻辑与业务流程说明](docs/操作逻辑与业务流程说明.md)：2026-10-17 版深度参考，重点是「安排 Agent」的两条入口与线程身份、工具循环、草稿生命周期的四处防线、端到端时序，以及数据流程（Redis key / WebSocket 帧 / 第三方调用）与 20 条容易搞错的点。最新全流程与 32 表口径见 [项目全流程说明](docs/项目全流程说明.md)。

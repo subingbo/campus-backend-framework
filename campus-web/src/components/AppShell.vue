@@ -28,7 +28,8 @@ import { onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { friendApi } from '../api'
-import { connect, on } from '../composables/useChatSocket'
+import { clearSession } from '../api/authSession'
+import { clearOutboxForCurrentUser, connect, disconnect, on } from '../composables/useChatSocket'
 
 const route = useRoute()
 const router = useRouter()
@@ -51,7 +52,9 @@ async function loadRequestCount() {
 }
 
 function logout() {
-  localStorage.clear()
+  clearOutboxForCurrentUser()
+  disconnect()
+  clearSession()
   router.push('/login')
 }
 

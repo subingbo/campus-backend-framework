@@ -194,6 +194,15 @@ class ActivityCheckinAcceptanceTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value("已邀请过该用户"));
 
+        // 创建者可查询邀请状态；普通成员不可
+        mockMvc.perform(get("/api/activities/" + activityId + "/invites").header("Authorization", creatorAuth))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.length()").value(1))
+                .andExpect(jsonPath("$.data[0].inviteeId").value((int) strangerId))
+                .andExpect(jsonPath("$.data[0].status").value(0));
+        mockMvc.perform(get("/api/activities/" + activityId + "/invites").header("Authorization", memberAuth))
+                .andExpect(status().isForbidden());
+
         mockMvc.perform(get("/api/activity-invites/pending").header("Authorization", "Bearer " + strangerTokens.getAccessToken()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.length()").value(1));
@@ -202,6 +211,10 @@ class ActivityCheckinAcceptanceTest {
                         .header("Authorization", "Bearer " + strangerTokens.getAccessToken()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.status").value(1));
+
+        mockMvc.perform(get("/api/activities/" + activityId + "/invites").header("Authorization", creatorAuth))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].status").value(1));
 
         // 接受后进入成员列表（3 人）
         mockMvc.perform(get("/api/activities/" + activityId + "/members").header("Authorization", creatorAuth))
@@ -224,7 +237,11 @@ class ActivityCheckinAcceptanceTest {
         // 8. 取消活动：创建者可、成员收纪录（列表里 phase=CANCELLED 不再出现在地点活动列表）
         mockMvc.perform(delete("/api/activities/" + activityId).header("Authorization", creatorAuth))
                 .andExpect(status().isOk());
+        // 已取消活动详情仍可查看（与 /mine 一致），但写操作拒绝
         mockMvc.perform(get("/api/activities/" + activityId).header("Authorization", memberAuth))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.phase").value("CANCELLED"));
+        mockMvc.perform(post("/api/activities/" + activityId + "/join").header("Authorization", memberAuth))
                 .andExpect(status().isNotFound());
         mockMvc.perform(get("/api/places/" + placeId + "/activities").header("Authorization", memberAuth))
                 .andExpect(status().isOk())

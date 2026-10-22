@@ -7,7 +7,7 @@
 export const PHASE_TEXT = { OPEN: '报名中', ONGOING: '进行中', ENDED: '已结束', CANCELLED: '已取消' }
 export const PHASE_TAG = { OPEN: 'primary', ONGOING: 'success', ENDED: 'info', CANCELLED: 'danger' }
 export const CATEGORY_TEXT = { MEETING: '会议', COMPETITION: '比赛', OTHER: '其他' }
-export const TRANSPORT_TEXT = { WALK: '🚶 步行前往', RIDE: '🚲 骑行前往', DRIVE: '🚗 驾车前往', TRANSIT: '🚌 公交前往' }
+export const TRANSPORT_TEXT = { WALK: '🚶 步行前往', RIDE: '🚲 骑行前往', DRIVE: '🚗 驾车前往', TAXI: '🚕 打车前往', TRANSIT: '🚌 公交前往' }
 
 export function phaseText(phase) {
   return PHASE_TEXT[phase] || phase

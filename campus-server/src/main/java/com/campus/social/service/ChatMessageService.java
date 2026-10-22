@@ -18,6 +18,7 @@ import com.campus.user.entity.User;
 import com.campus.user.mapper.UserMapper;
 import com.campus.ws.WsSessionRegistry;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -44,7 +45,15 @@ public class ChatMessageService {
     private final WsSessionRegistry wsSessionRegistry;
     private final com.campus.ai.service.GroupAgentService groupAgentService;
 
+    /** 发送结果；duplicate=true 表示命中了 clientMsgId 幂等键，未再次落库/广播 */
+    public record SendResult(ChatMessageResponse response, boolean duplicate) {
+    }
+
     public ChatMessageResponse send(Long senderId, Long conversationId, String content) {
+        return send(senderId, conversationId, content, null).response();
+    }
+
+    public SendResult send(Long senderId, Long conversationId, String content, String clientMsgId) {
         Conversation conversation = requireConversation(conversationId);
         assertCanAccess(conversation, senderId);
         String text = content == null ? "" : content.trim();
@@ -54,9 +63,23 @@ public class ChatMessageService {
         if (text.length() > 1000) {
             throw new BusinessException(ResultCode.BAD_REQUEST.getCode(), "消息最长 1000 字");
         }
+        String normalizedClientId = StringUtils.hasText(clientMsgId) ? clientMsgId.trim() : null;
+        if (normalizedClientId != null && normalizedClientId.length() > 64) {
+            throw new BusinessException(ResultCode.BAD_REQUEST.getCode(), "clientMsgId 过长");
+        }
         User sender = userMapper.selectById(senderId);
         if (sender == null) {
             throw new BusinessException(ResultCode.UNAUTHORIZED);
+        }
+
+        // 幂等命中：断线重试同一 clientMsgId，不重复落库、不重复广播给其他成员、不重复触发群 @AI
+        if (normalizedClientId != null) {
+            ChatMessageResponse existing = messageMapper.selectByClientMsgId(
+                    conversationId, senderId, normalizedClientId);
+            if (existing != null) {
+                wsSessionRegistry.sendToUser(senderId, frame("CHAT_MESSAGE", existing));
+                return new SendResult(existing, true);
+            }
         }
 
         Message message = new Message();
@@ -64,7 +87,22 @@ public class ChatMessageService {
         message.setSenderId(senderId);
         message.setContent(text);
         message.setType("TEXT");
-        messageMapper.insert(message);
+        message.setClientMsgId(normalizedClientId);
+        try {
+            messageMapper.insert(message);
+        } catch (DuplicateKeyException ex) {
+            // 并发重试：唯一键已存在，读回原消息
+            if (normalizedClientId == null) {
+                throw ex;
+            }
+            ChatMessageResponse existing = messageMapper.selectByClientMsgId(
+                    conversationId, senderId, normalizedClientId);
+            if (existing == null) {
+                throw ex;
+            }
+            wsSessionRegistry.sendToUser(senderId, frame("CHAT_MESSAGE", existing));
+            return new SendResult(existing, true);
+        }
 
         ChatMessageResponse response = toResponse(message, resolveNickname(sender));
         fanout(conversation, senderId, response);
@@ -73,7 +111,7 @@ public class ChatMessageService {
         if (ConversationType.GROUP.equals(conversation.getType())) {
             groupAgentService.maybeTrigger(senderId, conversation, text);
         }
-        return response;
+        return new SendResult(response, false);
     }
 
     public void forwardTyping(Long senderId, Long conversationId) {
@@ -176,6 +214,7 @@ public class ChatMessageService {
         response.setSenderNickname(senderNickname);
         response.setContent(message.getContent());
         response.setType(message.getType());
+        response.setClientMsgId(message.getClientMsgId());
         response.setCreatedAt(message.getCreatedAt());
         return response;
     }

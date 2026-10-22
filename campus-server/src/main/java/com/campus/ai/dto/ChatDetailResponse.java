@@ -12,4 +12,7 @@ public class ChatDetailResponse {
     private ChatSessionResponse conversation;
     private List<ChatMessageItem> messages = new ArrayList<>();
     private PlanDto plan;
+    /** 群聊 @AI 来源：继续规划时恢复群语境，以服务端持久化为准 */
+    private Long sourceGroupConversationId;
+    private Long sourceMapId;
 }

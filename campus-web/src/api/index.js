@@ -40,12 +40,17 @@ export const activityApi = {
   checkin: (id, code) => http.post(`/activities/${id}/checkin`, { code }),
   mine: (role = 'all') => http.get('/activities/mine', { params: { role } }),
   invite: (id, userId) => http.post(`/activities/${id}/invites`, { userId }),
+  invites: (id) => http.get(`/activities/${id}/invites`),
   pendingInvites: () => http.get('/activity-invites/pending'),
   acceptInvite: (inviteId) => http.post(`/activity-invites/${inviteId}/accept`),
   declineInvite: (inviteId) => http.post(`/activity-invites/${inviteId}/decline`)
 }
 
 export const scheduleApi = {
+  list: (params) => http.get('/schedules', { params }),
+  create: (payload) => http.post('/schedules', payload),
+  update: (id, payload) => http.put(`/schedules/${id}`, payload),
+  remove: (id) => http.delete(`/schedules/${id}`),
   shareOptions: () => http.get('/schedules/share'),
   setShare: (payload) => http.put('/schedules/share', payload)
 }
@@ -66,7 +71,10 @@ export const chatApi = {
   forMap: (mapId) => http.get(`/conversations/maps/${mapId}`),
   forPlace: (placeId) => http.get(`/conversations/places/${placeId}`),
   messages: (id, beforeId = null, limit = 50) =>
-    http.get(`/conversations/${id}/messages`, { params: { beforeId, limit } })
+    http.get(`/conversations/${id}/messages`, { params: { beforeId, limit } }),
+  agentPlans: (id) => http.get(`/conversations/${id}/agent-plans`),
+  agentPlan: (id, planId) => http.get(`/conversations/${id}/agent-plans/${planId}`),
+  agentPlanHandoff: (id, planId) => http.get(`/conversations/${id}/agent-plans/${planId}/handoff`)
 }
 
 export const assistantApi = {

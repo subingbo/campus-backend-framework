@@ -45,4 +45,7 @@ public interface ActivityService {
 
     /** 我收到的待响应邀请 */
     List<ActivityInviteItem> pendingInvites();
+
+    /** 某活动的邀请状态（仅创建者；取消后仍可查看） */
+    List<ActivityInviteItem> listInvites(Long activityId);
 }

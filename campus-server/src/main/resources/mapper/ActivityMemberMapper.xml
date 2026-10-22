@@ -12,6 +12,18 @@
         DELETE FROM activity_member WHERE activity_id = #{activityId} AND user_id = #{userId}
     </delete>
 
+    <delete id="deleteIfNotCheckedIn">
+        DELETE FROM activity_member
+        WHERE activity_id = #{activityId} AND user_id = #{userId} AND checked_in = 0
+    </delete>
+
+    <select id="selectCheckedIn" resultType="java.lang.Integer">
+        SELECT checked_in FROM activity_member
+        WHERE activity_id = #{activityId} AND user_id = #{userId}
+        LIMIT 1
+        FOR UPDATE
+    </select>
+
     <select id="exists" resultType="int">
         SELECT COUNT(*) FROM activity_member WHERE activity_id = #{activityId} AND user_id = #{userId}
     </select>

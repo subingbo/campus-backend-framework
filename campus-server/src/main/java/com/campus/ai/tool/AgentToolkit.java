@@ -7,22 +7,26 @@ import com.campus.ai.dto.PlanDto;
 import com.campus.ai.dto.PlanStop;
 import com.campus.ai.planner.FreeWindow;
 import com.campus.ai.planner.FreeWindowSolver;
+import com.campus.ai.planner.PlanConflictAnalyzer;
 import com.campus.ai.planner.PlannerModels;
 import com.campus.ai.planner.SpatiotemporalPlanner;
 import com.campus.ai.plan.PlanSource;
 import com.campus.ai.service.GroupMapContextService;
-import com.campus.ai.travel.PoiItem;
-import com.campus.ai.travel.RouteInfo;
-import com.campus.ai.travel.TravelInfoProvider;
+import com.campus.travel.PoiItem;
+import com.campus.travel.RouteInfo;
+import com.campus.travel.TravelInfoProvider;
 import com.campus.common.exception.BusinessException;
 import com.campus.common.result.ResultCode;
 import com.campus.common.util.SqlLikeUtils;
+import com.campus.map.dto.MapDetailResponse;
+import com.campus.map.dto.MapMemberResponse;
 import com.campus.map.dto.MapPlaceSearchItem;
 import com.campus.map.service.SharedMapService;
 import com.campus.place.dto.PlaceBriefResponse;
 import com.campus.place.mapper.PlaceMapper;
 import com.campus.schedule.dto.BusyEntryDto;
 import com.campus.schedule.dto.GroupBusyDto;
+import com.campus.schedule.entity.ScheduleSharePermission;
 import com.campus.schedule.service.ScheduleService;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -93,6 +97,11 @@ public class AgentToolkit {
 
     public static void setRunLocation(AiUserLocation location) {
         RUN_LOCATION.set(location);
+    }
+
+    /** 本轮注入的实时定位；仅供提交盖章核对起点坐标，不对外暴露存储 */
+    public static AiUserLocation currentRunLocation() {
+        return RUN_LOCATION.get();
     }
 
     public static void clearRunLocation() {
@@ -271,7 +280,8 @@ public class AgentToolkit {
         itineraryProps.put("keyword", type("string", "可选：共建地图语义检索，自动取最相关 ≤4 个地点"));
         itineraryProps.put("stayMinutes", Map.of("type", "array", "items", Map.of("type", "integer"),
                 "description", "可选：与最终候选一一对应的停留分钟数（缺省 60）"));
-        itineraryProps.put("transportMode", enumType("出行方式（公交不支持联合求解）", "WALK", "RIDE", "DRIVE"));
+        itineraryProps.put("transportMode", enumType("出行方式（公交为估算耗时）",
+                "WALK", "RIDE", "DRIVE", "TAXI", "TRANSIT"));
         itineraryProps.put("bufferMinutes", type("integer", "可选：最后一站后保留缓冲分钟数（缺省 10）"));
         itineraryProps.put("originLng", type("number", "可选：往返行程起点 GCJ-02 经度（通常取 get_my_location 的坐标）"));
         itineraryProps.put("originLat", type("number", "可选：往返行程起点 GCJ-02 纬度"));
@@ -291,7 +301,8 @@ public class AgentToolkit {
         stopItemProps.put("latitude", type("number", "GCJ-02 纬度"));
         stopItemProps.put("startTime", type("string", "到达该站的绝对时间（前一站 endTime + 交通耗时，严格按计划引用）"));
         stopItemProps.put("endTime", type("string", "离开该站的绝对时间（startTime + 停留；须与下一站 startTime 留出交通时间）"));
-        stopItemProps.put("transportMode", enumType("前往本站的交通方式；留空按步行（WALK）校验", "WALK", "RIDE", "DRIVE", "TRANSIT"));
+        stopItemProps.put("transportMode", enumType("前往本站的交通方式；留空按步行（WALK）校验",
+                "WALK", "RIDE", "DRIVE", "TAXI", "TRANSIT"));
         stopItemProps.put("stayMinutes", type("integer", "可选：该站停留分钟数（来自 plan_itinerary）"));
         stopItemProps.put("note", type("string", "站点备注，256 字内"));
         Map<String, Object> stopsSchema = new LinkedHashMap<>();
@@ -1021,6 +1032,10 @@ public class AgentToolkit {
                 byPlace.putIfAbsent(row.getId(), row);
             }
             for (com.campus.ai.dto.PlanStop stop : plan.getStops()) {
+                // 实时起点/返程点不能被群来源盖章覆盖，否则保存时会重新落成 Place
+                if (PlanSource.USER_LOCATION.equals(stop.getSource())) {
+                    continue;
+                }
                 if (stop.getPlaceId() != null && byPlace.containsKey(stop.getPlaceId())) {
                     stop.setSource(PlanSource.GROUP_MAP);
                     stop.setMapId(byPlace.get(stop.getPlaceId()).getMapId());
@@ -1035,6 +1050,69 @@ public class AgentToolkit {
             plan.setPlanningSourceVersion(groupMapContextService.fingerprint(maps));
         } catch (Exception ex) {
             log.warn("planningSourceVersion 计算失败（提交暂不阻断）：{}", ex.toString());
+        }
+        stampGroupPlanPeople(plan, ctx[0], ctx[1], maps);
+    }
+
+    /**
+     * 成员与冲突盖章：以群地图成员为准，列出每人的忙闲可见状态，并计算与计划时间冲突的安排。
+     * 未授权成员不参与冲突计算，只写入 warnings；他人日程标题绝不进入 plan JSON。
+     */
+    private void stampGroupPlanPeople(com.campus.ai.dto.PlanDto plan, long viewerId, long groupId,
+                                      List<Long> maps) {
+        if (plan.getStartTime() == null || plan.getEndTime() == null || maps.isEmpty()) {
+            return;
+        }
+        try {
+            MapDetailResponse detail = sharedMapService.getMapDetailAs(maps.get(0), viewerId);
+            if (detail == null || detail.getMembers() == null || detail.getMembers().isEmpty()) {
+                return;
+            }
+            LocalDateTime from = plan.getStartTime().minusMinutes(30);
+            LocalDateTime to = plan.getEndTime().plusMinutes(30);
+            GroupBusyDto groupBusy = scheduleService.groupBusy(viewerId, groupId, from, to);
+            Map<Long, String> nicknames = new LinkedHashMap<>();
+            List<com.campus.ai.dto.PlanDto.PlanMember> memberRows = new ArrayList<>();
+            int unknown = 0;
+            for (MapMemberResponse member : detail.getMembers()) {
+                if (member.getUserId() == null) {
+                    continue;
+                }
+                com.campus.ai.dto.PlanDto.PlanMember row = new com.campus.ai.dto.PlanDto.PlanMember();
+                row.setUserId(member.getUserId());
+                row.setNickname(member.getNickname() != null && !member.getNickname().isBlank()
+                        ? member.getNickname() : member.getUsername());
+                row.setRole(member.getRole());
+                boolean known = member.getUserId() == viewerId
+                        || scheduleService.canSeeFreeBusy(member.getUserId(),
+                        ScheduleSharePermission.TARGET_GROUP, groupId);
+                row.setStatus(known ? "KNOWN" : "UNKNOWN");
+                if (!known) {
+                    unknown++;
+                }
+                memberRows.add(row);
+                nicknames.put(member.getUserId(), row.getNickname());
+            }
+            plan.setMembers(memberRows);
+            List<com.campus.ai.dto.PlanDto.PlanConflict> conflicts =
+                    PlanConflictAnalyzer.analyze(plan, groupBusy.getKnown(), nicknames);
+            plan.setConflicts(conflicts.isEmpty() ? null : conflicts);
+            // 保留校验阶段写入的 warnings（如交通 PARTIAL），不要整包覆盖
+            List<String> warnings = plan.getWarnings() == null
+                    ? new ArrayList<>() : new ArrayList<>(plan.getWarnings());
+            if (unknown > 0) {
+                warnings.add(unknown + " 位成员未授权忙闲，冲突判断不完整，方案暂定");
+            }
+            plan.setWarnings(warnings.isEmpty() ? null : warnings);
+            if (!conflicts.isEmpty()) {
+                plan.setConstraintStatus("CONFLICT");
+            } else if (unknown > 0) {
+                plan.setConstraintStatus("TENTATIVE");
+            } else {
+                plan.setConstraintStatus("FEASIBLE");
+            }
+        } catch (Exception ex) {
+            log.warn("群体成员/冲突盖章失败（不阻断草稿）：{}", ex.toString());
         }
     }
 

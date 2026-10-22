@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
+    "test": "node --test test/useTraceSync.test.mjs test/authRefresh.test.mjs test/chatOutbox.test.mjs test/aiStream.test.mjs test/calendarEntries.test.mjs",
     "test:trace": "node --test test/useTraceSync.test.mjs"
   },
   "dependencies": {

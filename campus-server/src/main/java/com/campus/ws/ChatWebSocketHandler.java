@@ -6,16 +6,18 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
 import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
 
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
  * 聊天 WebSocket 处理器。
- * 上行帧：CHAT_SEND / TYPING / READ / PING；下行帧见各 service 的 push 逻辑。
+ * 上行帧：CHAT_SEND / AGENT_CANCEL / TYPING / READ / PING；下行帧见各 service 的 push 逻辑。
  * 身份在握手阶段写入 session attributes，此处不再走 SecurityContext。
  */
 @Slf4j
@@ -25,6 +27,7 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
 
     private final WsSessionRegistry wsSessionRegistry;
     private final ChatMessageService chatMessageService;
+    private final com.campus.ai.service.GroupAgentService groupAgentService;
     private final ObjectMapper objectMapper;
 
     @Override
@@ -46,23 +49,44 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
         try {
             node = objectMapper.readTree(message.getPayload());
         } catch (Exception ex) {
-            sendError(session, "消息格式错误");
+            sendError(session, "消息格式错误", null);
             return;
         }
         String type = node.path("type").asText("");
+        String clientMsgId = node.path("clientMsgId").asText(null);
         try {
             switch (type) {
-                case "CHAT_SEND" -> chatMessageService.send(
-                        userId, node.path("conversationId").asLong(), node.path("content").asText(""));
+                case "CHAT_SEND" -> {
+                    long conversationId = node.path("conversationId").asLong();
+                    ChatMessageService.SendResult result = chatMessageService.send(
+                            userId, conversationId, node.path("content").asText(""), clientMsgId);
+                    // 落库成功后才回 ACK；发送方据此出队，重试靠 clientMsgId 唯一键去重
+                    Map<String, Object> ack = new LinkedHashMap<>();
+                    ack.put("type", "CHAT_ACK");
+                    ack.put("conversationId", conversationId);
+                    ack.put("clientMsgId", result.response().getClientMsgId());
+                    ack.put("messageId", result.response().getId());
+                    ack.put("duplicate", result.duplicate());
+                    wsSessionRegistry.sendToUser(userId, ack);
+                }
+                case "AGENT_CANCEL" -> {
+                    boolean cancelled = groupAgentService.cancel(
+                            userId,
+                            node.path("conversationId").asLong(),
+                            node.path("runId").asText(null));
+                    if (!cancelled) {
+                        sendError(session, "无法取消：任务已结束或没有权限", clientMsgId);
+                    }
+                }
                 case "TYPING" -> chatMessageService.forwardTyping(
                         userId, node.path("conversationId").asLong());
                 case "READ" -> chatMessageService.clearUnread(
                         userId, node.path("conversationId").asLong());
                 case "PING" -> wsSessionRegistry.sendToUser(userId, Map.of("type", "PONG"));
-                default -> sendError(session, "未知的消息类型");
+                default -> sendError(session, "未知的消息类型", clientMsgId);
             }
         } catch (Exception ex) {
-            sendError(session, ex.getMessage());
+            sendError(session, ex.getMessage(), clientMsgId);
         }
     }
 
@@ -85,7 +109,13 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
         return (Long) session.getAttributes().get(WsHandshakeInterceptor.ATTR_USER_ID);
     }
 
-    private void sendError(WebSocketSession session, String message) {
-        wsSessionRegistry.sendToUser(userId(session), Map.of("type", "ERROR", "message", message == null ? "处理失败" : message));
+    private void sendError(WebSocketSession session, String message, String clientMsgId) {
+        Map<String, Object> frame = new LinkedHashMap<>();
+        frame.put("type", "ERROR");
+        frame.put("message", message == null ? "处理失败" : message);
+        if (StringUtils.hasText(clientMsgId)) {
+            frame.put("clientMsgId", clientMsgId);
+        }
+        wsSessionRegistry.sendToUser(userId(session), frame);
     }
 }

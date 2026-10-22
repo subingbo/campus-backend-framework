@@ -2,8 +2,8 @@ package com.campus;
 
 import com.campus.ai.planner.PlannerModels;
 import com.campus.ai.planner.SpatiotemporalPlanner;
-import com.campus.ai.travel.RouteInfo;
-import com.campus.ai.travel.TravelInfoProvider;
+import com.campus.travel.RouteInfo;
+import com.campus.travel.TravelInfoProvider;
 import com.campus.schedule.dto.BusyEntryDto;
 import org.junit.jupiter.api.Test;
 
@@ -39,7 +39,7 @@ class SpatiotemporalPlannerTest {
             }
 
             @Override
-            public java.util.List<com.campus.ai.travel.PoiItem> searchPoi(String keyword, Double nearLng,
+            public java.util.List<com.campus.travel.PoiItem> searchPoi(String keyword, Double nearLng,
                                                                           Double nearLat, Integer radiusMeters) {
                 return java.util.List.of();
             }
@@ -147,17 +147,28 @@ class SpatiotemporalPlannerTest {
 
     @Test
     void unsupportedModeAndEmptyCandidatesRejected() {
-        PlannerModels.PlannerOutcome transit = SpatiotemporalPlanner.plan(
+        PlannerModels.PlannerOutcome flying = SpatiotemporalPlanner.plan(
                 new ArrayList<>(), DAY0, DAY0_END,
                 List.of(place(1, "图书馆", 60, "GROUP_MAP", 0)),
-                "TRANSIT", 10, 10, walkingProvider(60));
-        assertThat(transit.solutions()).isEmpty();
-        assertThat(transit.suggestions().get(0)).contains("公交");
+                "FLY", 10, 10, walkingProvider(60));
+        assertThat(flying.solutions()).isEmpty();
+        assertThat(flying.suggestions().get(0)).contains("交通方式");
 
         PlannerModels.PlannerOutcome empty = SpatiotemporalPlanner.plan(
                 new ArrayList<>(), DAY0, DAY0_END, List.of(), "WALK", 10, 10, walkingProvider(60));
         assertThat(empty.solutions()).isEmpty();
         assertThat(empty.suggestions().get(0)).contains("候选地点");
+    }
+
+    @Test
+    void taxiAndTransitModesAreSupported() {
+        for (String mode : List.of("TAXI", "TRANSIT")) {
+            PlannerModels.PlannerOutcome outcome = SpatiotemporalPlanner.plan(
+                    new ArrayList<>(), DAY0, DAY0_END,
+                    List.of(place(1, "图书馆", 60, "GROUP_MAP", 0)),
+                    mode, 10, 10, walkingProvider(60));
+            assertThat(outcome.solutions()).as("mode=%s", mode).isNotEmpty();
+        }
     }
 
     @Test
@@ -218,7 +229,7 @@ class SpatiotemporalPlannerTest {
             }
 
             @Override
-            public java.util.List<com.campus.ai.travel.PoiItem> searchPoi(String keyword, Double nearLng,
+            public java.util.List<com.campus.travel.PoiItem> searchPoi(String keyword, Double nearLng,
                                                                           Double nearLat, Integer radiusMeters) {
                 return java.util.List.of();
             }

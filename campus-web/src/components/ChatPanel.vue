@@ -15,37 +15,52 @@
         </div>
         <span class="chat-msg__time">{{ formatTime(m.createdAt) }}</span>
       </div>
-      <div v-if="agentPlan" class="chat-agent-card">
-        <h4>🧭 {{ agentPlan.title || 'AI 规划（未确认）' }}</h4>
-        <span v-if="agentPlan.constraintStatus === 'TENTATIVE'" class="chat-agent-card__badge tentative">
-          暂定：含未授权忙闲成员
-        </span>
-        <span v-else-if="agentPlan.constraintStatus === 'FEASIBLE'" class="chat-agent-card__badge ok">
-          忙闲已核验
-        </span>
-        <p v-for="(s, i) in (agentPlan.stops || []).slice(0, 6)" :key="i" class="chat-agent-card__stop">
-          <span class="src" :class="sourceClass(s.source)">{{ sourceLabel(s.source) }}</span>
-          {{ s.seq || i + 1 }}. {{ s.name }}
-          <span v-if="s.startTime">（{{ formatTime(s.startTime) }}-{{ formatTime(s.endTime) }}<template
-            v-if="s.stayMinutes">，停留 {{ s.stayMinutes }} 分钟</template>）</span>
-        </p>
-        <p v-for="(seg, i) in segmentList" :key="'seg' + i" class="chat-agent-card__seg">
-          ↳ {{ modeLabel(seg.transportMode) }} {{ seg.durationMinutes }} 分钟
-        </p>
-        <p v-if="agentPlan.totalTravelMinutes">🚦 全程交通约 {{ agentPlan.totalTravelMinutes }} 分钟
-          <span v-if="agentPlan.routeConfidence === 'ESTIMATED'" class="chat-agent-card__routebadge">估算（未验证）</span>
-          <span v-else-if="agentPlan.routeConfidence === 'AMAP'" class="chat-agent-card__routebadge ok">高德实测</span>
-        </p>
-        <p v-if="coverageNote" class="chat-agent-card__cov">{{ coverageNote }}</p>
-        <div v-if="agentPlan.reason" class="chat-agent-card__reason">💡 <MarkdownText :text="agentPlan.reason" /></div>
-        <span class="chat-agent-card__hint">
-          已生成规划草稿；到页面顶部「AI 助手」可编辑并保存为活动。含未授权忙闲的方案仅为暂定，需相关成员确认。
-        </span>
-      </div>
+      <GroupPlanCard
+        v-for="card in agentPlans"
+        :key="card.planId || card.messageId"
+        :card="card"
+        :me="me"
+        @view="openPlan"
+        @continue="continuePlan"
+      />
+    </div>
+    <div v-if="!connected" class="chat-panel__offline">
+      连接已断开，消息会暂存并在恢复后自动发送
+      <span v-if="pendingForCurrentConversation">（待发送 {{ pendingForCurrentConversation }} 条）</span>
+    </div>
+    <div v-else-if="pendingForCurrentConversation" class="chat-panel__pending">
+      待发送 {{ pendingForCurrentConversation }} 条
     </div>
     <div v-if="typingText" class="chat-panel__typing">{{ typingText }}</div>
+    <div v-if="agentRun" class="chat-panel__agent-status" :class="'is-' + agentRun.status.toLowerCase()">
+      <span v-if="agentRun.status === 'RUNNING'">
+        AI 正在规划<template v-if="agentRun.stage">：{{ agentRun.stage }}</template>
+        （已调用 {{ agentRun.toolCount }} 个工具，{{ agentElapsed }}s）
+      </span>
+      <span v-else-if="agentRun.status === 'TOOL'">
+        AI 调用工具 {{ agentRun.currentTool || '…' }}（{{ agentRun.toolCount }} 个，{{ agentElapsed }}s）
+      </span>
+      <span v-else-if="agentRun.status === 'CANCELLING'">正在取消本轮规划…</span>
+      <span v-else-if="agentRun.status === 'CANCELLED'">已取消本轮规划</span>
+      <span v-else-if="agentRun.status === 'FAILED'">规划失败：{{ agentRun.error || '请稍后重试' }}</span>
+      <span v-else-if="agentRun.status === 'BUSY'">本群已有 AI 规划在进行，请稍候</span>
+      <span v-else-if="agentRun.status === 'DONE'">本轮规划已完成</span>
+      <el-button
+        v-if="agentRun.status === 'RUNNING' || agentRun.status === 'TOOL'"
+        size="small"
+        text
+        @click="cancelAgent"
+      >取消</el-button>
+    </div>
     <div class="chat-panel__input">
+      <el-button
+        v-if="conversation.type === 'GROUP'"
+        class="chat-panel__ai-btn"
+        size="small"
+        @click="armAi"
+      >问 AI 规划</el-button>
       <el-input
+        ref="inputRef"
         v-model="draft"
         type="textarea"
         :rows="2"
@@ -62,57 +77,97 @@
 <script setup>
 import { computed, nextTick, onUnmounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
+import { useRouter } from 'vue-router'
 import { chatApi } from '../api'
-import { myUserId, on, send } from '../composables/useChatSocket'
+import {
+  connected,
+  myUserId,
+  on,
+  pendingForConversation,
+  send,
+  syncOutbox,
+  takeFailedMessage
+} from '../composables/useChatSocket'
+import { mergeMessages } from '../composables/chatOutbox'
 import MarkdownText from './MarkdownText.vue'
+import GroupPlanCard from './GroupPlanCard.vue'
 
 const props = defineProps({
   conversation: { type: Object, required: true }
 })
 
+const router = useRouter()
 const me = myUserId()
 const messages = ref([])
 const draft = ref('')
 const loading = ref(false)
 const typingText = ref('')
 const listRef = ref(null)
-const agentPlan = ref(null)
+const inputRef = ref(null)
+const agentPlans = ref([])
+const agentRun = ref(null)
+const agentElapsed = ref(0)
 let typingTimer = null
 let lastTypingSentAt = 0
 let unreadRemovers = []
+let agentStartedAt = 0
+let agentTimer = null
+let agentClearTimer = null
 
-// P1.5 卡片扩展：来源徽标 / 交通段 / 忙闲覆盖
-const segmentList = computed(() => (agentPlan.value?.routeSegments || []).slice(0, 8))
-const coverageNote = computed(() => {
-  const coverage = agentPlan.value?.availabilityCoverage || []
-  if (!coverage.length) return ''
-  const known = coverage.filter((c) => c.status === 'KNOWN').length
-  const unknown = coverage.filter((c) => c.status === 'UNKNOWN').length
-  if (!unknown) return `已核验 ${known} 位成员忙闲`
-  return `忙闲已核验 ${known} 人，${unknown} 人未授权（方案暂定）`
-})
+const pendingForCurrentConversation = computed(() => pendingForConversation(props.conversation.id))
 
-function sourceLabel(source) {
-  if (source === 'GROUP_MAP') return '共建'
-  if (source === 'PERSONAL_MAP') return '收藏'
-  if (source === 'AMAP_POI') return 'POI'
-  return ''
+function normalizePlanCard(item) {
+  return {
+    ...item,
+    plan: item.plan || item
+  }
 }
 
-function sourceClass(source) {
-  return source ? `src-${String(source).toLowerCase().replace('_', '-')}` : ''
+function mergePlanCards(items) {
+  const byId = new Map(agentPlans.value.map((card) => [card.planId, card]))
+  for (const item of items || []) {
+    if (!item?.planId) continue
+    byId.set(item.planId, normalizePlanCard(item))
+  }
+  agentPlans.value = [...byId.values()].slice(-10)
 }
 
-function modeLabel(mode) {
-  if (mode === 'RIDE') return '骑行'
-  if (mode === 'DRIVE') return '驾车'
-  if (mode === 'TRANSIT') return '公交'
-  return '步行'
+function upsertPlanCard(frame) {
+  if (!frame?.planId) return
+  const view = frame.plan || {}
+  mergePlanCards([{
+    ...view,
+    planId: frame.planId,
+    messageId: frame.messageId,
+    askerId: frame.askerId,
+    plan: { ...view, askerId: frame.askerId, askerNickname: view.askerNickname || '' }
+  }])
+}
+
+function openPlan(card) {
+  router.push(`/conversations/${props.conversation.id}/plans/${card.planId}`)
+}
+
+async function continuePlan(card) {
+  if (!card?.planId) return
+  try {
+    const handoff = await chatApi.agentPlanHandoff(props.conversation.id, card.planId)
+    router.push({ path: '/assistant', query: { chat: handoff.aiConversationId } })
+  } catch (e) {
+    ElMessage.error(e.message || '无法继续规划：仅发起人可编辑该草稿')
+  }
 }
 
 watch(
   () => props.conversation.id,
   () => {
+    // 换会话必须清掉上一会话的卡片与运行状态
+    agentPlans.value = []
+    agentRun.value = null
+    stopAgentTimer()
+    clearTimeout(agentClearTimer)
+    // 刷新/切换会话时先同步未发送队列，断线状态下也能显示待发送数量
+    syncOutbox()
     load()
   },
   { immediate: true }
@@ -144,11 +199,40 @@ watch(
         }, 2500)
       }),
       on('ERROR', (frame) => {
+        const failed = frame.clientMsgId ? takeFailedMessage(frame.clientMsgId) : null
+        if (failed) {
+          if (!draft.value) draft.value = failed.content
+          ElMessage.error(frame.message || '发送失败，草稿已恢复')
+          return
+        }
         ElMessage.error(frame.message || '发送失败')
+      }),
+      on('SOCKET_OPEN', () => {
+        // 重连后补拉断线期间的消息，并按 id 合并避免覆盖刚发出的消息
+        reloadAndMerge()
+      }),
+      on('AGENT_STATUS', (frame) => {
+        if (frame.conversationId !== props.conversation.id) return
+        agentRun.value = frame
+        if (frame.elapsedMs != null) {
+          agentStartedAt = Date.now() - Number(frame.elapsedMs || 0)
+          agentElapsed.value = Math.max(0, Math.floor(Number(frame.elapsedMs || 0) / 1000))
+        }
+        if (['RUNNING', 'TOOL', 'CANCELLING'].includes(frame.status)) {
+          clearTimeout(agentClearTimer)
+          startAgentTimer()
+        } else {
+          stopAgentTimer()
+          clearTimeout(agentClearTimer)
+          // 终态保留几秒让用户看到结果，再清理状态条
+          agentClearTimer = setTimeout(() => {
+            agentRun.value = null
+          }, 4000)
+        }
       }),
       on('AGENT_PLAN_CARD', (frame) => {
         if (frame.conversationId !== props.conversation.id) return
-        agentPlan.value = frame.plan
+        upsertPlanCard(frame)
         scrollBottom()
       })
     ]
@@ -160,12 +244,50 @@ watch(
 onUnmounted(() => {
   for (const off of unreadRemovers) off()
   clearTimeout(typingTimer)
+  clearTimeout(agentClearTimer)
+  stopAgentTimer()
 })
+
+function startAgentTimer() {
+  if (agentTimer) return
+  agentTimer = setInterval(() => {
+    if (!agentRun.value || !agentStartedAt) return
+    agentElapsed.value = Math.max(0, Math.floor((Date.now() - agentStartedAt) / 1000))
+  }, 1000)
+}
+
+function stopAgentTimer() {
+  if (agentTimer) {
+    clearInterval(agentTimer)
+    agentTimer = null
+  }
+}
+
+function armAi() {
+  if (!draft.value.startsWith('@AI')) {
+    draft.value = draft.value ? `@AI ${draft.value}` : '@AI '
+  }
+  inputRef.value?.focus?.()
+}
+
+function cancelAgent() {
+  if (!agentRun.value?.runId) return
+  send({
+    type: 'AGENT_CANCEL',
+    conversationId: props.conversation.id,
+    runId: agentRun.value.runId
+  })
+}
 
 async function load() {
   loading.value = true
   try {
-    messages.value = await chatApi.messages(props.conversation.id)
+    const [list, plans] = await Promise.all([
+      chatApi.messages(props.conversation.id),
+      chatApi.agentPlans(props.conversation.id).catch(() => [])
+    ])
+    messages.value = list
+    agentPlans.value = (plans || []).map(normalizePlanCard).slice(-10)
     scrollBottom()
   } catch (e) {
     ElMessage.error(e.message)
@@ -174,12 +296,33 @@ async function load() {
   }
 }
 
+async function reloadAndMerge() {
+  try {
+    const [list, plans] = await Promise.all([
+      chatApi.messages(props.conversation.id),
+      chatApi.agentPlans(props.conversation.id).catch(() => [])
+    ])
+    messages.value = mergeMessages(messages.value, list)
+    mergePlanCards(plans)
+    scrollBottom()
+  } catch {
+    // 重连补拉失败不打扰用户，下一轮重连会再试
+  }
+}
+
 function submit() {
   const content = draft.value.trim()
   if (!content) return
-  // 消息以服务端 CHAT_MESSAGE 广播为准，这里只负责发出
-  send({ type: 'CHAT_SEND', conversationId: props.conversation.id, content })
+  // 消息以服务端 CHAT_MESSAGE 广播为准；断线时先入待发送队列，ACK 后才算送达
+  const result = send({ type: 'CHAT_SEND', conversationId: props.conversation.id, content })
+  if (result === 'failed') {
+    ElMessage.error('发送失败，草稿已保留')
+    return
+  }
   draft.value = ''
+  if (result === 'queued') {
+    ElMessage.info('连接中断，消息已暂存，恢复后自动发送')
+  }
 }
 
 let typingThrottle = 0
@@ -368,10 +511,112 @@ function formatTime(value) {
   background: rgba(230, 162, 60, 0.18);
   color: #c0781c;
 }
+.chat-agent-card__badge.conflict {
+  background: rgba(245, 108, 108, 0.16);
+  color: #c0392b;
+}
+.chat-agent-card__nav {
+  margin-left: 4px;
+  border: 1px solid rgba(64, 158, 255, 0.35);
+  background: #fff;
+  color: #2979cc;
+  border-radius: 999px;
+  font-size: 10px;
+  line-height: 16px;
+  padding: 0 6px;
+  cursor: pointer;
+}
+.chat-agent-card__people {
+  margin-top: 6px;
+  border-top: 1px dashed rgba(64, 158, 255, 0.25);
+  padding-top: 6px;
+}
+.chat-agent-card__people-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font-size: 11px;
+  color: rgba(0, 0, 0, 0.65);
+}
+.chat-agent-card__people-conflict {
+  color: #c0392b;
+  font-weight: 600;
+}
+.chat-agent-card__people-chevron {
+  margin-left: auto;
+  color: #2979cc;
+}
+.chat-agent-card__member {
+  display: inline-block;
+  margin-right: 6px;
+}
+.chat-agent-card__member em {
+  font-style: normal;
+  opacity: 0.6;
+  margin-left: 3px;
+}
+.chat-agent-card__conflict {
+  padding: 4px 6px;
+  margin-top: 4px;
+  border-radius: 6px;
+  background: #fff7e6;
+  color: #ad4e00;
+  font-size: 11px;
+}
+.chat-agent-card__warn {
+  color: #c0781c;
+  font-size: 11px;
+}
 .chat-agent-card__hint {
   display: block;
   margin-top: 6px;
   font-size: 11px;
   color: rgba(0, 0, 0, 0.42);
+}
+.chat-panel__offline {
+  padding: 5px 10px;
+  background: #fef0f0;
+  color: #c45656;
+  font-size: 12px;
+  text-align: center;
+}
+.chat-panel__pending {
+  padding: 4px 10px;
+  background: #fdf6ec;
+  color: #b88230;
+  font-size: 12px;
+  text-align: center;
+}
+.chat-panel__agent-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 10px;
+  background: #f4f4f5;
+  color: #606266;
+  font-size: 12px;
+}
+.chat-panel__agent-status.is-running,
+.chat-panel__agent-status.is-tool {
+  background: #ecf5ff;
+  color: #337ecc;
+}
+.chat-panel__agent-status.is-failed {
+  background: #fef0f0;
+  color: #c45656;
+}
+.chat-panel__agent-status.is-cancelled,
+.chat-panel__agent-status.is-cancelling {
+  background: #fdf6ec;
+  color: #b88230;
+}
+.chat-panel__ai-btn {
+  flex-shrink: 0;
 }
 </style>

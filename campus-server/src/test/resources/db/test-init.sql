@@ -261,9 +261,25 @@ CREATE TABLE IF NOT EXISTS ai_conversation (
     plan_json MEDIUMTEXT DEFAULT NULL,
     plan_version INT NOT NULL DEFAULT 0,
     saved_activity_id BIGINT DEFAULT NULL,
+    source_group_conversation_id BIGINT DEFAULT NULL,
+    source_map_id BIGINT DEFAULT NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    KEY idx_user_updated (user_id, updated_at)
+    KEY idx_user_updated (user_id, updated_at),
+    KEY idx_source_group_conv (source_group_conversation_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS group_agent_plan (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    group_conversation_id BIGINT NOT NULL,
+    message_id BIGINT NOT NULL,
+    ai_conversation_id BIGINT NOT NULL,
+    asker_id BIGINT NOT NULL,
+    plan_json MEDIUMTEXT NOT NULL,
+    plan_version INT NOT NULL DEFAULT 1,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_group_plan_message (message_id),
+    KEY idx_group_conv (group_conversation_id, id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 CREATE TABLE IF NOT EXISTS ai_message (
@@ -321,7 +337,9 @@ CREATE TABLE IF NOT EXISTS message (
     sender_id BIGINT NOT NULL,
     content VARCHAR(1000) NOT NULL,
     type VARCHAR(16) NOT NULL DEFAULT 'TEXT',
+    client_msg_id VARCHAR(64) DEFAULT NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_client_msg (conversation_id, sender_id, client_msg_id),
     KEY idx_conv_created (conversation_id, created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 

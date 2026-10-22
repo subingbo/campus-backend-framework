@@ -1,17 +1,17 @@
-package com.campus.ai.travel;
+package com.campus.travel;
 
 import java.util.List;
 
 /**
- * 交通信息提供方（嵌入 Agent 工具层）。实现类负责对接具体地图厂商；
- * 换厂商只改实现，不触碰包内调用方，也不往数据库写任何厂商字段。
+ * 交通信息提供方（中立能力层）。实现类负责对接具体地图厂商；
+ * 换厂商只改实现，不触碰 activity/ai 调用方，也不往数据库写任何厂商字段。
  */
 public interface TravelInfoProvider {
 
     /**
      * 两条坐标之间的路线（预计耗时/距离/折线）。
      *
-     * @param mode WALK / RIDE / DRIVE
+     * @param mode WALK / RIDE / DRIVE / TAXI / TRANSIT
      */
     RouteInfo searchRoute(String mode, double fromLng, double fromLat, double toLng, double toLat);
 

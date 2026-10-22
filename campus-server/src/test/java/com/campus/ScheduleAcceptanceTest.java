@@ -324,6 +324,47 @@ class ScheduleAcceptanceTest {
         return objectMapper.createObjectNode();
     }
 
+    @Test
+    void groupBusyRequiresGroupMembership() throws Exception {
+        seededUser("sch04_owner");
+        seededUser("sch04_outsider");
+        LocalDateTime slot = slotStart();
+
+        MvcResult group = mockMvc.perform(post("/api/groups")
+                        .header("Authorization", tokens.get("sch04_owner"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"sch04 私密群\",\"description\":\"d\",\"visibility\":\"MEMBERS\"}"))
+                .andExpect(status().isOk())
+                .andReturn();
+        long groupId = objectMapper.readTree(group.getResponse().getContentAsString())
+                .path("data").path("groupId").asLong();
+
+        // 群成员可以查询
+        mockMvc.perform(get("/api/schedules/group-busy")
+                        .header("Authorization", tokens.get("sch04_owner"))
+                        .param("groupId", String.valueOf(groupId))
+                        .param("from", iso(slot))
+                        .param("to", iso(slot.plusDays(1))))
+                .andExpect(status().isOk());
+
+        // 非成员不能凭 groupId 读取陌生群成员时段
+        mockMvc.perform(get("/api/schedules/group-busy")
+                        .header("Authorization", tokens.get("sch04_outsider"))
+                        .param("groupId", String.valueOf(groupId))
+                        .param("from", iso(slot))
+                        .param("to", iso(slot.plusDays(1))))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.message").value("不是该群成员"));
+
+        // 群不存在仍是 404，不泄露“存在但无权限”
+        mockMvc.perform(get("/api/schedules/group-busy")
+                        .header("Authorization", tokens.get("sch04_owner"))
+                        .param("groupId", String.valueOf(groupId + 999999))
+                        .param("from", iso(slot))
+                        .param("to", iso(slot.plusDays(1))))
+                .andExpect(status().isNotFound());
+    }
+
     private String scheduleJson(String title, LocalDateTime start, LocalDateTime end, String note) {
         return """
                 {"title":"%s","startTime":"%s","endTime":"%s","note":%s}

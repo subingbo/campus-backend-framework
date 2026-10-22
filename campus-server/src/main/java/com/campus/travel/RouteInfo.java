@@ -1,4 +1,4 @@
-package com.campus.ai.travel;
+package com.campus.travel;
 
 import lombok.Data;
 
@@ -8,7 +8,7 @@ import java.util.List;
 @Data
 public class RouteInfo {
 
-    /** WALK RIDE DRIVE TRANSIT */
+    /** WALK RIDE DRIVE TAXI TRANSIT */
     private String mode;
     private Double distanceMeters;
     /** 预计耗时（秒）；展示层须标注"预计" */

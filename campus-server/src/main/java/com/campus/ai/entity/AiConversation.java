@@ -19,6 +19,10 @@ public class AiConversation {
     private String planJson;
     private Integer planVersion;
     private Long savedActivityId;
+    /** 群聊 @AI 来源的群会话ID；个人会话为空 */
+    private Long sourceGroupConversationId;
+    /** 群聊 @AI 来源地图ID；用于继续规划恢复群语境 */
+    private Long sourceMapId;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }

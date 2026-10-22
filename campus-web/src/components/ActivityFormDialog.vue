@@ -125,6 +125,7 @@
             <el-option value="WALK" label="步行" />
             <el-option value="RIDE" label="骑行" />
             <el-option value="DRIVE" label="驾车" />
+            <el-option value="TAXI" label="打车" />
             <el-option value="TRANSIT" label="公交" />
           </el-select>
         </div>

@@ -35,6 +35,14 @@
         LIMIT 1
     </select>
 
+    <select id="selectForUpdate" resultType="com.campus.activity.dto.ActivityInviteItem">
+        SELECT id, activity_id AS activityId, inviter_id AS inviterId, invitee_id AS inviteeId,
+               status, created_at AS createdAt
+        FROM activity_invite
+        WHERE id = #{id}
+        FOR UPDATE
+    </select>
+
     <select id="selectByActivityAndInvitee" resultType="com.campus.activity.dto.ActivityInviteItem">
         <include refid="inviteView"/>
         WHERE i.activity_id = #{activityId} AND i.invitee_id = #{inviteeId}
@@ -44,8 +52,15 @@
 
     <select id="selectPendingByInvitee" resultType="com.campus.activity.dto.ActivityInviteItem">
         <include refid="inviteView"/>
-        WHERE i.invitee_id = #{inviteeId} AND i.status = 0
+        WHERE i.invitee_id = #{inviteeId} AND i.status = 0 AND a.status = 1
         ORDER BY i.created_at DESC
+        LIMIT #{limit}
+    </select>
+
+    <select id="selectByActivityId" resultType="com.campus.activity.dto.ActivityInviteItem">
+        <include refid="inviteView"/>
+        WHERE i.activity_id = #{activityId}
+        ORDER BY i.id DESC
         LIMIT #{limit}
     </select>
 
