@@ -67,14 +67,18 @@ mvn -pl campus-server -am spring-boot:run
 后端启动后执行：
 
 ```bash
-node tools/seed-demo.mjs              # 创建/补齐演示数据
+node tools/seed-demo.mjs              # 创建/补齐演示数据（按 demoKey 更新未来活动/日程）
 node tools/seed-demo.mjs --verify-only # 只校验，不写入
-node tools/demo-report.mjs            # 只读导出账号/地图/日程总表
+node tools/seed-demo.mjs --reset-demo  # 预览将取消/删除的 demoKey 种子记录（默认 dry-run）
+node tools/seed-demo.mjs --reset-demo --apply # 真正重置后重新造数
 node tools/demo-report.mjs --verify   # 校验每人地图、日程、忙闲授权
+node tools/demo-report.mjs --out docs/演示账号与数据总表.md
+node tools/verify-round3-scenarios.mjs # Map A 基线 + Map B 临时撤销/恢复
 ```
 
 - 账号：`demo01`–`demo20`，统一密码 `demo1234`；主演示账号 `demo01`，Map B 用 `demo08`，Map C 用 `demo15`。
 - 3 张 `[DEMO]` 地图/群聊、16 个地点、38 条群/私聊消息、5 个活动、6 条动态、**40 条个人日程**（每人 2 条），20 人全部授予群忙闲。
+- 活动 `description` / 日程 `note` 带 `[DEMO:...]`：重跑按 key 更新未来记录，已开始/已结束/已签到不改写；`--reset-demo` 只处理这些种子记录。
 - 脚本非破坏性、可重复执行；不会删除现有用户/地图，也不会自动触发 `@AI`。
 - 详细账号、地图分配和演示顺序见 [docs/demo-accounts.md](docs/demo-accounts.md)；完整数据表见 [docs/演示账号与数据总表.md](docs/演示账号与数据总表.md)；启动/切号/调试见 [docs/调试指南.md](docs/调试指南.md)。
 

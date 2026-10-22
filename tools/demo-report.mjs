@@ -142,7 +142,7 @@ function render(users, mapIndex, generatedAt) {
   lines.push('> 数据来源：逐账号调用 `/api/users/me`、`/api/maps`、`/api/maps/{id}`、`/api/schedules`、')
   lines.push('> `/api/schedules/share`、`/api/friends`、`/api/conversations`。')
   lines.push(`> 演示账号密码统一为 \`${PASSWORD}\`（可用环境变量 DEMO_PASSWORD 覆盖）；管理端为 \`admin/admin123\`。`)
-  lines.push('> 日程统计的是“未来 30 天”（接口默认窗口），跨周重跑造数脚本会生成新的未来日程。')
+  lines.push('> 日程统计的是“未来 30 天”（接口默认窗口）；重跑造数脚本会按 demoKey 更新未来日程，不会重复生成同一条。')
   lines.push('')
 
   lines.push('## 1. 账号总表')
