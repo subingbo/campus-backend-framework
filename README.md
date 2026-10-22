@@ -81,6 +81,7 @@ node tools/verify-round3-scenarios.mjs # Map A 基线 + Map B 临时撤销/恢�
 - 活动 `description` / 日程 `note` 带 `[DEMO:...]`：重跑按 key 更新未来记录，已开始/已结束/已签到不改写；`--reset-demo` 只处理这些种子记录。
 - 脚本非破坏性、可重复执行；不会删除现有用户/地图，也不会自动触发 `@AI`。
 - 详细账号、地图分配和演示顺序见 [docs/demo-accounts.md](docs/demo-accounts.md)；完整数据表见 [docs/演示账号与数据总表.md](docs/演示账号与数据总表.md)；启动/切号/调试见 [docs/调试指南.md](docs/调试指南.md)。
+- 生产部署、8 个迁移、时区、单实例边界与部署后 smoke 见 [docs/部署与运维.md](docs/部署与运维.md)。
 
 ## 核心接口（脚手架基础设施 · campus-framework）
 
@@ -124,7 +125,7 @@ LLM 不参与写日志；Trace 写入失败不影响主业务。
 - 仅本人可读；非本人/不存在 404。
 - 默认保存脱敏摘要：不保存聊天原文、地点名/地址/备注、精确经纬度/轨迹、JWT/API Key。
 - 成本按 `campus.agent.trace.pricing` 读取时估算；旧 Trace/混合模型/缺 usage 显示“不可估算”。
-- 部署前先执行迁移：`campus-server/src/main/resources/db/migration/20261019_01__create_agent_trace.sql`、`20261022_01__add_message_client_msg_id.sql`（聊天幂等列）、`20261022_02__add_group_agent_plan.sql`（群规划快照）、`20261023_01__create_notification.sql`（消息中心收件箱）。启动时 `SchemaPreconditionChecker` 会校验这四项前置结构，缺失即 fail-fast 并给出迁移路径。
+- 部署前按顺序执行 `campus-server/src/main/resources/db/migration/` 下 8 个脚本（多站行程、AI 表、个人日程、AI 地图回放、Trace、聊天幂等、群规划快照、通知收件箱）。启动时 `SchemaPreconditionChecker` 会校验这些前置表/列/索引，缺失即 fail-fast 并给出迁移路径；完整步骤见 [docs/部署与运维.md](docs/部署与运维.md)。
 - 详细说明：[docs/agent-trace/README.md](docs/agent-trace/README.md)、
   [事件协议](docs/agent-trace/events-v1.md)、[隐私](docs/agent-trace/privacy.md)、
   [API](docs/agent-trace/api.md)、[脱敏样例](docs/agent-trace/sample-session.jsonl)。

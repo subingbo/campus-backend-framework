@@ -156,11 +156,16 @@ class NotificationAcceptanceTest {
         List<NotificationResponse> rows = notificationService.list(receiverId, true, 1, 10).getList();
         assertThat(rows).hasSize(1);
         long notificationId = rows.get(0).getId();
+        // payload 只保留路由字段，不带好友申请正文/签到码/坐标
+        assertThat(rows.get(0).getPayload()).containsOnlyKeys("fromUserId");
 
-        // 非本人不能标记已读
+        // 非本人不能标记已读（service + HTTP）
         assertThatThrownBy(() -> notificationService.markRead(senderId, notificationId))
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("通知不存在");
+        mockMvc.perform(post("/api/notifications/" + notificationId + "/read")
+                        .header("Authorization", senderAuth))
+                .andExpect(status().isNotFound());
 
         notificationService.markRead(receiverId, notificationId);
         NotificationSummary after = asUser(receiverId, () -> notificationService.summary(receiverId));

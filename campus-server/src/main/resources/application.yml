@@ -21,6 +21,8 @@ springdoc:
     path: /swagger-ui.html
 
 campus:
+  # 应用墙钟时区；JDBC URL 必须同时保留 connectionTimeZone + forceConnectionTimeZoneToSession
+  timezone: Asia/Shanghai
   agent:
     trace:
       # P0 执行追踪：默认开启；部署前必须先执行 db/migration/20261019_01__create_agent_trace.sql
