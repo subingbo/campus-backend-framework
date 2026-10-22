@@ -13,6 +13,8 @@ public final class AgentEventType {
 
     public static final String TURN_START = "turn/start";
     public static final String TURN_END = "turn/end";
+    /** 单次 run 的性能/质量汇总（不替代 AI_RUN 日志） */
+    public static final String RUN_METRICS = "run/metrics";
 
     public static final String STEP_START = "step/start";
     public static final String STEP_END = "step/end";
@@ -52,7 +54,7 @@ public final class AgentEventType {
 
     public static final Set<String> ALL = Set.of(
             SESSION_START, SESSION_END,
-            TURN_START, TURN_END,
+            TURN_START, TURN_END, RUN_METRICS,
             STEP_START, STEP_END,
             LLM_REQUEST, LLM_RESPONSE, LLM_ERROR, LLM_RETRY,
             TOOL_CALL, TOOL_RESULT, TOOL_ERROR,

@@ -1,0 +1,9 @@
+flowchart LR
+  A["Agent 真实执行点"] --> R["TraceRun / TraceSaveRun"]
+  R --> D["TraceDataRedactor<br/>关键/值/深度白名单"]
+  D --> Q["AgentTraceWriter<br/>有界队列 / 批量"]
+  Q --> DB[("agent_trace_session/event<br/>seq 行锁")]
+  DB --> API["/api/agent/traces<br/>列表/详情/事件/JSONL"]
+  API --> UI["Trace Center<br/>时间线/泳道/p50/p95/成本"]
+  Q -->|队列满| DROP["trace/dropped / partial"]
+  DROP --> DB

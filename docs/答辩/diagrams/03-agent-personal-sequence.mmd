@@ -1,0 +1,22 @@
+sequenceDiagram
+  participant U as 用户
+  participant C as AssistantController
+  participant A as AgentService
+  participant L as LlmClient
+  participant T as AgentToolkit
+  participant V as PlanValidator
+  participant S as PlanSaveService
+  U->>C: POST /assistant/chats/{id}/messages
+  C->>A: run (SSE)
+  loop 最多 14 轮
+    A->>L: chat + tools
+    L-->>A: tool_calls / content
+    A->>T: execute(tool, args)
+    T-->>A: JSON 结果
+  end
+  A->>V: submit_plan 校验
+  V-->>A: PlanDto / 错误
+  A-->>U: SSE status/delta/plan/done
+  U->>C: POST /plan/save
+  C->>S: save(expectedPlanVersion)
+  S-->>U: activityId / 409

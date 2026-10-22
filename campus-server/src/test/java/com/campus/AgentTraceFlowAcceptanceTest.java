@@ -365,7 +365,8 @@ class AgentTraceFlowAcceptanceTest {
                 .filter(e -> "plan/confirm".equals(e.getEventType()))
                 .anyMatch(e -> "FAILED".equals(e.getStatus()))).isTrue();
         assertThat(types(events)).contains("plan/save-error");
-        assertThat(session.getStatus()).isEqualTo("RUNNING");
+        // 聊天 run 已正常结束；保存回滚只影响保存事件，不应把会话改回 RUNNING
+        assertThat(session.getStatus()).isEqualTo("COMPLETED");
     }
 
     @Test

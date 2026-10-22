@@ -1,0 +1,114 @@
+{
+  "generatedAt": "2026-10-22T14:31:22.523Z",
+  "base": "http://localhost:8080/api",
+  "model": "qwen-plus",
+  "sunday": "2026-10-25T14:00:00",
+  "repeat": 3,
+  "summary": {
+    "total": 3,
+    "hard": 3,
+    "passed": 0,
+    "passRate": 0,
+    "durationP50": 10019,
+    "durationP95": 11512,
+    "tokensMedian": null,
+    "tokensTotal": 0,
+    "toolCallsMedian": null
+  },
+  "results": [
+    {
+      "scenarioId": "S1",
+      "scenarioTitle": "Map A 两站步行（全员授权）",
+      "repeat": 1,
+      "asker": "demo01",
+      "mapId": 51,
+      "elapsedMs": 11512,
+      "geoCount": 0,
+      "statuses": [
+        "RUNNING",
+        "RUNNING",
+        "RUNNING",
+        "TOOL",
+        "RUNNING",
+        "TOOL",
+        "RUNNING",
+        "TOOL",
+        "RUNNING",
+        "DONE"
+      ],
+      "timedOut": false,
+      "error": "",
+      "pass": false,
+      "soft": false,
+      "score": 0,
+      "checks": [
+        {
+          "name": "draft-present",
+          "pass": false,
+          "detail": null
+        }
+      ],
+      "metrics": null,
+      "trace": null,
+      "plan": null
+    },
+    {
+      "scenarioId": "S1",
+      "scenarioTitle": "Map A 两站步行（全员授权）",
+      "repeat": 2,
+      "asker": "demo01",
+      "mapId": 51,
+      "elapsedMs": 10019,
+      "geoCount": 0,
+      "statuses": [
+        "RUNNING",
+        "RUNNING",
+        "DONE"
+      ],
+      "timedOut": false,
+      "error": "",
+      "pass": false,
+      "soft": false,
+      "score": 0,
+      "checks": [
+        {
+          "name": "draft-present",
+          "pass": false,
+          "detail": null
+        }
+      ],
+      "metrics": null,
+      "trace": null,
+      "plan": null
+    },
+    {
+      "scenarioId": "S1",
+      "scenarioTitle": "Map A 两站步行（全员授权）",
+      "repeat": 3,
+      "asker": "demo01",
+      "mapId": 51,
+      "elapsedMs": 5189,
+      "geoCount": 0,
+      "statuses": [
+        "RUNNING",
+        "RUNNING",
+        "DONE"
+      ],
+      "timedOut": false,
+      "error": "",
+      "pass": false,
+      "soft": false,
+      "score": 0,
+      "checks": [
+        {
+          "name": "draft-present",
+          "pass": false,
+          "detail": null
+        }
+      ],
+      "metrics": null,
+      "trace": null,
+      "plan": null
+    }
+  ]
+}

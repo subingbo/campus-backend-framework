@@ -61,6 +61,35 @@ class SpatiotemporalPlannerTest {
     }
 
     @Test
+    void sameInputIsDeterministicAcross50Runs() {
+        List<PlannerModels.PlannerPlace> places = List.of(
+                place(1, "图书馆", 55, "GROUP_MAP", 0),
+                place(2, "咖啡店", 55, "GROUP_MAP", 1));
+        PlannerModels.PlannerOutcome first = SpatiotemporalPlanner.plan(
+                new ArrayList<>(), DAY0, DAY0_END, places, "WALK", 10, 10, walkingProvider(5 * 60));
+        assertThat(first.solutions()).isNotEmpty();
+        PlannerModels.PlannerSolution baseline = first.solutions().get(0);
+        for (int i = 0; i < 50; i++) {
+            PlannerModels.PlannerOutcome outcome = SpatiotemporalPlanner.plan(
+                    new ArrayList<>(), DAY0, DAY0_END, places, "WALK", 10, 10, walkingProvider(5 * 60));
+            assertThat(outcome.solutions()).hasSize(first.solutions().size());
+            PlannerModels.PlannerSolution solution = outcome.solutions().get(0);
+            assertThat(solution.stops()).isEqualTo(baseline.stops());
+            assertThat(solution.totalTravelMinutes()).isEqualTo(baseline.totalTravelMinutes());
+            assertThat(solution.bufferRemainingMinutes()).isEqualTo(baseline.bufferRemainingMinutes());
+            assertThat(solution.score()).isEqualTo(baseline.score());
+            assertThat(solution.routeConfidence()).isEqualTo(baseline.routeConfidence());
+            assertThat(solution.segments()).extracting(
+                    PlannerModels.PlannerSegment::fromIndex,
+                    PlannerModels.PlannerSegment::toIndex,
+                    PlannerModels.PlannerSegment::durationMinutes)
+                    .isEqualTo(baseline.segments().stream().map(segment ->
+                            org.assertj.core.groups.Tuple.tuple(segment.fromIndex(),
+                                    segment.toIndex(), segment.durationMinutes())).toList());
+        }
+    }
+
+    @Test
     void docExample175Of180WithBufferFailsBut25MinuteBufferPasses() {
         // 文档例子：图书馆 90 + 步行 25 + 咖啡店 60 = 175 分钟，窗口 14:00-17:00=180 分钟，缺省缓冲 10 → 不可行
         PlannerModels.PlannerOutcome tight = SpatiotemporalPlanner.plan(

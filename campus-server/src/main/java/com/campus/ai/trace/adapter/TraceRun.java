@@ -254,6 +254,18 @@ public final class TraceRun {
      * @param outcome DRAFT/ANSWERED/ERROR/CANCELLED/BUDGET_EXCEEDED
      * @param cause   停止原因（round_start/llm_error/empty_output/rounds_budget/draft/answer...）
      */
+    /** run 汇总指标（性能对照用）；必须在 {@link #finish} 之前调用。 */
+    public void runMetrics(Map<String, Object> metrics) {
+        if (isNoop() || metrics == null || closed.get()) {
+            return;
+        }
+        String outcome = String.valueOf(metrics.getOrDefault("outcome", ""));
+        String status = "CANCELLED".equals(outcome) ? TraceStatus.CANCELLED
+                : ("ERROR".equals(outcome) || "BUDGET_EXCEEDED".equals(outcome))
+                ? TraceStatus.FAILED : TraceStatus.SUCCESS;
+        event(AgentEventType.RUN_METRICS, status, null, null, null, null, metrics, false);
+    }
+
     public void finish(String outcome, String cause, int rounds, int toolCount, boolean hasDraft) {
         if (isNoop() || closed.get()) {
             return;
@@ -279,6 +291,12 @@ public final class TraceRun {
         event(AgentEventType.STREAM_CLOSE, terminal, null, duration, null, null,
                 data("closeReason", cancelled ? "client_disconnected" : cause,
                         "cancelled", cancelled, "durationMs", duration), true);
+        // 先登记 pending finish（此时 activeRuns 仍为 1），再由 onRunClosed 落 session/end。
+        // 缺少这一步会导致正常结束的聊天 Trace 永远停在 RUNNING。
+        // 取消不伪造 COMPLETED：保留 RUNNING，交给清理任务标 INTERRUPTED。
+        if (!cancelled) {
+            service.finishSession(request.context().sessionId(), terminal, cause);
+        }
         closeInternal();
     }
 

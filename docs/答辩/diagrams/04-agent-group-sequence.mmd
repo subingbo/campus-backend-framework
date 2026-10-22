@@ -1,0 +1,23 @@
+sequenceDiagram
+  participant U as 群成员
+  participant W as ChatWebSocketHandler
+  participant G as GroupAgentService
+  participant R as RunRegistry
+  participant A as AgentService
+  participant P as GroupPlanPersistence
+  participant DB as MySQL
+  participant WS as WsSessionRegistry
+  U->>W: CHAT_SEND @AI
+  W->>G: maybeTrigger
+  G->>R: start(runId)
+  alt 同群已有运行
+    G-->>WS: AGENT_STATUS BUSY
+  else 获得运行权
+    G->>A: run(群语境)
+    A-->>WS: AGENT_STATUS RUNNING/TOOL
+    A-->>WS: AGENT_GEO（过滤私有来源）
+    G->>P: AGENT 消息 + 快照同事务
+    P->>DB: insert message + group_agent_plan
+    G-->>WS: CHAT_MESSAGE + AGENT_PLAN_CARD
+    G->>R: finish(runId)
+  end

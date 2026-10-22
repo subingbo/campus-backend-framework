@@ -1,0 +1,139 @@
+{
+  "generatedAt": "2026-10-22T14:22:29.326Z",
+  "base": "http://localhost:8080/api",
+  "model": "qwen-plus",
+  "sunday": "2026-10-25T14:00:00",
+  "repeat": 1,
+  "summary": {
+    "total": 1,
+    "hard": 0,
+    "passed": 0,
+    "passRate": 0,
+    "durationP50": 59582,
+    "durationP95": 59582,
+    "tokensMedian": 41078,
+    "tokensTotal": 41078,
+    "toolCallsMedian": 6
+  },
+  "results": [
+    {
+      "scenarioId": "S5",
+      "scenarioTitle": "站间间隔不足（交通校验）",
+      "repeat": 1,
+      "asker": "demo01",
+      "mapId": 51,
+      "elapsedMs": 59582,
+      "geoCount": 2,
+      "statuses": [
+        "RUNNING",
+        "RUNNING",
+        "RUNNING",
+        "TOOL",
+        "RUNNING",
+        "RUNNING",
+        "TOOL",
+        "RUNNING",
+        "TOOL",
+        "RUNNING",
+        "RUNNING",
+        "TOOL",
+        "RUNNING",
+        "RUNNING",
+        "RUNNING",
+        "RUNNING",
+        "RUNNING",
+        "DONE"
+      ],
+      "timedOut": false,
+      "error": "",
+      "pass": true,
+      "soft": true,
+      "score": 100,
+      "checks": [
+        {
+          "name": "draft-present",
+          "pass": true,
+          "detail": null
+        },
+        {
+          "name": "travel-reject-or-no-draft",
+          "pass": true,
+          "detail": null
+        },
+        {
+          "name": "travel-total-consistency",
+          "pass": true,
+          "detail": "diff=0"
+        },
+        {
+          "name": "trace-complete",
+          "pass": true,
+          "detail": null
+        }
+      ],
+      "metrics": {
+        "rounds": 6,
+        "outcome": "DRAFT",
+        "totalMs": 58886,
+        "hasDraft": true,
+        "stopCause": "draft",
+        "totalTokens": 41078,
+        "toolCallCount": 6,
+        "firstVisibleMs": 57,
+        "repeatHitCount": 0,
+        "routeCallCount": 1,
+        "routeCacheHitCount": 2,
+        "routeCacheMissCount": 1,
+        "routeEstimatedCount": 0
+      },
+      "trace": {
+        "sessionId": "920a3d74-9023-4f83-8e9a-ab35236b91a9",
+        "complete": true,
+        "pendingEvents": 0,
+        "totalTokens": 41078,
+        "toolCallCount": 6,
+        "eventCount": 52,
+        "durationMs": 58887,
+        "metrics": {
+          "rounds": 6,
+          "outcome": "DRAFT",
+          "totalMs": 58886,
+          "hasDraft": true,
+          "stopCause": "draft",
+          "totalTokens": 41078,
+          "toolCallCount": 6,
+          "firstVisibleMs": 57,
+          "repeatHitCount": 0,
+          "routeCallCount": 1,
+          "routeCacheHitCount": 2,
+          "routeCacheMissCount": 1,
+          "routeEstimatedCount": 0
+        }
+      },
+      "plan": {
+        "constraintStatus": "FEASIBLE",
+        "stopCount": 2,
+        "sources": [
+          "GROUP_MAP"
+        ],
+        "sourceMapIds": [
+          51
+        ],
+        "groupId": 51,
+        "routeConfidence": "AMAP",
+        "totalTravelMinutes": 4,
+        "memberStatuses": [
+          "KNOWN",
+          "KNOWN",
+          "KNOWN",
+          "KNOWN",
+          "KNOWN",
+          "KNOWN",
+          "KNOWN"
+        ],
+        "conflictCount": 0,
+        "blockingCount": 0
+      }
+    }
+  ]
+}

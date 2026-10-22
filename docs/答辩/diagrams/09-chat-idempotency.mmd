@@ -1,0 +1,18 @@
+sequenceDiagram
+  participant C as 客户端
+  participant O as sessionStorage Outbox
+  participant W as WS Handler
+  participant S as ChatMessageService
+  participant DB as message 表
+  C->>O: CHAT_SEND 入队（clientMsgId）
+  C->>W: CHAT_SEND
+  W->>S: send
+  S->>DB: 查 / INSERT（唯一键 conversation+sender+clientMsgId）
+  alt 重复
+    DB-->>S: 已有消息
+    S-->>W: duplicate=true
+  else 首次
+    DB-->>S: messageId
+  end
+  W-->>C: CHAT_ACK
+  C->>O: 出队

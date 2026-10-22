@@ -1,0 +1,4 @@
+# Round 4 deploy smoke (L0, demo01 local)
+PASS  L0 只读：maps=2 schedules=2 traces=5 total=1
+SKIP  L1：未设置 SMOKE_CONVERSATION_ID
+DEPLOY SMOKE OK

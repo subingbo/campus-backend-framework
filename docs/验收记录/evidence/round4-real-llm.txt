@@ -1,0 +1,8 @@
+# Round 4 real qwen-plus / verify-round2-real-llm.mjs
+# Date: 2026-10-22
+[1/5] 群 28 发送 @AI，等待真实 LLM…
+[2/5] 公开卡片通过：东区图书馆→南门咖啡下午小聚，2 站，FEASIBLE，Geo 事件 2
+[3/5] AI 会话 197 完整草稿可读（groupId/sourceMapIds/source 通过）
+[4/5] 保存成功且幂等：activityId=44，2 站，409 预检通过
+[5/5] Trace 完整：model=qwen-plus，tools=5，events=58
+ALL PASS

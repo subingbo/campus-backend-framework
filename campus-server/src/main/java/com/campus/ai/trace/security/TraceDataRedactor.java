@@ -42,7 +42,8 @@ public class TraceDataRedactor {
             "passed", "changed", "truncated", "parseError", "serializationError", "newSession",
             "descriptionPresent", "keywordPresent", "hasNear", "hasReferenceMap",
             "hasSuggestions", "hasSourceMaps", "available", "kind",
-            "estimatedSegments", "outcome", "stream", "historyLimit", "clientCancelled"
+            "estimatedSegments", "outcome", "stream", "historyLimit", "clientCancelled",
+            "stopCause"
     );
 
     private static final Set<String> FORBIDDEN_KEYS = Set.of(
@@ -68,7 +69,7 @@ public class TraceDataRedactor {
                     + "|complete|estimated|reused|idempotentReuse|inferred|cancelled|rolledBack|passed|changed"
                     + "|truncated|parseError|serializationError|newSession|descriptionPresent|keywordPresent"
                     + "|hasNear|hasReferenceMap|hasSuggestions|hasSourceMaps|available|kind|estimatedSegments"
-                    + "|outcome|stream|historyLimit|clientCancelled"
+                    + "|outcome|stopCause|stream|historyLimit|clientCancelled"
                     + "|.*(?:Id|Ids|Count|Minutes|Ms|Length|Tokens|Version|Seq|Status|Code|Mode|Source"
                     + "|Provider|Reason|Type|Phase|Operation|Transport|AtMs|Meters))$");
 

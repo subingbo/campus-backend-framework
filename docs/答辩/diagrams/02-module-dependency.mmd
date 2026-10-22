@@ -1,0 +1,7 @@
+flowchart TB
+  WEB["campus-web<br/>Vue 3 + Vite"] --> API["/api REST + SSE + /ws"]
+  API --> SERVER["campus-server<br/>auth / map / place / activity / schedule / social / ai / notification / trace"]
+  SERVER --> FRAMEWORK["campus-framework<br/>security / common / config / ratelimit"]
+  SERVER --> DB[("MySQL")]
+  SERVER --> REDIS[("Redis")]
+  SERVER --> LLM["LLM / 高德"]

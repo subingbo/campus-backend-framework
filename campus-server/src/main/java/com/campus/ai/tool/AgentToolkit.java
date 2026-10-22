@@ -76,6 +76,10 @@ public class AgentToolkit {
     private final ScheduleService scheduleService;
     private final GroupMapContextService groupMapContextService;
 
+    /** 评测消融开关；默认 none，生产行为不变 */
+    @org.springframework.beans.factory.annotation.Value("${campus.ai.eval.ablation:none}")
+    private String ablation = "none";
+
     /** 群语境（由后端从 ws 会话注入，模型不可指定）：key1=viewerId key2=campus_group.id */
     private static final ThreadLocal<long[]> GROUP_CONTEXT = new ThreadLocal<>();
 
@@ -87,7 +91,7 @@ public class AgentToolkit {
         GROUP_CONTEXT.remove();
     }
 
-    private boolean hasGroupContext() {
+    public boolean hasGroupContext() {
         long[] ctx = GROUP_CONTEXT.get();
         return ctx != null && ctx[0] > 0 && ctx[1] > 0;
     }
@@ -349,12 +353,31 @@ public class AgentToolkit {
                 props(submitPlanProps),
                 List.of("title", "startTime", "endTime", "stops")));
         return functions.stream()
+                .filter(fn -> toolEnabled(((Map<?, ?>) fn).get("name").toString()))
                 .map(fn -> Map.<String, Object>of("type", "function", "function", fn))
                 .toList();
     }
 
+    /** 评测消融：只影响 schema/执行入口，不关闭 PlanValidator 等硬校验。 */
+    private boolean toolEnabled(String name) {
+        if ("no-planner".equalsIgnoreCase(ablation)) {
+            return !TOOL_PLAN_ITINERARY.equals(name);
+        }
+        if ("no-group-map".equalsIgnoreCase(ablation)) {
+            return !TOOL_GET_GROUP_MAP_CONTEXT.equals(name)
+                    && !TOOL_SEARCH_GROUP_MAP_PLACES.equals(name)
+                    && !TOOL_GET_PLACE_CONTEXT.equals(name)
+                    && !TOOL_LIST_MY_MAPS.equals(name)
+                    && !TOOL_LIST_MAP_PLACES.equals(name);
+        }
+        return true;
+    }
+
     /** 执行工具并回填 JSON；权限一律走业务层校验，异常转为 error JSON 让模型自行纠正 */
     public String execute(String name, String argsJson) {
+        if (!toolEnabled(name)) {
+            return errorJson("当前评测消融模式已禁用工具：" + name);
+        }
         try {
             Map<String, Object> args = objectMapper.readValue(argsJson, new TypeReference<>() {
             });

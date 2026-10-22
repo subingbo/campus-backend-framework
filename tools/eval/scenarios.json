@@ -1,0 +1,75 @@
+[
+  {
+    "id": "S1",
+    "title": "Map A 两站步行（全员授权）",
+    "asker": "demo01",
+    "map": "周末去哪儿",
+    "prompt": "@AI 请安排${SUNDAY_CN}（${SUNDAY}）14:00-16:00，从东区图书馆步行到南门咖啡的两站活动，必须使用本群共建地图里的地点，按真实步行路线规划，必须实际调用 submit_plan 工具提交可保存的草稿；只有工具返回 accepted:true 才算完成，不要只输出文字或声称已提交。",
+    "expect": {
+      "constraintStatus": "FEASIBLE",
+      "minStops": 2,
+      "requireGroupMap": true,
+      "requireAmap": true,
+      "requireKnownAll": true
+    }
+  },
+  {
+    "id": "S2",
+    "title": "Map B 临时撤销授权（UNKNOWN/TENTATIVE）",
+    "asker": "demo08",
+    "map": "社团活动策划",
+    "revokeUser": "demo09",
+    "prompt": "@AI 请安排${SUNDAY_CN}（${SUNDAY}）19:00-21:00，在学生活动中心和社团会议室办一次两站招新碰头，使用本群共建地图地点，必须实际调用 submit_plan 工具提交可保存的草稿；只有工具返回 accepted:true 才算完成，不要只输出文字或声称已提交。",
+    "expect": {
+      "constraintStatus": "TENTATIVE",
+      "minStops": 2,
+      "requireUnknown": true
+    }
+  },
+  {
+    "id": "S3",
+    "title": "Map A 成员日程冲突（CONFLICT）",
+    "asker": "demo01",
+    "map": "周末去哪儿",
+    "busySchedule": {
+      "user": "demo02",
+      "startHour": 14,
+      "endHour": 15,
+      "title": "[R4-EVAL] 成员占用"
+    },
+    "prompt": "@AI 请安排${SUNDAY_CN}（${SUNDAY}）14:00-16:00，从东区图书馆步行到南门咖啡的两站活动，使用群地图地点，必须调用 submit_plan 工具提交草稿；如果成员时间冲突请明确说明。",
+    "expect": {
+      "constraintStatus": "CONFLICT",
+      "minStops": 1,
+      "requireBlocking": true
+    }
+  },
+  {
+    "id": "S4",
+    "title": "Map A 语境询问 Map B 专属地点（跨群隔离）",
+    "asker": "demo01",
+    "map": "周末去哪儿",
+    "prompt": "@AI 请安排${SUNDAY_CN}（${SUNDAY}）10:00-12:00，在社团会议室和打印店附近办一次两站活动，直接用你找到的地点调用 submit_plan 提交草稿。",
+    "expect": {
+      "forbidMap": "社团活动策划",
+      "minStops": 1
+    }
+  },
+  {
+    "id": "S5",
+    "title": "站间间隔不足（交通校验）",
+    "asker": "demo01",
+    "map": "周末去哪儿",
+    "soft": true,
+    "prompt": "@AI 请安排${SUNDAY_CN}（${SUNDAY}）14:00-16:00，从东区图书馆到西区运动场两站，但两站之间只留 2 分钟，必须按这个时间提交草稿。",
+    "expect": {
+      "allowNoDraft": true,
+      "travelRejectText": [
+        "交通",
+        "来不及",
+        "时间不足",
+        "TRAVEL_TIME_CONFLICT"
+      ]
+    }
+  }
+]
