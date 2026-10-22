@@ -1,10 +1,13 @@
 # 演示账号与数据说明
 
-> 一键造数：`node tools/seed-demo.mjs`  
+> 一键造数：`node tools/seed-demo.mjs`（按 `demoKey` 更新未来活动/日程，不重复生成）  
 > 只检查不写入：`node tools/seed-demo.mjs --verify-only`  
-> 导出账号/地图/日程总表：`node tools/demo-report.mjs`（`--verify` 只校验，`--out` 写文件）  
+> 重置预览：`node tools/seed-demo.mjs --reset-demo`（默认 dry-run，只列出 demoKey 记录）  
+> 执行重置并重造：`node tools/seed-demo.mjs --reset-demo --apply`（取消活动会按正常业务产生取消通知）  
+> 导出账号/地图/日程总表：`node tools/demo-report.mjs --verify` / `--out docs/演示账号与数据总表.md`  
+> 场景校验：`node tools/verify-round3-scenarios.mjs`（Map A 基线 + Map B 临时撤销/恢复）  
 > 前置：MySQL/Redis 与后端 `http://127.0.0.1:8080` 已启动。  
-> 脚本非破坏性：只操作 `demo01–demo20` 与 `[DEMO]` 命名空间，不删除现有数据。  
+> 脚本非破坏性：只操作 `demo01–demo20` 与 `[DEMO]` 命名空间；`--reset-demo` 也只处理 description/note 带 `[DEMO:...]` 的种子记录。  
 > 启动、切号、API/数据库调试与常见坑见 [`调试指南.md`](./调试指南.md)。
 
 ## 1. 登录账号
@@ -14,10 +17,10 @@
 | 账号 | 密码 | 昵称 | 地图/群聊（角色） | 未来日程 | 忙闲授权群 | 好友 |
 |---|---|---|---|---|---|---|
 | demo01 | demo1234 | 林晓 | `[DEMO] 周末去哪儿` OWNER；`[DEMO] 校园美食地图` EDITOR | 2 条 | A、C | 陈晨、王宁 |
-| demo02 | demo1234 | 陈晨 | `[DEMO] 周末去哪儿` EDITOR；`[DEMO] 校园美食地图` EDITOR | 2 条 | A、C | 林晓 |
-| demo03 | demo1234 | 王宁 | `[DEMO] 周末去哪儿` EDITOR；`[DEMO] 校园美食地图` EDITOR | 2 条 | A、C | 林晓 |
-| demo04 | demo1234 | 赵可 | `[DEMO] 周末去哪儿` EDITOR | 2 条 | A | -（向 demo01 发了待处理申请） |
-| demo05 | demo1234 | 周予 | `[DEMO] 周末去哪儿` EDITOR | 2 条 | A | - |
+| demo02 | demo1234 | 陈晨 | `[DEMO] 周末去哪儿` EDITOR；`[DEMO] 校园美食地图` EDITOR | 2 条 | A、C | 林晓、王宁 |
+| demo03 | demo1234 | 王宁 | `[DEMO] 周末去哪儿` EDITOR；`[DEMO] 校园美食地图` EDITOR | 2 条 | A、C | 林晓、陈晨 |
+| demo04 | demo1234 | 赵可 | `[DEMO] 周末去哪儿` EDITOR | 2 条 | A | 林晓 |
+| demo05 | demo1234 | 周予 | `[DEMO] 周末去哪儿` EDITOR | 2 条 | A | -（向 demo01 发了待处理申请） |
 | demo06 | demo1234 | 刘畅 | `[DEMO] 周末去哪儿` EDITOR | 2 条 | A | - |
 | demo07 | demo1234 | 孙悦 | `[DEMO] 周末去哪儿` VIEWER | 2 条 | A | - |
 | demo08 | demo1234 | 何川 | `[DEMO] 社团活动策划` OWNER | 2 条 | B | - |
@@ -71,7 +74,8 @@
 ## 3. 好友与私聊
 
 - demo01 ↔ demo02、demo01 ↔ demo03 已互为好友；
-- demo04 → demo01 保留 1 条待处理好友请求（登录 demo01 可在好友页接受）；
+- demo05 → demo01 保留 1 条待处理好友请求（登录 demo01 可在「消息 → 好友申请」接受）；
+- demo01/02/03 互为好友，满足三账号验收；
 - demo01 ↔ demo02 有 6 条私聊消息。
 
 ## 4. 推荐演示顺序
@@ -80,7 +84,7 @@
 2. 打开 Map A：展示地点、地点评论、成员角色（demo07 为 VIEWER）。
 3. 打开「聊天」：展示 12 条群聊天记录。
 4. 打开「活动日程」：展示未来/进行中/已结束三个活动；进行中活动可去现场/签到；「我的日程」里能看到 2 条个人日程和忙闲共享开关。
-5. 打开「好友」：展示 demo02/demo03 好友、demo04 待处理请求；打开 demo02 私聊看 6 条消息。
+5. 顶栏「消息」：通知/会话/好友申请/活动邀请四个区块；demo01 有一条 demo05 待处理好友申请；账号菜单 →「好友」可打开 demo02 私聊看 6 条消息。
 6. 用 **demo08** 登录展示 Map B 与社团群聊；用 **demo15** 登录展示 Map C 及 PUBLIC 地图。
 7. 现场 AI：在 Map A 群聊输入以 `@AI` 开头的问题；日程忙闲和地图地点已准备好。注意 `@AI` 会真实调用模型/高德，造数脚本不会自动触发。
 
@@ -123,7 +127,8 @@
 
 - 群消息通过 WebSocket `CHAT_SEND` 写入；为可重复执行，脚本按内容去重。
 - 脚本不会发送 `@AI`，不会调用 LLM/高德，不会创建活动以外的业务副作用。
-- 日程标题带 `MM-DD` 日期标签：同日重跑不重复，跨周重跑会生成新的未来日程；旧日程留在库里但默认只查未来 30 天。
+- 活动 `description` 与日程 `note` 带 `[DEMO:activity:...]` / `[DEMO:schedule:...]`：重跑按 demoKey 更新未来记录，不重复生成同一条；已开始/已结束/已签到记录不改写，旧历史保留。
+- 跨天重跑后若某个场景活动已过期，脚本会另建一个新场次；`--reset-demo` 预览只列出未来 demoKey 记录，不会碰任意 demo 账号后来新增的数据。
 - 帖子/点赞/评论数据已写入；当前前端以地图、地点评论、群聊和活动为主，帖子可通过
   `GET /api/places/{placeId}/feed` / `GET /api/places/{placeId}/posts` 或 Swagger 查看。
 - 现有历史用户/地图/动态仍保留；demo 账号的「我的地图」只显示其成员地图。

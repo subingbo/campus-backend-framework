@@ -89,6 +89,7 @@ import {
   takeFailedMessage
 } from '../composables/useChatSocket'
 import { mergeMessages } from '../composables/chatOutbox'
+import { useMessageSummary } from '../composables/useMessageSummary'
 import MarkdownText from './MarkdownText.vue'
 import GroupPlanCard from './GroupPlanCard.vue'
 
@@ -97,6 +98,7 @@ const props = defineProps({
 })
 
 const router = useRouter()
+const { refreshSoon: refreshSummarySoon } = useMessageSummary()
 const me = myUserId()
 const messages = ref([])
 const draft = ref('')
@@ -187,7 +189,7 @@ watch(
           scrollBottom()
         }
         if (msg.senderId !== me) {
-          send({ type: 'READ', conversationId: props.conversation.id })
+          markConversationRead()
         }
       }),
       on('TYPING', (frame) => {
@@ -279,6 +281,12 @@ function cancelAgent() {
   })
 }
 
+/** 打开/停留在会话即视为已读：清服务端未读，并等 READ 回执后刷新顶栏角标 */
+function markConversationRead() {
+  send({ type: 'READ', conversationId: props.conversation.id })
+  refreshSummarySoon()
+}
+
 async function load() {
   loading.value = true
   try {
@@ -289,6 +297,7 @@ async function load() {
     messages.value = list
     agentPlans.value = (plans || []).map(normalizePlanCard).slice(-10)
     scrollBottom()
+    markConversationRead()
   } catch (e) {
     ElMessage.error(e.message)
   } finally {
@@ -305,6 +314,7 @@ async function reloadAndMerge() {
     messages.value = mergeMessages(messages.value, list)
     mergePlanCards(plans)
     scrollBottom()
+    markConversationRead()
   } catch {
     // 重连补拉失败不打扰用户，下一轮重连会再试
   }
@@ -618,5 +628,30 @@ function formatTime(value) {
 }
 .chat-panel__ai-btn {
   flex-shrink: 0;
+}
+@media (max-width: 600px) {
+  .chat-msg {
+    max-width: 92%;
+  }
+  .chat-panel__input {
+    flex-wrap: wrap;
+    gap: 6px;
+    padding-bottom: env(safe-area-inset-bottom, 0);
+  }
+  .chat-panel__ai-btn {
+    flex: 1 1 100%;
+  }
+  .chat-panel__input .el-input {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+  .chat-panel__agent-status {
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+  .chat-panel__offline,
+  .chat-panel__pending {
+    white-space: normal;
+  }
 }
 </style>

@@ -185,4 +185,16 @@ function navigateStop(stop) {
   margin-top: 8px;
 }
 .chat-agent-card__hint { color: #909399; font-size: 11px; }
+@media (max-width: 600px) {
+  .chat-agent-card__actions {
+    flex-wrap: wrap;
+  }
+  .chat-agent-card__actions .el-button {
+    flex: 1 1 auto;
+  }
+  .chat-agent-card__stop,
+  .chat-agent-card__seg {
+    word-break: break-word;
+  }
+}
 </style>

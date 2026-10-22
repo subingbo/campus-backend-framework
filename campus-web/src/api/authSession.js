@@ -14,6 +14,18 @@ export function getAuthEpoch(storage = localStorage) {
   return Number(storage.getItem(EPOCH_KEY) || 0)
 }
 
+/** 读取 accessToken 的公开声明（只用于本地展示，权限仍以服务端为准） */
+export function getAccessClaims(storage = localStorage) {
+  const token = getAccessToken(storage)
+  if (!token) return null
+  try {
+    const part = token.split('.')[1]
+    return JSON.parse(atob(part.replace(/-/g, '+').replace(/_/g, '/')))
+  } catch {
+    return null
+  }
+}
+
 function bumpEpoch(storage) {
   storage.setItem(EPOCH_KEY, String(getAuthEpoch(storage) + 1))
 }

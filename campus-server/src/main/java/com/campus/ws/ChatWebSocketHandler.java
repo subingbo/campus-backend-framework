@@ -80,8 +80,16 @@ public class ChatWebSocketHandler extends TextWebSocketHandler {
                 }
                 case "TYPING" -> chatMessageService.forwardTyping(
                         userId, node.path("conversationId").asLong());
-                case "READ" -> chatMessageService.clearUnread(
-                        userId, node.path("conversationId").asLong());
+                case "READ" -> {
+                    long conversationId = node.path("conversationId").asLong();
+                    chatMessageService.clearUnread(userId, conversationId);
+                    // 回执 count=0：前端据此刷新消息中心角标，避免“已读后角标仍停在旧值”
+                    Map<String, Object> readFrame = new LinkedHashMap<>();
+                    readFrame.put("type", "UNREAD");
+                    readFrame.put("conversationId", conversationId);
+                    readFrame.put("count", 0);
+                    wsSessionRegistry.sendToUser(userId, readFrame);
+                }
                 case "PING" -> wsSessionRegistry.sendToUser(userId, Map.of("type", "PONG"));
                 default -> sendError(session, "未知的消息类型", clientMsgId);
             }

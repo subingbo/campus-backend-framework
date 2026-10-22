@@ -279,7 +279,7 @@
       </template>
     </el-drawer>
 
-    <el-dialog v-model="addDialog" title="添加地点" width="460px">
+    <el-dialog v-model="addDialog" title="添加地点" width="min(460px, 94vw)">
       <el-form :model="addForm" label-width="72px">
         <el-form-item label="名称"><el-input v-model="addForm.name" /></el-form-item>
         <el-form-item label="分类">
@@ -310,7 +310,7 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="dupDialog" title="附近已有相近地点" width="480px">
+    <el-dialog v-model="dupDialog" title="附近已有相近地点" width="min(480px, 94vw)">
       <p>是否补充已有地点，避免重复？</p>
       <el-radio-group v-model="dupChoice">
         <el-radio v-for="c in dupCandidates" :key="c.id" :value="c.id">
@@ -324,7 +324,7 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="editDialog" title="编辑地点" width="460px">
+    <el-dialog v-model="editDialog" title="编辑地点" width="min(460px, 94vw)">
       <el-form :model="editForm" label-width="72px">
         <el-form-item label="名称"><el-input v-model="editForm.name" /></el-form-item>
         <el-form-item label="分类">
@@ -529,6 +529,10 @@ async function initPage() {
       if (target) {
         openPlace(target)
       }
+    }
+    // 消息中心深链：/maps/:id?chat=1 直接打开本图群聊
+    if (route.query.chat === '1') {
+      await openChat()
     }
     try {
       amapCtx = await loadAmap(mapRef.value, onMapClick)

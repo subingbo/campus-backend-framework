@@ -6,6 +6,10 @@ export const authApi = {
   register: (payload) => http.post('/auth/register', payload)
 }
 
+export const userApi = {
+  me: () => http.get('/users/me')
+}
+
 export const mapApi = {
   list: () => http.get('/maps'),
   detail: (id) => http.get(`/maps/${id}`),
@@ -63,6 +67,13 @@ export const friendApi = {
   accept: (id) => http.post(`/friends/requests/${id}/accept`),
   reject: (id) => http.post(`/friends/requests/${id}/reject`),
   remove: (userId) => http.delete(`/friends/${userId}`)
+}
+
+export const notificationApi = {
+  list: (params) => http.get('/notifications', { params }),
+  summary: () => http.get('/notifications/summary'),
+  markRead: (id) => http.post(`/notifications/${id}/read`),
+  markAllRead: () => http.post('/notifications/read-all')
 }
 
 export const chatApi = {

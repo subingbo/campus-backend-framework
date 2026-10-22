@@ -313,6 +313,44 @@ CREATE TABLE IF NOT EXISTS schedule_share_permission (
     UNIQUE KEY uk_owner_target (owner_user_id, target_type, target_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+CREATE TABLE IF NOT EXISTS friend_request (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    from_user_id BIGINT NOT NULL,
+    to_user_id BIGINT NOT NULL,
+    status TINYINT NOT NULL DEFAULT 0,
+    message VARCHAR(128) NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    handled_at DATETIME NULL,
+    KEY idx_to_user_status (to_user_id, status),
+    KEY idx_from_user (from_user_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS friend (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    user_id BIGINT NOT NULL,
+    friend_id BIGINT NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_user_friend (user_id, friend_id),
+    KEY idx_friend_id (friend_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS notification (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    user_id BIGINT NOT NULL,
+    type VARCHAR(32) NOT NULL,
+    title VARCHAR(128) NOT NULL,
+    content VARCHAR(512) DEFAULT NULL,
+    target_type VARCHAR(32) DEFAULT NULL,
+    target_id BIGINT DEFAULT NULL,
+    payload_json TEXT DEFAULT NULL,
+    read_at DATETIME DEFAULT NULL,
+    dedupe_key VARCHAR(160) DEFAULT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_notification_dedupe (user_id, dedupe_key),
+    KEY idx_user_read (user_id, read_at, id),
+    KEY idx_user_created (user_id, created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 CREATE TABLE IF NOT EXISTS conversation (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     type VARCHAR(16) NOT NULL,

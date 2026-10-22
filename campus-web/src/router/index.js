@@ -6,6 +6,7 @@ import MapWorkspaceView from '../views/MapWorkspaceView.vue'
 import FriendsView from '../views/FriendsView.vue'
 import ActivitiesView from '../views/ActivitiesView.vue'
 import AssistantView from '../views/AssistantView.vue'
+import { safeRedirect } from '../utils/redirect'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -19,6 +20,7 @@ const router = createRouter({
       children: [
         { path: '', component: MapListView },
         { path: 'maps/:id', component: MapWorkspaceView },
+        { path: 'messages', component: () => import('../views/MessagesView.vue') },
         { path: 'friends', component: FriendsView },
         { path: 'activities', component: ActivitiesView },
         { path: 'assistant', component: AssistantView },
@@ -35,10 +37,11 @@ const router = createRouter({
 
 router.beforeEach((to) => {
   if (to.matched.some((r) => r.meta.auth) && !localStorage.getItem('accessToken')) {
-    return '/login'
+    // 保存原始目标（含 query），登录成功后回到活动/群聊/方案，而不是首页
+    return { path: '/login', query: { redirect: to.fullPath } }
   }
   if (to.path === '/login' && localStorage.getItem('accessToken')) {
-    return '/'
+    return safeRedirect(to.query.redirect)
   }
 })
 

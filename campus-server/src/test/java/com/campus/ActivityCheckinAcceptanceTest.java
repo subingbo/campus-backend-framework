@@ -206,6 +206,10 @@ class ActivityCheckinAcceptanceTest {
         mockMvc.perform(get("/api/activity-invites/pending").header("Authorization", "Bearer " + strangerTokens.getAccessToken()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.length()").value(1));
+        mockMvc.perform(get("/api/notifications?unreadOnly=true")
+                        .header("Authorization", "Bearer " + strangerTokens.getAccessToken()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.list[0].type").value("ACTIVITY_INVITED"));
 
         mockMvc.perform(post("/api/activity-invites/" + inviteId + "/accept")
                         .header("Authorization", "Bearer " + strangerTokens.getAccessToken()))
@@ -215,6 +219,9 @@ class ActivityCheckinAcceptanceTest {
         mockMvc.perform(get("/api/activities/" + activityId + "/invites").header("Authorization", creatorAuth))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data[0].status").value(1));
+        mockMvc.perform(get("/api/notifications?unreadOnly=true").header("Authorization", creatorAuth))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.list[0].type").value("ACTIVITY_MEMBER_JOINED"));
 
         // 接受后进入成员列表（3 人）
         mockMvc.perform(get("/api/activities/" + activityId + "/members").header("Authorization", creatorAuth))

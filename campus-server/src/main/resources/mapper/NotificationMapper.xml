@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.campus.notification.mapper.NotificationMapper">
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO notification (user_id, type, title, content, target_type, target_id,
+                                  payload_json, read_at, dedupe_key, created_at)
+        VALUES (#{userId}, #{type}, #{title}, #{content}, #{targetType}, #{targetId},
+                #{payloadJson}, NULL, #{dedupeKey}, NOW())
+    </insert>
+
+    <select id="selectById" resultType="com.campus.notification.entity.Notification">
+        SELECT id, user_id AS userId, type, title, content, target_type AS targetType,
+               target_id AS targetId, payload_json AS payloadJson, read_at AS readAt,
+               dedupe_key AS dedupeKey, created_at AS createdAt
+        FROM notification
+        WHERE id = #{id}
+        LIMIT 1
+    </select>
+
+    <select id="selectByDedupe" resultType="com.campus.notification.entity.Notification">
+        SELECT id, user_id AS userId, type, title, content, target_type AS targetType,
+               target_id AS targetId, payload_json AS payloadJson, read_at AS readAt,
+               dedupe_key AS dedupeKey, created_at AS createdAt
+        FROM notification
+        WHERE user_id = #{userId} AND dedupe_key = #{dedupeKey}
+        LIMIT 1
+    </select>
+
+    <select id="selectByUser" resultType="com.campus.notification.entity.Notification">
+        SELECT id, user_id AS userId, type, title, content, target_type AS targetType,
+               target_id AS targetId, payload_json AS payloadJson, read_at AS readAt,
+               dedupe_key AS dedupeKey, created_at AS createdAt
+        FROM notification
+        WHERE user_id = #{userId}
+        <if test="unreadOnly">
+            AND read_at IS NULL
+        </if>
+        ORDER BY id DESC
+        LIMIT #{offset}, #{size}
+    </select>
+
+    <select id="countByUser" resultType="long">
+        SELECT COUNT(*) FROM notification
+        WHERE user_id = #{userId}
+        <if test="unreadOnly">
+            AND read_at IS NULL
+        </if>
+    </select>
+
+    <select id="countUnread" resultType="long">
+        SELECT COUNT(*) FROM notification WHERE user_id = #{userId} AND read_at IS NULL
+    </select>
+
+    <update id="markRead">
+        UPDATE notification
+        SET read_at = #{time}
+        WHERE id = #{id} AND user_id = #{userId} AND read_at IS NULL
+    </update>
+
+    <update id="markAllRead">
+        UPDATE notification
+        SET read_at = #{time}
+        WHERE user_id = #{userId} AND read_at IS NULL
+    </update>
+</mapper>

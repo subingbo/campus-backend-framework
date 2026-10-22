@@ -64,19 +64,22 @@
     </div>
   </div>
 
-  <el-dialog v-model="chatOpen" :title="chatPeer" width="420px">
-    <ChatPanel v-if="activeConversation" :conversation="activeConversation" style="height: 380px" />
+  <el-dialog v-model="chatOpen" :title="chatPeer" width="min(420px, 94vw)">
+    <ChatPanel v-if="activeConversation" :conversation="activeConversation" style="height: min(380px, 58vh)" />
   </el-dialog>
 </template>
 
 <script setup>
 // 全局顶栏（品牌/导航/退出/好友申请角标）由路由壳 AppShell 提供
 import { onMounted, onUnmounted, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { chatApi, friendApi } from '../api'
 import { on } from '../composables/useChatSocket'
 import ChatPanel from '../components/ChatPanel.vue'
 
+const route = useRoute()
+const router = useRouter()
 const keyword = ref('')
 const searched = ref(false)
 const searchResults = ref([])
@@ -89,6 +92,7 @@ let removers = []
 
 onMounted(async () => {
   await Promise.all([loadFriends(), loadRequests()])
+  await openRequestedChat()
   removers = [
     // 顶部角标提示在 AppShell 统一弹出，这里只负责刷新本页数据
     on('FRIEND_REQUEST', () => loadRequests()),
@@ -166,6 +170,24 @@ async function reject(r) {
   } catch (e) {
     ElMessage.error(e.message)
   }
+}
+
+/** 消息中心深链：/friends?chat={peerUserId} 打开与某位好友的私聊 */
+async function openRequestedChat() {
+  const peer = Number(route.query.chat)
+  if (!Number.isInteger(peer) || peer <= 0) return
+  let friend = friends.value.find((f) => f.userId === peer)
+  if (!friend) {
+    // 通知可能刚被接受，好友列表稍滞后：再拉一次
+    await loadFriends()
+    friend = friends.value.find((f) => f.userId === peer)
+  }
+  if (friend) {
+    await openChat(friend)
+  } else {
+    ElMessage.warning('未找到该好友，可能已解除好友关系')
+  }
+  await router.replace({ path: '/friends' })
 }
 
 async function openChat(f) {

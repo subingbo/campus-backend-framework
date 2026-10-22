@@ -4,10 +4,13 @@
  *
  * 前置：后端 8080、MySQL、Redis 已启动；Node 22+（原生 fetch/WebSocket）。
  * 用法：
- *   node tools/seed-demo.mjs              # 创建/补齐演示数据
- *   node tools/seed-demo.mjs --verify-only # 只检查，不写入
+ *   node tools/seed-demo.mjs                         # 创建/补齐演示数据（按 demoKey 更新未来活动/日程）
+ *   node tools/seed-demo.mjs --verify-only           # 只检查，不写入
+ *   node tools/seed-demo.mjs --reset-demo            # 只预览将取消/删除的 demoKey 记录（默认 dry-run）
+ *   node tools/seed-demo.mjs --reset-demo --apply    # 先重置 demoKey 记录，再重新造数
  *
- * 本脚本不会删除任何现有用户/地图/群/活动；只操作 demo01–demo20 与 [DEMO] 命名空间。
+ * 本脚本不会删除任何现有用户/地图/群；重置也只处理 description/note 带 [DEMO:...] 的种子活动/日程，
+ * 已开始、已结束或已签到（未来活动不会进入签到窗口）的记录不改写。只操作 demo01–demo20 与 [DEMO] 命名空间。
  * 群聊项目里是地图的 1:1 会话，因此 3 个群聊对应 3 张共享地图。
  */
 import fs from 'node:fs'
@@ -17,6 +20,8 @@ const BASE = process.env.BASE_URL || 'http://127.0.0.1:8080'
 const WS_BASE = BASE.replace(/^http/, 'ws')
 const PASSWORD = process.env.DEMO_PASSWORD || 'demo1234'
 const VERIFY_ONLY = process.argv.includes('--verify-only')
+const RESET_DEMO = process.argv.includes('--reset-demo')
+const RESET_APPLY = process.argv.includes('--apply')
 const STATE_FILE = path.join('.ai-run', 'demo-seed-state.json')
 
 const ACCOUNTS = [
@@ -365,7 +370,43 @@ const PRIVATE_MESSAGES = [
 ]
 
 const state = { generatedAt: new Date().toISOString(), users: {}, maps: {} }
-const summary = { created: 0, skipped: 0, messagesSent: 0, grants: 0 }
+const summary = { created: 0, updated: 0, skipped: 0, messagesSent: 0, grants: 0 }
+
+/** 后端 LocalDateTime 可能是 ISO 字符串或 [年,月,日,时,分,秒] 数组 */
+function toDate(value) {
+  if (!value) return null
+  if (Array.isArray(value)) {
+    return new Date(value[0], (value[1] || 1) - 1, value[2] || 1,
+      value[3] || 0, value[4] || 0, value[5] || 0)
+  }
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
+function activityMarker(specKey, index) {
+  return `[DEMO:activity:${specKey}:${index}]`
+}
+
+function scheduleMarker(specKey, index) {
+  return `[DEMO:schedule:${specKey}:${index}]`
+}
+
+function hasMarker(text, prefix) {
+  return typeof text === 'string' && text.includes(prefix)
+}
+
+function titleKey(title) {
+  return String(title || '').split(' · ')[0]
+}
+
+/** 旧数据没有 demoKey：先精确标题，再按“日期前的稳定标题”唯一匹配 */
+function findByTitle(list, title) {
+  const exact = (list || []).filter((item) => item.title === title)
+  if (exact.length) return exact[0]
+  const key = titleKey(title)
+  const candidates = (list || []).filter((item) => titleKey(item.title) === key)
+  return candidates.length === 1 ? candidates[0] : null
+}
 
 function log(message) {
   console.log(`[demo] ${message}`)
@@ -627,7 +668,10 @@ async function sendWsMessage(token, conversationId, content) {
 async function ensureFriends(users, allowCreate) {
   await ensureFriend('demo01', 'demo02', users, allowCreate)
   await ensureFriend('demo01', 'demo03', users, allowCreate)
-  await ensurePendingFriend('demo04', 'demo01', users, allowCreate)
+  // 三账号验收要求 demo01/02/03 互为好友
+  await ensureFriend('demo02', 'demo03', users, allowCreate)
+  // demo05 保留一条待处理好友申请，供消息中心角标/待办演示
+  await ensurePendingFriend('demo05', 'demo01', users, allowCreate)
 }
 
 async function ensureFriend(a, b, users, allowCreate) {
@@ -713,20 +757,42 @@ async function ensurePrivateConversation(users, allowCreate) {
 
 async function ensureActivities(spec, map, placeIds, users, allowCreate) {
   const owner = users[spec.owner]
-  const existing = await api('GET', '/api/activities/mine?role=created', owner.token)
+  const existing = (await api('GET', '/api/activities/mine?role=created', owner.token)) || []
   const result = {}
-  for (const activity of spec.activities) {
-    const found = (existing || []).find((item) => item.title === activity.title)
+  const now = new Date()
+  for (const [index, activity] of spec.activities.entries()) {
+    const marker = activityMarker(spec.key, index)
+    const active = existing.filter((item) => item.phase !== 'CANCELLED')
+    // demoKey 命中即是种子记录（已开始/已结束也保持不改写）；
+    // 旧数据无 marker 时只认未来活动，过去活动作为历史保留并另建新场次。
+    const markerFound = active.find((item) => hasMarker(item.description, marker))
+    const titleFound = findByTitle(active, activity.title)
+    const found = markerFound || (titleFound && isFuture(titleFound.startTime) ? titleFound : null)
     let id
     if (found) {
       id = found.id
-      summary.skipped += 1
+      const start = toDate(found.startTime)
+      const future = start && start > now
+      if (allowCreate && future) {
+        // 只更新未开始的活动；已开始/已结束/已签到记录不改写
+        await api('PUT', `/api/activities/${id}`, owner.token, {
+          title: activity.title,
+          description: `演示活动 ${marker}`,
+          startTime: iso(activity.start),
+          endTime: iso(activity.end),
+          maxMembers: activity.maxMembers,
+          category: activity.category
+        })
+        summary.updated += 1
+      } else {
+        summary.skipped += 1
+      }
     } else {
       if (!allowCreate) throw new Error(`缺少活动：${activity.title}`)
       const created = await api('POST', '/api/activities', owner.token, {
         placeId: placeIds[activity.place],
         title: activity.title,
-        description: '演示活动',
+        description: `演示活动 ${marker}`,
         startTime: iso(activity.start),
         endTime: iso(activity.end),
         maxMembers: activity.maxMembers,
@@ -739,7 +805,7 @@ async function ensureActivities(spec, map, placeIds, users, allowCreate) {
     result[activity.title] = id
     for (const username of activity.joins || []) {
       const detail = await api('GET', `/api/activities/${id}`, users[username].token)
-      if (detail.phase === 'ENDED') continue
+      if (detail.phase === 'ENDED' || detail.phase === 'CANCELLED') continue
       if (detail.joined) {
         summary.skipped += 1
         continue
@@ -802,21 +868,35 @@ async function ensurePosts(spec, placeIds, users, allowCreate) {
 
 async function ensureSchedules(spec, map, users, allowCreate) {
   const result = {}
-  for (const schedule of spec.schedules || []) {
+  const now = new Date()
+  for (const [index, schedule] of (spec.schedules || []).entries()) {
     const user = users[schedule.user]
-    const list = await api('GET', '/api/schedules', user.token)
-    const found = (list || []).find((item) => item.title === schedule.title)
+    const marker = scheduleMarker(spec.key, index)
+    const list = (await api('GET', '/api/schedules', user.token)) || []
+    const found = list.find((item) => hasMarker(item.note, marker))
+      || findByTitle(list, schedule.title)
     let id
     if (found) {
       id = found.id
-      summary.skipped += 1
+      const start = toDate(found.startTime)
+      if (allowCreate && start && start > now) {
+        await api('PUT', `/api/schedules/${id}`, user.token, {
+          title: schedule.title,
+          startTime: iso(schedule.start),
+          endTime: iso(schedule.end),
+          note: marker
+        })
+        summary.updated += 1
+      } else {
+        summary.skipped += 1
+      }
     } else {
       if (!allowCreate) throw new Error(`缺少日程：${schedule.title}`)
       const created = await api('POST', '/api/schedules', user.token, {
         title: schedule.title,
         startTime: iso(schedule.start),
         endTime: iso(schedule.end),
-        note: null
+        note: marker
       })
       id = created.id
       summary.created += 1
@@ -851,9 +931,68 @@ async function ensureGroupGrants(spec, map, users, allowCreate) {
   return { members: members.length, granted }
 }
 
+/**
+ * 只重置带 demoKey 的种子活动/日程。
+ * dry-run 只打印；--apply 才取消未开始活动、删除未来日程。已开始/已结束/已签到记录不动。
+ */
+async function resetDemo(users, apply) {
+  const now = new Date()
+  let activityCount = 0
+  let scheduleCount = 0
+  let skipped = 0
+
+  for (const specKey of ['demo01', 'demo08', 'demo15']) {
+    const owner = users[specKey]
+    if (!owner) continue
+    const activities = (await api('GET', '/api/activities/mine?role=created', owner.token)) || []
+    for (const activity of activities) {
+      if (!hasMarker(activity.description, '[DEMO:activity:')) continue
+      if (activity.phase !== 'OPEN' || !isFuture(activity.startTime)) {
+        skipped += 1
+        continue
+      }
+      activityCount += 1
+      if (apply) await api('DELETE', `/api/activities/${activity.id}`, owner.token)
+      log(`${apply ? '已取消' : '[dry-run] 将取消'}活动 ${activity.id}「${activity.title}」`)
+    }
+  }
+
+  for (const account of ACCOUNTS) {
+    const user = users[account.username]
+    if (!user) continue
+    const schedules = (await api('GET', '/api/schedules', user.token)) || []
+    for (const schedule of schedules) {
+      if (!hasMarker(schedule.note, '[DEMO:schedule:')) continue
+      if (!isFuture(schedule.startTime)) {
+        skipped += 1
+        continue
+      }
+      scheduleCount += 1
+      if (apply) await api('DELETE', `/api/schedules/${schedule.id}`, user.token)
+      log(`${apply ? '已删除' : '[dry-run] 将删除'}日程 ${account.username}「${schedule.title}」`)
+    }
+  }
+
+  log(`demoKey 重置${apply ? '' : '预览'}：活动 ${activityCount}、日程 ${scheduleCount}，跳过已开始/已结束 ${skipped}`)
+  if (!apply) log('加 --apply 才会真正执行；未标记 demoKey 的数据不会被处理')
+  return { activityCount, scheduleCount, skipped }
+}
+
+function isFuture(value) {
+  const date = toDate(value)
+  return !!date && date > new Date()
+}
+
 async function main() {
-  log(`mode=${VERIFY_ONLY ? 'verify-only' : 'seed'} base=${BASE}`)
-  const users = await loadAccounts(!VERIFY_ONLY)
+  const allowCreate = !VERIFY_ONLY && (!RESET_DEMO || RESET_APPLY)
+  log(`mode=${VERIFY_ONLY ? 'verify-only' : RESET_DEMO && !RESET_APPLY ? 'reset-preview' : 'seed'} base=${BASE}`)
+  const users = await loadAccounts(allowCreate)
+
+  if (RESET_DEMO) {
+    await resetDemo(users, RESET_APPLY)
+    if (!RESET_APPLY) return
+  }
+
   const specs = buildSpecs()
 
   for (const spec of specs) {
@@ -904,8 +1043,8 @@ async function main() {
   console.log('\n演示账号（密码统一 demo1234）：')
   for (const line of accountLines) console.log(`  ${line}`)
   console.log(`\n${VERIFY_ONLY ? 'VERIFY OK' : 'SEED OK'} `
-    + `created=${summary.created} skipped=${summary.skipped} messagesSent=${summary.messagesSent} `
-    + `grants=${summary.grants}`)
+    + `created=${summary.created} updated=${summary.updated} skipped=${summary.skipped} `
+    + `messagesSent=${summary.messagesSent} grants=${summary.grants}`)
   console.log('推荐演示：demo01（A）、demo08（B）、demo15（C）；admin/admin123 保留用于管理端。')
   if (!VERIFY_ONLY) console.log(`state: ${STATE_FILE}`)
 }
