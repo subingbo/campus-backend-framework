@@ -633,6 +633,12 @@ async function declineInvite(i) {
 
 /** AI 保存后跳转 /activities?activityId=：定位、打开详情并短暂高亮 */
 async function focusRequestedActivity() {
+  // 消息中心的活动邀请通知：/activities?tab=invites
+  if (route.query.tab === 'invites') {
+    tab.value = 'invites'
+    await router.replace({ path: '/activities' })
+    return
+  }
   const raw = route.query.activityId
   if (!raw) return
   const shouldInvite = route.query.invite === '1'

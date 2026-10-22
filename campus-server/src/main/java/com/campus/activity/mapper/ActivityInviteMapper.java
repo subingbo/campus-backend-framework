@@ -31,6 +31,9 @@ public interface ActivityInviteMapper {
     List<ActivityInviteItem> selectByActivityId(@Param("activityId") Long activityId,
                                                @Param("limit") int limit);
 
+    /** 待响应且活动未取消的邀请数量（消息中心待办角标） */
+    long countPendingByInvitee(@Param("inviteeId") Long inviteeId);
+
     int respond(@Param("id") Long id,
                 @Param("status") int status,
                 @Param("time") LocalDateTime time);

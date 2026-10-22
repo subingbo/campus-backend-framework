@@ -40,4 +40,15 @@ class SchemaPreconditionCheckerTest {
                 .hasMessageContaining("group_agent_plan")
                 .hasMessageContaining("20261022_02__add_group_agent_plan.sql");
     }
+
+    @Test
+    void failsWhenNotificationSchemaMissing() {
+        JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        // 前 6 个检查通过，notification 表缺失
+        when(jdbc.queryForObject(anyString(), eq(Integer.class))).thenReturn(1, 1, 1, 1, 1, 1, 0, 0);
+        assertThatThrownBy(() -> new SchemaPreconditionChecker(jdbc).run(null))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("notification")
+                .hasMessageContaining("20261023_01__create_notification.sql");
+    }
 }

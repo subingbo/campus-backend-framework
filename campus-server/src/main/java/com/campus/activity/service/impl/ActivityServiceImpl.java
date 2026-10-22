@@ -17,6 +17,9 @@ import com.campus.activity.service.ActivityService;
 import com.campus.activity.ws.ActivityEventNotifier;
 import com.campus.common.exception.BusinessException;
 import com.campus.common.result.ResultCode;
+import com.campus.common.tx.AfterCommit;
+import com.campus.notification.constant.NotificationType;
+import com.campus.notification.service.NotificationService;
 import com.campus.place.entity.Place;
 import com.campus.place.service.PlaceService;
 import com.campus.security.user.SecurityUtils;
@@ -56,6 +59,7 @@ public class ActivityServiceImpl implements ActivityService {
     private final ActivityStopMapper activityStopMapper;
     private final PlaceService placeService;
     private final ActivityEventNotifier activityEventNotifier;
+    private final NotificationService notificationService;
     private final TravelInfoProvider travelInfoProvider;
     private final SecureRandom random = new SecureRandom();
 
@@ -208,7 +212,15 @@ public class ActivityServiceImpl implements ActivityService {
             throw new BusinessException(ResultCode.FORBIDDEN.getCode(), "只有创建者可以取消活动");
         }
         activityMapper.updateStatus(id, 0);
-        activityEventNotifier.notifyCancelled(id, activity.getTitle(), userId);
+        List<Long> recipients = activityMemberMapper.selectUserIdsByActivityId(id).stream()
+                .filter(memberId -> !memberId.equals(userId))
+                .distinct()
+                .toList();
+        notificationService.createForUsers(recipients, NotificationType.ACTIVITY_CANCELLED,
+                "活动已取消", "「" + activity.getTitle() + "」已被创建者取消",
+                NotificationType.TARGET_ACTIVITY, id, null, "activity_cancelled:" + id);
+        // WS 通知只在事务提交后发；回滚不能留下“活动已取消”的误推
+        AfterCommit.run(() -> activityEventNotifier.notifyCancelled(id, activity.getTitle(), userId));
         return requireViewAnyStatus(id, userId);
     }
 
@@ -298,7 +310,12 @@ public class ActivityServiceImpl implements ActivityService {
             throw new BusinessException(ResultCode.BAD_REQUEST.getCode(), "已邀请过该用户");
         }
         ActivityInviteItem invite = activityInviteMapper.selectByActivityAndInvitee(activityId, inviteeId);
-        activityEventNotifier.notifyInvited(invite);
+        notificationService.create(inviteeId, NotificationType.ACTIVITY_INVITED, "活动邀请",
+                nullSafe(invite.getInviterNickname()) + " 邀请你参加「"
+                        + nullSafe(invite.getActivityTitle()) + "」",
+                NotificationType.TARGET_ACTIVITY_INVITE, invite.getId(),
+                Map.of("activityId", activityId), "activity_invite:" + invite.getId());
+        AfterCommit.run(() -> activityEventNotifier.notifyInvited(invite));
         return invite;
     }
 
@@ -341,7 +358,12 @@ public class ActivityServiceImpl implements ActivityService {
             throw new BusinessException(ResultCode.CONFLICT.getCode(), "邀请已响应，请刷新后重试");
         }
         if (accept) {
-            activityEventNotifier.notifyInviteAccepted(activity.getId(), activity.getTitle(), userId);
+            notificationService.create(activity.getCreatorId(), NotificationType.ACTIVITY_MEMBER_JOINED,
+                    "有人加入活动", "有成员接受了「" + activity.getTitle() + "」的邀请",
+                    NotificationType.TARGET_ACTIVITY, activity.getId(), null,
+                    "activity_member_joined:" + activity.getId() + ":" + userId);
+            AfterCommit.run(() -> activityEventNotifier.notifyInviteAccepted(
+                    activity.getId(), activity.getTitle(), userId));
         }
         return activityInviteMapper.selectById(inviteId);
     }
@@ -404,6 +426,10 @@ public class ActivityServiceImpl implements ActivityService {
                 && Objects.equals(existing.getEndTime(), requested.getEndTime())
                 && Objects.equals(existing.getTransportMode(), requested.getTransportMode())
                 && Objects.equals(existing.getNote(), requested.getNote());
+    }
+
+    private String nullSafe(String value) {
+        return value == null ? "" : value;
     }
 
     private boolean sameCoord(BigDecimal left, BigDecimal right) {

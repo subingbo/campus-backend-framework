@@ -65,6 +65,13 @@ export const friendApi = {
   remove: (userId) => http.delete(`/friends/${userId}`)
 }
 
+export const notificationApi = {
+  list: (params) => http.get('/notifications', { params }),
+  summary: () => http.get('/notifications/summary'),
+  markRead: (id) => http.post(`/notifications/${id}/read`),
+  markAllRead: () => http.post('/notifications/read-all')
+}
+
 export const chatApi = {
   conversations: () => http.get('/conversations'),
   createPrivate: (userId) => http.post('/conversations/private', { userId }),

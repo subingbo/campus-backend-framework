@@ -8,7 +8,9 @@ server:
 
 spring:
   datasource:
-    url: jdbc:mysql://localhost:3306/campus?useUnicode=true&characterEncoding=UTF-8&connectionCollation=utf8mb4_unicode_ci&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false
+    # forceConnectionTimeZoneToSession：让 MySQL 会话时区与应用一致，
+    # 否则 mapper 里的 NOW() 会按数据库服务器时区（常见为 UTC）写入，和 Java LocalDateTime.now() 相差 8 小时。
+    url: jdbc:mysql://localhost:3306/campus?useUnicode=true&characterEncoding=UTF-8&connectionCollation=utf8mb4_unicode_ci&connectionTimeZone=Asia/Shanghai&forceConnectionTimeZoneToSession=true&allowPublicKeyRetrieval=true&useSSL=false
     username: campus
     password: campus123
     driver-class-name: com.mysql.cj.jdbc.Driver

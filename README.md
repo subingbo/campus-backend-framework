@@ -120,10 +120,20 @@ LLM 不参与写日志；Trace 写入失败不影响主业务。
 - 仅本人可读；非本人/不存在 404。
 - 默认保存脱敏摘要：不保存聊天原文、地点名/地址/备注、精确经纬度/轨迹、JWT/API Key。
 - 成本按 `campus.agent.trace.pricing` 读取时估算；旧 Trace/混合模型/缺 usage 显示“不可估算”。
-- 部署前先执行迁移：`campus-server/src/main/resources/db/migration/20261019_01__create_agent_trace.sql`、`20261022_01__add_message_client_msg_id.sql`（聊天幂等列）、`20261022_02__add_group_agent_plan.sql`（群规划快照）。启动时 `SchemaPreconditionChecker` 会校验这三项前置结构，缺失即 fail-fast 并给出迁移路径。
+- 部署前先执行迁移：`campus-server/src/main/resources/db/migration/20261019_01__create_agent_trace.sql`、`20261022_01__add_message_client_msg_id.sql`（聊天幂等列）、`20261022_02__add_group_agent_plan.sql`（群规划快照）、`20261023_01__create_notification.sql`（消息中心收件箱）。启动时 `SchemaPreconditionChecker` 会校验这四项前置结构，缺失即 fail-fast 并给出迁移路径。
 - 详细说明：[docs/agent-trace/README.md](docs/agent-trace/README.md)、
   [事件协议](docs/agent-trace/events-v1.md)、[隐私](docs/agent-trace/privacy.md)、
   [API](docs/agent-trace/api.md)、[脱敏样例](docs/agent-trace/sample-session.jsonl)。
+
+## 全局消息中心（2026-10-23）
+
+- 顶栏「消息」→ `/messages`：通知（全部/未读/全部已读）、会话（未读数）、好友申请、活动邀请四个区块。
+- `notification` 表是持久收件箱：好友申请/通过、活动邀请/取消/成员加入、活动提醒（T-15/T-5）都在业务事务内落库；唯一键 `(user_id, dedupe_key)` 保证重复事件只产生一条通知，且只有首次插入 `created=true` 才推送 WS。
+- 顶栏总角标 = `未读通知 + 有未读的会话数`；好友申请/活动邀请只做各自 tab 的待办角标，不重复计入 total。
+- 实时 WS 仍是尽力投递：进程在提交后、推送前崩溃不保证实时，但收件箱记录不丢，离线登录后仍可查。
+- 深链：群聊 `/maps/{mapId}?chat=1`、私聊 `/friends?chat={peerUserId}`、活动 `/activities?activityId=...`、邀请 `/activities?tab=invites`。
+- 通知 `payload_json` 只存路由所需最小字段（activityId/inviteId/fromUserId 等），不写签到码、私人日程标题或私有坐标；点击后由目标业务接口重新校验权限。
+- 部署前执行 `20261023_01__create_notification.sql`；`SchemaPreconditionChecker` 会校验通知表与唯一键。
 
 ## 验收用例（自动化）
 
@@ -253,6 +263,7 @@ docker compose exec -T mysql mysql -ucampus -pcampus123 campus < campus-server/s
 docker compose exec -T mysql mysql -ucampus -pcampus123 campus < campus-server/src/main/resources/db/migration/20261019_01__create_agent_trace.sql
 docker compose exec -T mysql mysql -ucampus -pcampus123 campus < campus-server/src/main/resources/db/migration/20261022_01__add_message_client_msg_id.sql
 docker compose exec -T mysql mysql -ucampus -pcampus123 campus < campus-server/src/main/resources/db/migration/20261022_02__add_group_agent_plan.sql
+docker compose exec -T mysql mysql -ucampus -pcampus123 campus < campus-server/src/main/resources/db/migration/20261023_01__create_notification.sql
 ```
 
 - **密钥配置**：真实 key 放 git 忽略的 `campus-server/src/main/resources/application-secrets.properties`（`DASHSCOPE_API_KEY` / `AMAP_WEB_KEY`），`application.yml` 经 `spring.config.import: optional:` 引入；也可直接配同名环境变量覆盖。高德这边是**Web服务**类型 key（与前端 JS key 不同）。
@@ -275,7 +286,7 @@ docker compose exec -T mysql mysql -ucampus -pcampus123 campus < campus-server/s
 ### 启动与迁移
 
 - 全新初始化：`schema.sql` 已含全部表。
-- 存量库：执行 `db/migration/20261016_01__create_personal_schedule.sql`（个人日程+授权表）；此前若未执行 20261015 两个迁移，一并执行；2026-10-22 起还需执行 `20261022_01__add_message_client_msg_id.sql`（聊天幂等）与 `20261022_02__add_group_agent_plan.sql`（群规划快照）。
+- 存量库：执行 `db/migration/20261016_01__create_personal_schedule.sql`（个人日程+授权表）；此前若未执行 20261015 两个迁移，一并执行；2026-10-22 起还需执行 `20261022_01__add_message_client_msg_id.sql`（聊天幂等）与 `20261022_02__add_group_agent_plan.sql`（群规划快照）；2026-10-23 起加执行 `20261023_01__create_notification.sql`（消息中心收件箱）。
 - 演示脚本：`node tools/phase-g-demo.mjs demoGX .ai-run/phase-g-demoGX.jsonl`；话术见 `docs/比赛演示脚本.md`。
 
 ### 已知限制（V1）

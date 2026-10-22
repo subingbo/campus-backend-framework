@@ -19,6 +19,7 @@ const router = createRouter({
       children: [
         { path: '', component: MapListView },
         { path: 'maps/:id', component: MapWorkspaceView },
+        { path: 'messages', component: () => import('../views/MessagesView.vue') },
         { path: 'friends', component: FriendsView },
         { path: 'activities', component: ActivitiesView },
         { path: 'assistant', component: AssistantView },

@@ -57,6 +57,12 @@
         LIMIT #{limit}
     </select>
 
+    <select id="countPendingByInvitee" resultType="long">
+        SELECT COUNT(*) FROM activity_invite i
+        INNER JOIN activity a ON a.id = i.activity_id
+        WHERE i.invitee_id = #{inviteeId} AND i.status = 0 AND a.status = 1
+    </select>
+
     <select id="selectByActivityId" resultType="com.campus.activity.dto.ActivityInviteItem">
         <include refid="inviteView"/>
         WHERE i.activity_id = #{activityId}

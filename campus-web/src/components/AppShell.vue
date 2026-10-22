@@ -4,11 +4,15 @@
       <router-link to="/" class="app-topbar__brand">Campus Map</router-link>
       <nav class="app-topbar__nav">
         <router-link to="/" class="nav-item" :class="{ active: isActive('/') }">我的地图</router-link>
-        <el-badge :value="requestCount" :hidden="!requestCount" :max="99">
-          <router-link to="/friends" class="nav-item" :class="{ active: isActive('/friends') }" @click="requestCount = 0">
-            好友
+        <span class="nav-badge-wrap">
+          <router-link to="/messages" class="nav-item" :class="{ active: isActive('/messages') }">
+            消息
           </router-link>
-        </el-badge>
+          <span v-if="summary.total" class="nav-badge" aria-label="未读消息">
+            {{ summary.total > 99 ? '99+' : summary.total }}
+          </span>
+        </span>
+        <router-link to="/friends" class="nav-item" :class="{ active: isActive('/friends') }">好友</router-link>
         <router-link to="/activities" class="nav-item" :class="{ active: isActive('/activities') }">活动日程</router-link>
         <router-link to="/assistant" class="nav-item" :class="{ active: isActive('/assistant') }">AI 助手</router-link>
         <router-link to="/traces" class="nav-item" :class="{ active: isActive('/traces') }">执行追踪</router-link>
@@ -24,16 +28,16 @@
 </template>
 
 <script setup>
-import { onMounted, onUnmounted, ref } from 'vue'
+import { onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { friendApi } from '../api'
 import { clearSession } from '../api/authSession'
 import { clearOutboxForCurrentUser, connect, disconnect, on } from '../composables/useChatSocket'
+import { useMessageSummary } from '../composables/useMessageSummary'
 
 const route = useRoute()
 const router = useRouter()
-const requestCount = ref(0)
+const { summary, refresh: refreshSummary, refreshSoon, reset: resetSummary } = useMessageSummary()
 let removers = []
 
 function isActive(to) {
@@ -41,32 +45,29 @@ function isActive(to) {
   return route.path.startsWith(to)
 }
 
-/** 好友申请角标：挂载时拉一次，WS 事件自增/回源；点进好友页清零 */
-async function loadRequestCount() {
-  try {
-    const res = await friendApi.requests()
-    requestCount.value = res.received.length
-  } catch {
-    // 角标失败不影响导航
-  }
-}
-
 function logout() {
   clearOutboxForCurrentUser()
   disconnect()
+  resetSummary()
   clearSession()
   router.push('/login')
 }
 
 onMounted(() => {
   connect()
-  loadRequestCount()
+  refreshSummary()
   removers = [
+    // 持久通知/未读变化：以服务端 summary 为准刷新角标，避免前端累加导致重复计数
+    on('NOTIFICATION', () => refreshSoon()),
+    on('UNREAD', () => refreshSoon()),
     on('FRIEND_REQUEST', () => {
-      requestCount.value += 1
       ElMessage.info('收到新的好友请求')
+      refreshSoon()
     }),
-    on('FRIEND_ACCEPTED', () => loadRequestCount())
+    on('FRIEND_ACCEPTED', () => refreshSoon()),
+    on('ACTIVITY_INVITED', () => refreshSoon()),
+    on('ACTIVITY_CANCELLED', () => refreshSoon()),
+    on('ACTIVITY_REMINDER', () => refreshSoon())
   ]
 })
 
@@ -105,6 +106,24 @@ onUnmounted(() => {
   align-items: center;
   gap: 20px;
   overflow-x: auto;
+}
+.nav-badge-wrap {
+  position: relative;
+  display: inline-flex;
+}
+.nav-badge {
+  position: absolute;
+  top: -6px;
+  right: -12px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: #f56c6c;
+  color: #fff;
+  font-size: 10px;
+  line-height: 16px;
+  text-align: center;
 }
 .nav-item {
   color: rgba(0, 0, 0, 0.55);

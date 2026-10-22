@@ -530,6 +530,10 @@ async function initPage() {
         openPlace(target)
       }
     }
+    // 消息中心深链：/maps/:id?chat=1 直接打开本图群聊
+    if (route.query.chat === '1') {
+      await openChat()
+    }
     try {
       amapCtx = await loadAmap(mapRef.value, onMapClick)
       markerController = createPlaceMarkerController(amapCtx.AMap, amapCtx.map, openPlace)

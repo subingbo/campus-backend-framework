@@ -2,6 +2,9 @@ package com.campus.social.service;
 
 import com.campus.common.exception.BusinessException;
 import com.campus.common.result.ResultCode;
+import com.campus.common.tx.AfterCommit;
+import com.campus.notification.constant.NotificationType;
+import com.campus.notification.service.NotificationService;
 import com.campus.social.dto.FriendRequestListResponse;
 import com.campus.social.dto.FriendRequestResponse;
 import com.campus.social.dto.FriendUserResponse;
@@ -32,6 +35,7 @@ public class FriendServiceImpl implements FriendService {
     private final FriendRequestMapper friendRequestMapper;
     private final UserMapper userMapper;
     private final WsSessionRegistry wsSessionRegistry;
+    private final NotificationService notificationService;
 
     @Override
     public List<SearchUserResponse> searchUsers(String keyword) {
@@ -66,12 +70,16 @@ public class FriendServiceImpl implements FriendService {
         entity.setToUserId(target.getId());
         entity.setMessage(StringUtils.hasText(request.getMessage()) ? request.getMessage().trim() : null);
         friendRequestMapper.insert(entity);
+        notificationService.create(target.getId(), NotificationType.FRIEND_REQUEST, "新的好友申请",
+                displayNickname(sender) + " 请求加你为好友",
+                NotificationType.TARGET_FRIEND_REQUEST, entity.getId(),
+                Map.of("fromUserId", me), "friend_request:" + entity.getId());
 
-        pushTo(target.getId(), "FRIEND_REQUEST", Map.ofEntries(
+        AfterCommit.run(() -> pushTo(target.getId(), "FRIEND_REQUEST", Map.ofEntries(
                 Map.entry("requestId", entity.getId()),
                 Map.entry("fromUserId", me),
                 Map.entry("fromNickname", displayNickname(sender)),
-                Map.entry("message", entity.getMessage() == null ? "" : entity.getMessage())));
+                Map.entry("message", entity.getMessage() == null ? "" : entity.getMessage()))));
 
         return toResponse(entity, sender, target);
     }
@@ -101,9 +109,13 @@ public class FriendServiceImpl implements FriendService {
         friendMapper.insert(reverse);
 
         User meUser = userMapper.selectById(me);
-        pushTo(entity.getFromUserId(), "FRIEND_ACCEPTED", Map.ofEntries(
+        notificationService.create(entity.getFromUserId(), NotificationType.FRIEND_ACCEPTED,
+                "好友申请通过", displayNickname(meUser) + " 已同意你的好友申请",
+                NotificationType.TARGET_FRIEND, me, Map.of("userId", me),
+                "friend_accepted:" + entity.getId());
+        AfterCommit.run(() -> pushTo(entity.getFromUserId(), "FRIEND_ACCEPTED", Map.ofEntries(
                 Map.entry("userId", me),
-                Map.entry("nickname", displayNickname(meUser))));
+                Map.entry("nickname", displayNickname(meUser)))));
     }
 
     @Override

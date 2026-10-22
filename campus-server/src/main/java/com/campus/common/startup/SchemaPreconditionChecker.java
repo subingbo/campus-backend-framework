@@ -23,6 +23,8 @@ public class SchemaPreconditionChecker implements ApplicationRunner {
             "campus-server/src/main/resources/db/migration/20261022_01__add_message_client_msg_id.sql";
     static final String GROUP_PLAN_MIGRATION =
             "campus-server/src/main/resources/db/migration/20261022_02__add_group_agent_plan.sql";
+    static final String NOTIFICATION_MIGRATION =
+            "campus-server/src/main/resources/db/migration/20261023_01__create_notification.sql";
 
     private final JdbcTemplate jdbcTemplate;
 
@@ -67,7 +69,18 @@ public class SchemaPreconditionChecker implements ApplicationRunner {
                         + "AND INDEX_NAME = 'uk_group_plan_message'",
                 "group_agent_plan.uk_group_plan_message",
                 GROUP_PLAN_MIGRATION);
-        log.info("数据库结构前置检查通过（聊天幂等 + 群规划快照字段/表/索引）");
+        requireExists(
+                "SELECT COUNT(*) FROM information_schema.TABLES "
+                        + "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'notification'",
+                "notification",
+                NOTIFICATION_MIGRATION);
+        requireExists(
+                "SELECT COUNT(*) FROM information_schema.STATISTICS "
+                        + "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'notification' "
+                        + "AND INDEX_NAME = 'uk_notification_dedupe'",
+                "notification.uk_notification_dedupe",
+                NOTIFICATION_MIGRATION);
+        log.info("数据库结构前置检查通过（聊天幂等 + 群规划快照 + 通知收件箱）");
     }
 
     private void requireExists(String sql, String objectName, String migration) {
