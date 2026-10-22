@@ -263,7 +263,8 @@ const ROUTE_COLORS = { WALK: '#2ba471', RIDE: '#1677ff', DRIVE: '#fa8c16', TRANS
 
 /**
  * 站间路线折线控制器：折线数据来自后端（与规划时刻同源缓存），前端只负责描绘。
- * segments=[{mode, polyline:[[lng,lat],...]}]；缺折线数据的段跳过不画。
+ * segments=[{mode, polyline:[[lng,lat],...], dashed?}]；缺折线数据的段跳过不画；
+ * dashed=true 用于“示意连线，非实际行走路线”。
  * 注意：createPlaceMarkerController.render 会 clearMap，折线应在标点渲染之后绘制。
  */
 export function createRouteLineController(AMap, map) {
@@ -276,10 +277,11 @@ export function createRouteLineController(AMap, map) {
       if (path.length < 2) continue
       const line = new AMap.Polyline({
         path,
-        strokeColor: ROUTE_COLORS[segment.mode] || ROUTE_COLORS.WALK,
-        strokeWeight: 6,
-        strokeOpacity: 0.85,
-        showDir: true,
+        strokeColor: segment.dashed ? '#909399' : (ROUTE_COLORS[segment.mode] || ROUTE_COLORS.WALK),
+        strokeWeight: segment.dashed ? 4 : 6,
+        strokeOpacity: segment.dashed ? 0.8 : 0.85,
+        strokeStyle: segment.dashed ? 'dashed' : 'solid',
+        showDir: !segment.dashed,
         lineJoin: 'round'
       })
       map.add(line)
