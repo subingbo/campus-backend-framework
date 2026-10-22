@@ -1,6 +1,7 @@
 package com.campus.ai.travel;
 
 import com.campus.ai.constant.AiRedisKey;
+import com.campus.travel.RouteInfo;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;

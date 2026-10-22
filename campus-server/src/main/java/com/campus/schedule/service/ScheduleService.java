@@ -61,7 +61,8 @@ public class ScheduleService {
         schedule.setEndTime(request.getEndTime());
         schedule.setNote(request.getNote());
         personalScheduleMapper.insert(schedule);
-        return schedule;
+        // insert 只回填 id；回查一次让 createdAt 等数据库生成字段可用于前端展示
+        return personalScheduleMapper.selectById(schedule.getId());
     }
 
     @Transactional
@@ -152,6 +153,10 @@ public class ScheduleService {
         SharedMap map = sharedMapMapper.selectByGroupId(groupId);
         if (map == null) {
             throw new BusinessException(ResultCode.NOT_FOUND.getCode(), "群组不存在");
+        }
+        // 忙闲是群成员数据：查看者必须是该地图成员，不能只凭 groupId 读取陌生群的成员时段
+        if (mapMemberMapper.selectByMapAndUser(map.getId(), viewerId) == null) {
+            throw new BusinessException(ResultCode.FORBIDDEN.getCode(), "不是该群成员");
         }
         List<Long> memberIds = mapMemberMapper.selectByMapId(map.getId()).stream()
                 .map(m -> m.getUserId())

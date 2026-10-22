@@ -12,6 +12,8 @@ public final class PlanSource {
     public static final String PERSONAL_MAP = "PERSONAL_MAP";
     /** 高德外部 POI（无系统 placeId，纯坐标站点） */
     public static final String AMAP_POI = "AMAP_POI";
+    /** 规划当次的实时起点/返程点：只存在于草稿与会话，不写入 place / activity_stop */
+    public static final String USER_LOCATION = "USER_LOCATION";
 
     private PlanSource() {
     }

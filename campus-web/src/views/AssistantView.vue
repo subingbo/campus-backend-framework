@@ -91,6 +91,10 @@
           <el-tag v-if="currentPlanVersion" size="small" type="info" effect="plain" class="plan-ver">v{{ currentPlanVersion }}</el-tag>
           <el-tag v-if="plan.routeConfidence === 'ESTIMATED'" size="small" type="warning" effect="plain">交通·估算</el-tag>
           <el-tag v-else-if="plan.routeConfidence === 'AMAP'" size="small" effect="plain">交通·高德实测</el-tag>
+          <el-tag v-else-if="plan.routeConfidence === 'PARTIAL'" size="small" type="warning" effect="plain">交通·部分未核验</el-tag>
+          <el-tag v-if="plan.constraintStatus === 'CONFLICT'" size="small" type="danger" effect="plain">有冲突</el-tag>
+          <el-tag v-else-if="plan.constraintStatus === 'TENTATIVE'" size="small" type="warning" effect="plain">暂定</el-tag>
+          <el-tag v-else-if="plan.constraintStatus === 'FEASIBLE'" size="small" type="success" effect="plain">忙闲可行</el-tag>
         </h3>
         <template v-if="!editing">
           <template v-for="stop in enrichedStops" :key="stop.seq">
@@ -104,6 +108,12 @@
                     stop.source === 'GROUP_MAP' ? '共建' : stop.source === 'PERSONAL_MAP' ? '收藏' : 'POI'
                   }}</span>
                   <span v-if="stop.timeText" class="hint">{{ stop.timeText }}</span>
+                  <button
+                    type="button"
+                    class="plan-stop__nav"
+                    title="在高德中导航到这里"
+                    @click.stop="navigateToStop(stop)"
+                  >🧭 导航</button>
                 </div>
                 <p class="hint">
                   <template v-if="stop.placeText">📍{{ stop.placeText }} · </template>
@@ -113,6 +123,41 @@
               </div>
             </div>
           </template>
+          <div
+            v-if="planMembers.length || planConflicts.length || plan.warnings?.length"
+            class="plan-people"
+          >
+            <button type="button" class="plan-people__toggle" @click="peopleOpen = !peopleOpen">
+              <span>👥 成员 {{ knownMemberCount }}/{{ planMembers.length }}</span>
+              <span v-if="planConflicts.length" class="plan-people__conflict">
+                ⚠ {{ planConflicts.length }} 个冲突
+              </span>
+              <span class="plan-people__chevron">{{ peopleOpen ? '收起' : '展开' }}</span>
+            </button>
+            <div v-if="peopleOpen" class="plan-people__body">
+              <div v-if="planMembers.length" class="plan-members">
+                <span
+                  v-for="member in planMembers"
+                  :key="member.userId"
+                  class="plan-member"
+                  :class="{ 'is-unknown': member.status === 'UNKNOWN' }"
+                >
+                  {{ member.nickname }}
+                  <em>{{ member.status === 'UNKNOWN' ? '未授权' : '已核验' }}</em>
+                </span>
+              </div>
+              <div v-for="(conflict, i) in planConflicts" :key="'conflict-' + i" class="plan-conflict">
+                <p class="plan-conflict__line">
+                  ⚠ <strong>{{ conflict.nickname }}</strong>
+                  {{ conflictTimeText(conflict) }} 与计划冲突
+                  <span v-if="conflict.severity === 'BLOCKING'">（重叠 {{ conflict.overlapMinutes }} 分钟）</span>
+                  <span v-else>（前后衔接不足 10 分钟）</span>
+                </p>
+                <p class="plan-conflict__suggestion">建议：{{ conflict.suggestion }}</p>
+              </div>
+              <p v-if="plan.warnings?.length" class="hint">{{ plan.warnings.join('；') }}</p>
+            </div>
+          </div>
           <p class="plan-card__range">🕐 {{ planRangeText }}</p>
           <div class="plan-card__actions">
             <el-button size="small" :disabled="saving || !chatId" @click="openEditor">✏️ 编辑</el-button>
@@ -162,6 +207,21 @@
                 <input v-model="stop.startTime" type="datetime-local" class="dt" />
                 <input v-model="stop.endTime" type="datetime-local" class="dt" />
               </div>
+              <el-select
+                v-if="idx > 0"
+                v-model="stop.transportMode"
+                size="small"
+                placeholder="前往本站的交通方式"
+                clearable
+                class="plan-edit__transport"
+              >
+                <el-option
+                  v-for="opt in TRANSPORT_OPTIONS.slice(1)"
+                  :key="opt.value"
+                  :value="opt.value"
+                  :label="opt.label"
+                />
+              </el-select>
               <el-input v-model="stop.note" size="small" maxlength="256" placeholder="站点备注（可空）" />
             </div>
             <p v-if="!editForm.stops.length" class="hint">⚠️ 至少保留一个站点</p>
@@ -175,6 +235,18 @@
       </div>
 
       <p v-if="locateNote" class="input-note">{{ locateNote }}</p>
+      <div class="transport-row">
+        <span class="transport-row__label">出行方式</span>
+        <el-select v-model="transportChoice" size="small" class="transport-row__select">
+          <el-option
+            v-for="opt in TRANSPORT_OPTIONS"
+            :key="opt.value"
+            :value="opt.value"
+            :label="opt.label"
+          />
+        </el-select>
+        <span class="hint">不指定时直接按问题描述规划</span>
+      </div>
       <footer class="input-row">
         <div class="locate-col">
           <!-- 打开即实时：每次发送前重新取样设备定位（GCJ-02），随请求注入 get_my_location 工具 -->
@@ -233,6 +305,7 @@
         <p v-if="geoPopup.noteDigest" class="geo-pop__note">📝 {{ geoPopup.noteDigest }}</p>
         <div class="geo-pop__actions">
           <el-button size="small" @click="focusGeoPlace(geoPopup)">居中</el-button>
+          <el-button size="small" @click="navigateGeoPopup(geoPopup)">🧭 高德导航</el-button>
           <el-button v-if="geoPopup.mapId" size="small" type="primary" @click="openInMap(geoPopup)">在共建地图打开</el-button>
         </div>
       </div>
@@ -245,6 +318,7 @@
         <p class="hint">🕐 {{ planRangeText }} · {{ (plan.stops || []).length }} 站
           <el-tag v-if="plan.routeConfidence === 'AMAP'" size="small" effect="plain">交通·高德实测</el-tag>
           <el-tag v-else-if="plan.routeConfidence === 'ESTIMATED'" size="small" type="warning" effect="plain">交通·估算</el-tag>
+          <el-tag v-else-if="plan.routeConfidence === 'PARTIAL'" size="small" type="warning" effect="plain">交通·部分未核验</el-tag>
         </p>
         <p class="hint">草稿不是终态：可先在聊天卡片里编辑时间与站点，或直接保存为活动邀请报名。</p>
       </template>
@@ -263,7 +337,7 @@
 
 <script setup>
 import { computed, nextTick, onUnmounted, ref, onMounted, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { assistantApi, mapApi } from '../api'
 import { streamAssistantChat } from '../api/aiStream'
@@ -271,19 +345,40 @@ import { loadAmap, createPlaceMarkerController, createRouteLineController, creat
 import { useLocation } from '../composables/useLocation'
 import MarkdownText from '../components/MarkdownText.vue'
 import { fmt } from '../utils/format'
+import { openAmapNavigation } from '../utils/amapNavigation'
 
 const router = useRouter()
+const route = useRoute()
 
 const PLAN_TEXT = { MEETING: '会议', COMPETITION: '比赛', OTHER: '活动' }
-const TRANSPORT_TEXT = { WALK: '🚶 步行前往', RIDE: '🚲 骑行前往', DRIVE: '🚗 驾车前往', TRANSIT: '🚌 公交前往' }
+const TRANSPORT_TEXT = {
+  WALK: '🚶 步行前往',
+  RIDE: '🚲 骑行前往',
+  DRIVE: '🚗 驾车前往',
+  TAXI: '🚕 打车前往',
+  TRANSIT: '🚌 公交前往'
+}
+const TRANSPORT_OPTIONS = [
+  { value: '', label: '不指定' },
+  { value: 'WALK', label: '步行' },
+  { value: 'DRIVE', label: '驾车' },
+  { value: 'TAXI', label: '打车' },
+  { value: 'RIDE', label: '骑车' },
+  { value: 'TRANSIT', label: '公共交通' }
+]
+const TRANSPORT_CHOICE_TEXT = { WALK: '步行', DRIVE: '驾车', TAXI: '打车', RIDE: '骑车', TRANSIT: '公共交通' }
 
 const messages = ref([])
 const input = ref('')
+const pendingPrompt = ref('')
 const busy = ref(false)
 const plan = ref(null)
 const saving = ref(false)
 const saved = ref(false)
 const referenceMapIds = ref([])
+const transportChoice = ref('')
+const peopleOpen = ref(false)
+const lastLocation = ref(null)
 const myMaps = ref([])
 const mapError = ref('')
 const listRef = ref(null)
@@ -549,6 +644,44 @@ function clearManualLocation() {
 }
 
 const planCategory = computed(() => plan.value?.category || 'OTHER')
+const planMembers = computed(() => plan.value?.members || [])
+const planConflicts = computed(() => plan.value?.conflicts || [])
+const knownMemberCount = computed(() => planMembers.value.filter((m) => m.status === 'KNOWN').length)
+
+function conflictTimeText(conflict) {
+  return `${dateLabel(conflict.startTime)} ${clock(conflict.startTime)}–${clock(conflict.endTime)}`
+}
+
+async function resolveNavigationFrom() {
+  if (manualLocation.value) {
+    return { lng: manualLocation.value.lng, lat: manualLocation.value.lat, name: '我的位置' }
+  }
+  if (lastLocation.value) return lastLocation.value
+  const loc = await locate()
+  if (!loc) return null
+  lastLocation.value = { lng: loc.lng, lat: loc.lat, name: '我的位置' }
+  return lastLocation.value
+}
+
+async function navigateToStop(stop) {
+  if (!stop || stop.longitude == null || stop.latitude == null) return
+  const from = await resolveNavigationFrom()
+  openAmapNavigation({
+    from,
+    to: { lng: Number(stop.longitude), lat: Number(stop.latitude), name: stop.name },
+    mode: stop.transportMode
+  })
+}
+
+async function navigateGeoPopup(place) {
+  if (!place || place.longitude == null || place.latitude == null) return
+  const from = await resolveNavigationFrom()
+  openAmapNavigation({
+    from,
+    to: { lng: Number(place.longitude), lat: Number(place.latitude), name: place.name },
+    mode: 'WALK'
+  })
+}
 
 /** 站点行 enrich：时间文本 + 站间交通建议（route 预览返回后填充） */
 const enrichedStops = computed(() => {
@@ -592,7 +725,17 @@ onMounted(async () => {
   } catch (e) {
     myMaps.value = []
   }
-  restoreLatestChat()
+  const requestedChat = Number(route.query.chat)
+  if (Number.isFinite(requestedChat) && requestedChat > 0) {
+    try {
+      await loadConversation(requestedChat)
+    } catch (e) {
+      ElMessage.error(e.message || '无法打开指定会话：仅发起人可查看')
+      await restoreLatestChat()
+    }
+  } else {
+    await restoreLatestChat()
+  }
 })
 
 onUnmounted(() => {
@@ -734,6 +877,17 @@ async function loadConversation(id) {
   if (detail?.plan) {
     plan.value = detail.plan
   }
+  // 群语境以服务端持久化的 sourceMapId 为准；不信任前端 plan.sourceMapIds
+  if (detail?.sourceMapId) {
+    if (myMaps.value.some((m) => m.id === detail.sourceMapId)) {
+      referenceMapIds.value = [detail.sourceMapId]
+    } else {
+      referenceMapIds.value = []
+      ElMessage.warning('你已不在该群，已退出群规划语境')
+    }
+  }
+  // 刷新/分享链接回到当前会话
+  router.replace({ path: '/assistant', query: { chat: String(id) } })
 }
 
 /** 切到历史会话：先清空上一会话的界面状态（消息/草稿/地图覆盖物），再加载目标会话 */
@@ -819,6 +973,10 @@ function composeContent() {
     const names = chosen.map((m) => `「${m.name}」`).join('')
     content = `（请优先参考我共建的共享地图${names}里的地点）\n${content}`
   }
+  if (transportChoice.value) {
+    const label = TRANSPORT_CHOICE_TEXT[transportChoice.value] || transportChoice.value
+    content += `\n（出行方式偏好：${label}；如该方式耗时只能估算，请明确说明）`
+  }
   return content
 }
 
@@ -826,7 +984,10 @@ async function send() {
   const content = composeContent()
   if (!content || busy.value) return
   // 开关打开时每条消息实时取样定位；失败不阻塞发送，只是本条不带位置
-  let payload = null
+  // 参考地图随消息上送：后端据此识别群语境，生成同伴忙闲与冲突提示
+  let payload = referenceMapIds.value.length
+    ? { referenceMapIds: [...referenceMapIds.value] }
+    : null
   if (attachLocation.value) {
     // 手动纠正的位置优先：无需再等设备定位（GPS 被拒时也能带上位置）
     let loc = null
@@ -838,7 +999,9 @@ async function send() {
       loc = await locate()
     }
     if (loc) {
+      lastLocation.value = { lng: loc.lng, lat: loc.lat, name: '我的位置' }
       payload = {
+        ...(payload || {}),
         userLocation: {
           longitude: loc.lng,
           latitude: loc.lat,
@@ -855,7 +1018,8 @@ async function send() {
     }
   }
   busy.value = true
-  input.value = ''
+  // 首个有效 SSE 事件到达前不清空输入：401/网络失败时可原样恢复
+  pendingPrompt.value = input.value
   planDialogArmed.value = true
   abortController = new AbortController()
   messages.value.push({ role: 'user', content })
@@ -873,9 +1037,27 @@ async function send() {
   }
 }
 
+function clearPendingPrompt() {
+  if (!pendingPrompt.value) return
+  if (input.value.trim() === pendingPrompt.value.trim()) {
+    input.value = ''
+  }
+  pendingPrompt.value = ''
+}
+
+function restorePendingPrompt() {
+  if (!input.value && pendingPrompt.value) {
+    input.value = pendingPrompt.value
+  }
+  pendingPrompt.value = ''
+}
+
 function handleEvent(event, payload) {
   const placeholder = messages.value[streamingPlaceholderIndex]
   if (!placeholder) return
+  if (event !== 'error') {
+    clearPendingPrompt()
+  }
   if (event === 'status') {
     placeholder.status = typeof payload === 'string' ? payload : placeholder.status
   } else if (event === 'delta') {
@@ -907,6 +1089,7 @@ function handleEvent(event, payload) {
     placeholder.content = placeholder.content || ''
     placeholder.status = ''
     placeholder.streaming = false
+    restorePendingPrompt()
     ElMessage.error(typeof payload === 'string' ? payload : payload?.message || '助手处理失败')
   }
 }
@@ -919,6 +1102,8 @@ function finishStreaming() {
   }
   busy.value = false
   streamingPlaceholderIndex = -1
+  // 中止/无事件结束时也把未发送的输入还给用户
+  restorePendingPrompt()
 }
 
 /** 评审项：复制为新草稿（asNewDraft）→ 再次保存创建新活动，原活动不动 */
@@ -946,12 +1131,16 @@ async function savePlan() {
   if (!chatId || saving.value) return
   saving.value = true
   try {
-    await assistantApi.savePlan(chatId, currentPlanVersion.value
+    const savedActivity = await assistantApi.savePlan(chatId, currentPlanVersion.value
       ? { expectedPlanVersion: currentPlanVersion.value }
       : undefined)
     saved.value = true
-    ElMessage.success(plan.value?.lineageActivityId ? '已更新活动，前往日程查看' : '已保存为活动，前往日程查看')
-    router.push('/activities')
+    ElMessage.success(plan.value?.lineageActivityId ? '已更新活动，正在打开详情' : '已保存为活动，正在打开详情')
+    // 带上 activityId + invite=1：日程页定位活动并直接展开邀请弹窗
+    router.push({
+      path: '/activities',
+      query: { activityId: savedActivity.activityId, invite: 1 }
+    })
   } catch (e) {
     ElMessage.error(e?.message || '保存失败，请重试')
   } finally {
@@ -1202,6 +1391,9 @@ function stopTimeText(stop) {
   border: 1px solid #eef1f6;
   background: linear-gradient(180deg, #f7faff, #fff);
   box-shadow: 0 2px 10px rgba(0, 82, 217, 0.06);
+  max-height: 46vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .plan-card__title {
   margin: 0 0 8px;
@@ -1245,6 +1437,89 @@ function stopTimeText(stop) {
   align-items: baseline;
   flex-wrap: wrap;
   font-size: 13px;
+}
+.plan-stop__nav {
+  margin-left: auto;
+  border: 1px solid rgba(0, 82, 217, 0.25);
+  background: #fff;
+  color: var(--brand-blue, #0052d9);
+  border-radius: 999px;
+  font-size: 11px;
+  line-height: 18px;
+  padding: 1px 8px;
+  cursor: pointer;
+}
+.plan-stop__nav:hover {
+  background: rgba(0, 82, 217, 0.08);
+}
+.plan-people {
+  margin: 8px 0 2px;
+  border-top: 1px dashed #e6ebf5;
+  padding-top: 8px;
+}
+.plan-people__toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: none;
+  border: none;
+  padding: 2px 0;
+  cursor: pointer;
+  font-size: 12px;
+  color: rgba(0, 0, 0, 0.65);
+}
+.plan-people__conflict {
+  color: #d4380d;
+  font-weight: 600;
+}
+.plan-people__chevron {
+  margin-left: auto;
+  color: var(--brand-blue, #0052d9);
+}
+.plan-people__body {
+  margin-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.plan-members {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.plan-member {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(0, 82, 217, 0.08);
+  color: #1d39c4;
+}
+.plan-member em {
+  font-style: normal;
+  opacity: 0.65;
+  margin-left: 4px;
+  font-size: 10px;
+}
+.plan-member.is-unknown {
+  background: rgba(0, 0, 0, 0.05);
+  color: rgba(0, 0, 0, 0.55);
+}
+.plan-conflict {
+  background: #fff7e6;
+  border: 1px solid #ffe0a3;
+  border-radius: 8px;
+  padding: 6px 8px;
+}
+.plan-conflict__line {
+  margin: 0;
+  font-size: 12px;
+  color: #ad4e00;
+}
+.plan-conflict__suggestion {
+  margin: 2px 0 0;
+  font-size: 11px;
+  color: #874d00;
 }
 .hint {
   margin: 2px 0 0;
@@ -1528,6 +1803,26 @@ function stopTimeText(stop) {
   gap: 6px;
   flex-wrap: wrap;
 }
+.plan-edit__transport {
+  width: 100%;
+}
+.transport-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 14px 0;
+}
+.transport-row__label {
+  font-size: 12px;
+  color: rgba(0, 0, 0, 0.55);
+  flex: none;
+}
+.transport-row__select {
+  width: 132px;
+}
+.transport-row .hint {
+  margin: 0;
+}
 
 @media (max-width: 768px) {
   .assistant-page {
@@ -1543,6 +1838,15 @@ function stopTimeText(stop) {
   .chat-col {
     height: 54vh;
     border-right: none;
+  }
+  .plan-card {
+    max-height: 34vh;
+  }
+  .transport-row {
+    flex-wrap: wrap;
+  }
+  .transport-row__select {
+    width: 100%;
   }
 }
 </style>

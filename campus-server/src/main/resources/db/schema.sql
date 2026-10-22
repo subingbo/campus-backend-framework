@@ -271,7 +271,9 @@ CREATE TABLE IF NOT EXISTS message (
     sender_id BIGINT NOT NULL COMMENT '发送者用户ID',
     content VARCHAR(1000) NOT NULL COMMENT '消息内容',
     type VARCHAR(16) NOT NULL DEFAULT 'TEXT' COMMENT '类型：TEXT文本（二期扩展图片/位置）',
+    client_msg_id VARCHAR(64) DEFAULT NULL COMMENT '客户端幂等ID（断线重试去重）',
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '发送时间',
+    UNIQUE KEY uk_client_msg (conversation_id, sender_id, client_msg_id),
     KEY idx_conv_created (conversation_id, created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='聊天消息';
 
@@ -283,9 +285,12 @@ CREATE TABLE IF NOT EXISTS ai_conversation (
     plan_json MEDIUMTEXT DEFAULT NULL COMMENT '最近校验通过的规划草稿 JSON',
     plan_version INT NOT NULL DEFAULT 0 COMMENT '草稿版本号，每次产出+1',
     saved_activity_id BIGINT DEFAULT NULL COMMENT '草稿落库后的活动ID（save 幂等依据）',
+    source_group_conversation_id BIGINT DEFAULT NULL COMMENT '群聊 @AI 来源的群会话ID（只读共享授权依据）',
+    source_map_id BIGINT DEFAULT NULL COMMENT '群聊 @AI 来源地图ID（继续规划恢复群语境）',
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
-    KEY idx_user_updated (user_id, updated_at)
+    KEY idx_user_updated (user_id, updated_at),
+    KEY idx_source_group_conv (source_group_conversation_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='AI 规划会话';
 
 CREATE TABLE IF NOT EXISTS ai_message (
@@ -297,6 +302,19 @@ CREATE TABLE IF NOT EXISTS ai_message (
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '发送时间',
     KEY idx_conv (conversation_id, id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='AI 规划会话消息';
+
+CREATE TABLE IF NOT EXISTS group_agent_plan (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '群规划快照ID',
+    group_conversation_id BIGINT NOT NULL COMMENT '群会话ID（message.conversation_id）',
+    message_id BIGINT NOT NULL COMMENT '对应 AGENT 消息ID',
+    ai_conversation_id BIGINT NOT NULL COMMENT '发起人的私有 AI 会话ID',
+    asker_id BIGINT NOT NULL COMMENT '发起人用户ID',
+    plan_json MEDIUMTEXT NOT NULL COMMENT '生成时不可变规划快照',
+    plan_version INT NOT NULL DEFAULT 1 COMMENT '生成时草稿版本',
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    UNIQUE KEY uk_group_plan_message (message_id),
+    KEY idx_group_conv (group_conversation_id, id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='群规划卡快照（成员只读摘要来源）';
 
 CREATE TABLE IF NOT EXISTS agent_trace_session (
     id                  CHAR(36) PRIMARY KEY COMMENT '追踪会话ID（UUID）',

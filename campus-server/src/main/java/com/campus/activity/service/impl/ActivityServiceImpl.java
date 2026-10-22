@@ -20,20 +20,26 @@ import com.campus.common.result.ResultCode;
 import com.campus.place.entity.Place;
 import com.campus.place.service.PlaceService;
 import com.campus.security.user.SecurityUtils;
+import com.campus.travel.ItineraryTravelChecker;
+import com.campus.travel.TravelInfoProvider;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import java.math.BigDecimal;
 import java.security.SecureRandom;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class ActivityServiceImpl implements ActivityService {
@@ -41,7 +47,7 @@ public class ActivityServiceImpl implements ActivityService {
     private static final int PLACE_LIST_LIMIT = 50;
     private static final int MINE_LIMIT = 200;
     private static final int INVITE_LIST_LIMIT = 50;
-    /** 签到窗口：开始前 0 分钟起、开始后 15 分钟内可签 */
+    /** 签到窗口：开始前 15 分钟起、开始后 15 分钟内可签 */
     private static final Duration CHECKIN_WINDOW = Duration.ofMinutes(15);
 
     private final ActivityMapper activityMapper;
@@ -50,6 +56,7 @@ public class ActivityServiceImpl implements ActivityService {
     private final ActivityStopMapper activityStopMapper;
     private final PlaceService placeService;
     private final ActivityEventNotifier activityEventNotifier;
+    private final TravelInfoProvider travelInfoProvider;
     private final SecureRandom random = new SecureRandom();
 
     @Override
@@ -58,6 +65,11 @@ public class ActivityServiceImpl implements ActivityService {
         placeService.requireActivePlace(request.getPlaceId());
         if (!request.getEndTime().isAfter(request.getStartTime())) {
             throw new BusinessException(ResultCode.BAD_REQUEST.getCode(), "结束时间必须晚于开始时间");
+        }
+        // 只拒绝“仍将持续却把开始时间设在过去”的活动；完全历史的活动可作为记录录入
+        if (request.getStartTime().isBefore(LocalDateTime.now().minusMinutes(2))
+                && request.getEndTime().isAfter(LocalDateTime.now())) {
+            throw new BusinessException(ResultCode.BAD_REQUEST.getCode(), "开始时间不能早于当前时间");
         }
         Long userId = SecurityUtils.getUserId();
         Activity activity = new Activity();
@@ -80,7 +92,8 @@ public class ActivityServiceImpl implements ActivityService {
 
     @Override
     public ActivityResponse get(Long id) {
-        return requireView(id, SecurityUtils.getUserId());
+        // 与 /activities/mine 保持一致：已取消活动仍可查看详情，但所有写操作仍拒绝
+        return requireViewAnyStatus(id, SecurityUtils.getUserId());
     }
 
     @Override
@@ -97,7 +110,11 @@ public class ActivityServiceImpl implements ActivityService {
     @Override
     @Transactional
     public ActivityResponse join(Long id) {
-        Activity activity = requireActive(id);
+        // 容量判定与插入必须在同一把活动行锁内完成，否则 count-then-insert 会超员
+        Activity activity = activityMapper.selectByIdForUpdate(id);
+        if (activity == null || activity.getStatus() == null || activity.getStatus() != 1) {
+            throw new BusinessException(ResultCode.NOT_FOUND.getCode(), "活动不存在");
+        }
         if (!activity.getEndTime().isAfter(LocalDateTime.now())) {
             throw new BusinessException(ResultCode.BAD_REQUEST.getCode(), "活动已结束");
         }
@@ -120,8 +137,17 @@ public class ActivityServiceImpl implements ActivityService {
     @Transactional
     public ActivityResponse leave(Long id) {
         requireActive(id);
-        activityMemberMapper.delete(id, SecurityUtils.getUserId());
-        return requireView(id, SecurityUtils.getUserId());
+        Long userId = SecurityUtils.getUserId();
+        // 与签到共用成员行：已签到成员不能靠取消报名抹掉签到记录
+        int deleted = activityMemberMapper.deleteIfNotCheckedIn(id, userId);
+        if (deleted == 0) {
+            Integer checkedIn = activityMemberMapper.selectCheckedIn(id, userId);
+            if (checkedIn != null && checkedIn == 1) {
+                throw new BusinessException(ResultCode.BAD_REQUEST.getCode(), "已签到，不能取消报名");
+            }
+            // 未报名：幂等返回当前视图
+        }
+        return requireView(id, userId);
     }
 
     @Override
@@ -132,13 +158,19 @@ public class ActivityServiceImpl implements ActivityService {
         if (!activity.getCreatorId().equals(userId)) {
             throw new BusinessException(ResultCode.FORBIDDEN.getCode(), "只有创建者可以编辑活动");
         }
-        if (!activity.getStartTime().isAfter(LocalDateTime.now())) {
-            throw new BusinessException(ResultCode.BAD_REQUEST.getCode(), "活动已开始，不能编辑");
+        LocalDateTime now = LocalDateTime.now();
+        // 已开始的活动只冻结时间/行程，标题、描述等仍可维护
+        if (!activity.getStartTime().isAfter(now) && scheduleChanged(activity, request)) {
+            throw new BusinessException(ResultCode.BAD_REQUEST.getCode(), "活动已开始，不能修改时间或行程");
         }
         LocalDateTime startTime = request.getStartTime() != null ? request.getStartTime() : activity.getStartTime();
         LocalDateTime endTime = request.getEndTime() != null ? request.getEndTime() : activity.getEndTime();
         if (!endTime.isAfter(startTime)) {
             throw new BusinessException(ResultCode.BAD_REQUEST.getCode(), "结束时间必须晚于开始时间");
+        }
+        if (request.getStartTime() != null && request.getStartTime().isBefore(now.minusMinutes(2))
+                && endTime.isAfter(now)) {
+            throw new BusinessException(ResultCode.BAD_REQUEST.getCode(), "开始时间不能早于当前时间");
         }
         if (request.getMaxMembers() != null
                 && activityMemberMapper.countByActivityId(id) > request.getMaxMembers()) {
@@ -154,10 +186,13 @@ public class ActivityServiceImpl implements ActivityService {
         if (StringUtils.hasText(request.getCategory())) {
             patch.setCategory(normalizeCategory(request.getCategory()));
         }
-        // 开始时间可能被改，签到窗口顺延到新开始时间起的固定窗口
-        patch.setCheckinOpenUntil(startTime.plus(CHECKIN_WINDOW));
+        if (request.getStartTime() != null && !startTime.equals(activity.getStartTime())) {
+            // 只有开始时间真正变化时才顺延签到窗口，避免标题编辑重置签到截止
+            patch.setCheckinOpenUntil(startTime.plus(CHECKIN_WINDOW));
+        }
         activityMapper.updateById(patch);
-        if (request.getStops() != null) {
+        // 站点与现有一致时不删旧插新：避免标题编辑触发无意义的交通重校验
+        if (request.getStops() != null && stopsDiffer(id, request.getStops())) {
             activityStopMapper.deleteByActivityId(id);
             saveStops(id, request.getStops(), startTime, endTime);
         }
@@ -179,8 +214,8 @@ public class ActivityServiceImpl implements ActivityService {
 
     @Override
     public List<ActivityMemberItem> members(Long id) {
-        Activity activity = requireActive(id);
         Long userId = SecurityUtils.getUserId();
+        ActivityResponse activity = requireViewAnyStatus(id, userId);
         if (!activity.getCreatorId().equals(userId) && activityMemberMapper.exists(id, userId) == 0) {
             throw new BusinessException(ResultCode.FORBIDDEN.getCode(), "仅活动成员可以查看成员列表");
         }
@@ -208,7 +243,15 @@ public class ActivityServiceImpl implements ActivityService {
         if (!code.trim().equals(activity.getCheckinCode())) {
             throw new BusinessException(ResultCode.BAD_REQUEST.getCode(), "签到码不正确");
         }
-        activityMemberMapper.checkin(id, userId, now);
+        int updated = activityMemberMapper.checkin(id, userId, now);
+        if (updated == 0) {
+            Integer checkedIn = activityMemberMapper.selectCheckedIn(id, userId);
+            if (checkedIn == null || checkedIn != 1) {
+                // 报名行在 exists 与 update 之间被取消报名删除（或状态异常）
+                throw new BusinessException(ResultCode.BAD_REQUEST.getCode(), "先报名才能签到");
+            }
+            // 已签到：幂等成功，不覆盖首次签到时间
+        }
         return requireView(id, userId);
     }
 
@@ -262,7 +305,8 @@ public class ActivityServiceImpl implements ActivityService {
     @Override
     @Transactional
     public ActivityInviteItem respondInvite(Long inviteId, boolean accept) {
-        ActivityInviteItem invite = activityInviteMapper.selectById(inviteId);
+        // 锁顺序：邀请行 -> 活动行；直接报名只锁活动行，不会与这里形成环
+        ActivityInviteItem invite = activityInviteMapper.selectForUpdate(inviteId);
         if (invite == null) {
             throw new BusinessException(ResultCode.NOT_FOUND.getCode(), "邀请不存在");
         }
@@ -270,12 +314,16 @@ public class ActivityServiceImpl implements ActivityService {
         if (!invite.getInviteeId().equals(userId)) {
             throw new BusinessException(ResultCode.FORBIDDEN.getCode(), "不是你的邀请");
         }
-        if (invite.getStatus() != 0) {
+        if (invite.getStatus() == null || invite.getStatus() != 0) {
             throw new BusinessException(ResultCode.BAD_REQUEST.getCode(), "邀请已响应");
         }
-        Activity activity = activityMapper.selectById(invite.getActivityId());
+        Activity activity = activityMapper.selectByIdForUpdate(invite.getActivityId());
         if (activity == null || activity.getStatus() == null || activity.getStatus() != 1) {
             throw new BusinessException(ResultCode.NOT_FOUND.getCode(), "活动不存在或已取消");
+        }
+        LocalDateTime now = LocalDateTime.now();
+        if (!activity.getEndTime().isAfter(now)) {
+            throw new BusinessException(ResultCode.BAD_REQUEST.getCode(), "活动已结束");
         }
         if (accept) {
             if (activityMemberMapper.exists(invite.getActivityId(), userId) == 0
@@ -288,7 +336,10 @@ public class ActivityServiceImpl implements ActivityService {
                 // 已在成员列表（如先报名后被邀请），接受只标记邀请状态
             }
         }
-        activityInviteMapper.respond(inviteId, accept ? 1 : 2, LocalDateTime.now());
+        int responded = activityInviteMapper.respond(inviteId, accept ? 1 : 2, now);
+        if (responded == 0) {
+            throw new BusinessException(ResultCode.CONFLICT.getCode(), "邀请已响应，请刷新后重试");
+        }
         if (accept) {
             activityEventNotifier.notifyInviteAccepted(activity.getId(), activity.getTitle(), userId);
         }
@@ -298,6 +349,68 @@ public class ActivityServiceImpl implements ActivityService {
     @Override
     public List<ActivityInviteItem> pendingInvites() {
         return activityInviteMapper.selectPendingByInvitee(SecurityUtils.getUserId(), INVITE_LIST_LIMIT);
+    }
+
+    @Override
+    public List<ActivityInviteItem> listInvites(Long activityId) {
+        Activity activity = activityMapper.selectById(activityId);
+        if (activity == null) {
+            throw new BusinessException(ResultCode.NOT_FOUND.getCode(), "活动不存在");
+        }
+        if (!activity.getCreatorId().equals(SecurityUtils.getUserId())) {
+            throw new BusinessException(ResultCode.FORBIDDEN.getCode(), "只有创建者可以查看邀请状态");
+        }
+        return activityInviteMapper.selectByActivityId(activityId, INVITE_LIST_LIMIT);
+    }
+
+    /** 已开始活动是否真的在改时间/行程；仅改标题等字段不应被冻结 */
+    private boolean scheduleChanged(Activity activity, UpdateActivityRequest request) {
+        if (request.getStartTime() != null && !request.getStartTime().equals(activity.getStartTime())) {
+            return true;
+        }
+        if (request.getEndTime() != null && !request.getEndTime().equals(activity.getEndTime())) {
+            return true;
+        }
+        if (request.getStops() == null) {
+            return false;
+        }
+        return stopsDiffer(activity.getId(), request.getStops());
+    }
+
+    private boolean stopsDiffer(Long activityId, List<ActivityStopRequest> requested) {
+        List<ActivityStopItem> existing = activityStopMapper.selectByActivityId(activityId);
+        if (existing.size() != requested.size()) {
+            return true;
+        }
+        for (int i = 0; i < existing.size(); i++) {
+            if (!sameStop(existing.get(i), requested.get(i))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean sameStop(ActivityStopItem existing, ActivityStopRequest requested) {
+        if (!Objects.equals(existing.getName(), requested.getName())
+                || !Objects.equals(existing.getPlaceId(), requested.getPlaceId())) {
+            return false;
+        }
+        if (requested.getPlaceId() == null
+                && (!sameCoord(existing.getLongitude(), requested.getLongitude())
+                || !sameCoord(existing.getLatitude(), requested.getLatitude()))) {
+            return false;
+        }
+        return Objects.equals(existing.getStartTime(), requested.getStartTime())
+                && Objects.equals(existing.getEndTime(), requested.getEndTime())
+                && Objects.equals(existing.getTransportMode(), requested.getTransportMode())
+                && Objects.equals(existing.getNote(), requested.getNote());
+    }
+
+    private boolean sameCoord(BigDecimal left, BigDecimal right) {
+        if (left == null || right == null) {
+            return left == right;
+        }
+        return left.compareTo(right) == 0;
     }
 
     private Activity requireActive(Long id) {
@@ -434,8 +547,40 @@ public class ActivityServiceImpl implements ActivityService {
             stop.setNote(item.getNote());
             entities.add(stop);
         }
+        validateTravelFeasibility(activityId, entities);
         for (ActivityStop stop : entities) {
             activityStopMapper.insert(stop);
+        }
+    }
+
+    /**
+     * 手动入口与 AI 保存共用同一套交通三态规则：不可行硬阻断；
+     * provider 异常降级放行并留日志（AI 路径仍保持严格拒绝）。
+     */
+    private void validateTravelFeasibility(Long activityId, List<ActivityStop> stops) {
+        if (stops.size() < 2) {
+            return;
+        }
+        List<ItineraryTravelChecker.Leg> legs = new ArrayList<>(stops.size());
+        for (ActivityStop stop : stops) {
+            ItineraryTravelChecker.Leg leg = new ItineraryTravelChecker.Leg();
+            leg.setSeq(stop.getSeq());
+            leg.setName(stop.getName());
+            leg.setLongitude(stop.getLongitude() == null ? null : stop.getLongitude().doubleValue());
+            leg.setLatitude(stop.getLatitude() == null ? null : stop.getLatitude().doubleValue());
+            leg.setStartTime(stop.getStartTime());
+            leg.setEndTime(stop.getEndTime());
+            leg.setTransportMode(stop.getTransportMode());
+            legs.add(leg);
+        }
+        ItineraryTravelChecker.Result result = new ItineraryTravelChecker(travelInfoProvider).check(legs);
+        if (!result.getViolations().isEmpty()) {
+            throw new BusinessException(ResultCode.BAD_REQUEST.getCode(),
+                    ItineraryTravelChecker.message(result.getViolations().get(0)));
+        }
+        if (!result.getUnverified().isEmpty()) {
+            log.warn("活动行程交通未完全核验 activityId={} unverified={}", activityId,
+                    result.getUnverified().size());
         }
     }
 

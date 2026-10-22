@@ -22,6 +22,10 @@ const router = createRouter({
         { path: 'friends', component: FriendsView },
         { path: 'activities', component: ActivitiesView },
         { path: 'assistant', component: AssistantView },
+        {
+          path: 'conversations/:conversationId/plans/:planId',
+          component: () => import('../views/PlanDetailView.vue')
+        },
         // 执行追踪页面较大，懒加载避免进主包
         { path: 'traces', component: () => import('../views/TraceCenterView.vue') }
       ]

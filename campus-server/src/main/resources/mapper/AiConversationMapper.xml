@@ -4,13 +4,17 @@
 <mapper namespace="com.campus.ai.mapper.AiConversationMapper">
 
     <insert id="insert" useGeneratedKeys="true" keyProperty="id">
-        INSERT INTO ai_conversation (user_id, title, status, plan_version, created_at)
-        VALUES (#{userId}, #{title}, #{status}, #{planVersion}, NOW())
+        INSERT INTO ai_conversation (user_id, title, status, plan_version,
+                                     source_group_conversation_id, source_map_id, created_at)
+        VALUES (#{userId}, #{title}, #{status}, #{planVersion},
+                #{sourceGroupConversationId}, #{sourceMapId}, NOW())
     </insert>
 
     <select id="selectById" resultType="com.campus.ai.entity.AiConversation">
         SELECT id, user_id AS userId, title, status, plan_json AS planJson, plan_version AS planVersion,
-               saved_activity_id AS savedActivityId, created_at AS createdAt, updated_at AS updatedAt
+               saved_activity_id AS savedActivityId,
+               source_group_conversation_id AS sourceGroupConversationId, source_map_id AS sourceMapId,
+               created_at AS createdAt, updated_at AS updatedAt
         FROM ai_conversation
         WHERE id = #{id}
         LIMIT 1
@@ -18,7 +22,9 @@
 
     <select id="selectByIdForUpdate" resultType="com.campus.ai.entity.AiConversation">
         SELECT id, user_id AS userId, title, status, plan_json AS planJson, plan_version AS planVersion,
-               saved_activity_id AS savedActivityId, created_at AS createdAt, updated_at AS updatedAt
+               saved_activity_id AS savedActivityId,
+               source_group_conversation_id AS sourceGroupConversationId, source_map_id AS sourceMapId,
+               created_at AS createdAt, updated_at AS updatedAt
         FROM ai_conversation
         WHERE id = #{id}
         LIMIT 1
@@ -27,7 +33,9 @@
 
     <select id="selectByUser" resultType="com.campus.ai.entity.AiConversation">
         SELECT id, user_id AS userId, title, status, plan_version AS planVersion,
-               saved_activity_id AS savedActivityId, created_at AS createdAt, updated_at AS updatedAt
+               saved_activity_id AS savedActivityId,
+               source_group_conversation_id AS sourceGroupConversationId, source_map_id AS sourceMapId,
+               created_at AS createdAt, updated_at AS updatedAt
         FROM ai_conversation
         WHERE user_id = #{userId}
         ORDER BY updated_at DESC

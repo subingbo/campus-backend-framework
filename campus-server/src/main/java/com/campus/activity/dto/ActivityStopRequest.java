@@ -26,8 +26,8 @@ public class ActivityStopRequest {
 
     private LocalDateTime endTime;
 
-    /** 前往本站的交通方式：WALK RIDE DRIVE TRANSIT */
-    @Pattern(regexp = "WALK|RIDE|DRIVE|TRANSIT", message = "交通方式无效")
+    /** 前往本站的交通方式：WALK RIDE DRIVE TAXI TRANSIT */
+    @Pattern(regexp = "WALK|RIDE|DRIVE|TAXI|TRANSIT", message = "交通方式无效")
     private String transportMode;
 
     @Size(max = 256)

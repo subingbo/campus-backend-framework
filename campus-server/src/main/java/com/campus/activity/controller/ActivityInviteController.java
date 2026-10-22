@@ -36,6 +36,13 @@ public class ActivityInviteController {
         return Result.success(activityService.invite(activityId, request.getUserId()));
     }
 
+    @Operation(summary = "某活动的邀请状态（仅创建者）")
+    @GetMapping("/activities/{id}/invites")
+    public Result<List<ActivityInviteItem>> listActivityInvites(
+            @org.springframework.web.bind.annotation.PathVariable("id") Long activityId) {
+        return Result.success(activityService.listInvites(activityId));
+    }
+
     @Operation(summary = "我收到的待响应邀请")
     @GetMapping("/activity-invites/pending")
     public Result<List<ActivityInviteItem>> pending() {

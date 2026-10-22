@@ -15,8 +15,20 @@
             <div class="cal-cell" :class="{ 'cal-cell--today': data.isSelected }">
               <span class="cal-cell__date">{{ Number(data.day.split('-')[2]) }}</span>
               <div class="cal-cell__days">
-                <span class="cal-entry" v-for="a in visibleEntries(data.day)" :key="a.id" :class="'cal-entry--' + (a.phase || '').toLowerCase()" :title="a.title" @click.stop="openActivityDetail(a)">
-                  {{ fmtClock(a.startTime) }} {{ a.title }}
+                <span
+                  class="cal-entry"
+                  v-for="entry in visibleEntries(data.day)"
+                  :key="entry.key"
+                  :class="[
+                    entry.kind === 'activity'
+                      ? 'cal-entry--' + (entry.phase || '').toLowerCase()
+                      : 'cal-entry--schedule',
+                    { 'cal-entry--highlight': entry.kind === 'activity' && entry.id === highlightedId }
+                  ]"
+                  :title="entry.title"
+                  @click.stop="openCalendarEntry(entry)"
+                >
+                  {{ fmtClock(entry.startTime) }} {{ entry.title }}
                 </span>
                 <span v-if="hiddenCount(data.day)" class="cal-entry cal-entry--more" @click.stop="openDayList(data.day)">
                   +{{ hiddenCount(data.day) }} 项
@@ -26,20 +38,39 @@
           </template>
         </el-calendar>
         <div class="section">
-          <h3>{{ selectedDayLabel }} 的活动（点活动可看详情、去现场）</h3>
-          <p v-if="!selectedDayEntries.length" class="hint empty">这一天没有安排活动</p>
-          <div v-for="a in selectedDayEntries" :key="a.id" class="row" :class="{ 'row--urgent': a.urgent }">
-            <div class="row__main">
-              <strong>{{ a.title }}</strong>
-              <el-tag size="small" :type="phaseTagType(a.phase)" effect="plain">{{ phaseText(a.phase) }}</el-tag>
-              <el-tag v-if="a.category" size="small" effect="plain">{{ categoryText(a.category) }}</el-tag>
-              <span class="hint">{{ fmtRange(a.startTime, a.endTime) }}</span>
-              <span class="hint">📍 {{ a.placeName || '地点' }}</span>
-              <span class="hint">{{ a.joinedCount }}/{{ a.maxMembers }} 人</span>
-            </div>
-            <div class="row__actions">
-              <el-button size="small" type="primary" plain @click="openActivityDetail(a)">详情 / 去现场</el-button>
-            </div>
+          <h3>{{ selectedDayLabel }} 的安排（个人日程与群活动）</h3>
+          <p v-if="!selectedDayEntries.length" class="hint empty">这一天还没有安排</p>
+          <div
+            v-for="entry in selectedDayEntries"
+            :key="entry.key"
+            class="row"
+            :class="{ 'row--urgent': entry.kind === 'activity' && entry.urgent }"
+          >
+            <template v-if="entry.kind === 'activity'">
+              <div class="row__main">
+                <strong>{{ entry.title }}</strong>
+                <el-tag size="small" :type="phaseTagType(entry.phase)" effect="plain">{{ phaseText(entry.phase) }}</el-tag>
+                <el-tag v-if="entry.raw.category" size="small" effect="plain">{{ categoryText(entry.raw.category) }}</el-tag>
+                <span class="hint">{{ fmtRange(entry.startTime, entry.endTime) }}</span>
+                <span class="hint">📍 {{ entry.raw.placeName || '地点' }}</span>
+                <span class="hint">{{ entry.raw.joinedCount }}/{{ entry.raw.maxMembers }} 人</span>
+              </div>
+              <div class="row__actions">
+                <el-button size="small" type="primary" plain @click="openActivityDetail(entry.raw)">详情 / 去现场</el-button>
+              </div>
+            </template>
+            <template v-else>
+              <div class="row__main">
+                <strong>{{ entry.title }}</strong>
+                <el-tag size="small" type="success" effect="plain">个人安排</el-tag>
+                <span class="hint">{{ fmtRange(entry.startTime, entry.endTime) }}</span>
+                <span v-if="entry.raw.note" class="hint">{{ entry.raw.note }}</span>
+              </div>
+              <div class="row__actions">
+                <el-button size="small" @click="openScheduleDialog(entry.raw)">编辑</el-button>
+                <el-button size="small" type="danger" plain @click="deleteSchedule(entry.raw)">删除</el-button>
+              </div>
+            </template>
           </div>
         </div>
       </el-tab-pane>
@@ -78,6 +109,32 @@
             <p v-if="!shareLoading && !shareOptions.length" class="hint empty">
               先创建或加入一张共享地图，才能设置群忙闲共享。
             </p>
+          </div>
+        </div>
+        <div class="section">
+          <div class="share-head">
+            <h3>个人安排</h3>
+            <el-button size="small" type="primary" plain @click="openScheduleDialog(null, calendarDate)">
+              ＋ 新建个人安排
+            </el-button>
+          </div>
+          <p class="hint share-note">
+            课程、会议、自习等私人安排。它们只用于自己的日历与群忙闲计算，群成员只能看到时段，看不到标题和备注。
+          </p>
+          <p v-if="!schedules.length" class="hint empty">
+            还没有个人安排；添加后会自动进入日历，并参与群规划的共同空闲计算。
+          </p>
+          <div v-for="s in schedules" :key="'schedule-row-' + s.id" class="row">
+            <div class="row__main">
+              <strong>{{ s.title }}</strong>
+              <el-tag size="small" type="success" effect="plain">个人</el-tag>
+              <span class="hint">{{ fmtRange(s.startTime, s.endTime) }}</span>
+              <span v-if="s.note" class="hint">{{ s.note }}</span>
+            </div>
+            <div class="row__actions">
+              <el-button size="small" @click="openScheduleDialog(s)">编辑</el-button>
+              <el-button size="small" type="danger" plain @click="deleteSchedule(s)">删除</el-button>
+            </div>
           </div>
         </div>
         <template v-for="group in scheduleGroups" :key="group.label">
@@ -187,6 +244,11 @@
     </div>
     <template #footer>
       <el-button v-if="detailActivity" type="primary" @click="goPlace(detailActivity)">📅 去现场</el-button>
+      <el-button v-if="detailActivity" @click="navigateActivity(detailActivity)">🧭 高德导航</el-button>
+      <el-button
+        v-if="detailActivity && isCreatorOf(detailActivity) && detailActivity.phase !== 'CANCELLED'"
+        @click="openInvite(detailActivity)"
+      >邀请好友</el-button>
     </template>
   </el-dialog>
 
@@ -206,21 +268,42 @@
   <ActivityFormDialog v-model="editDialogOpen" mode="edit" :activity="editTarget" @updated="onActivityUpdated" />
   <!-- 手动新建（不依赖 AI）：选已有地点或地图点选新建，可配多站行程 -->
   <ActivityFormDialog v-model="createOpen" mode="create" @created="onCreated" />
+  <!-- 个人日程：课程/会议/自习，只进入自己的日历与忙闲计算 -->
+  <ScheduleFormDialog
+    v-model="scheduleDialogOpen"
+    :schedule="scheduleTarget"
+    :default-date="scheduleDefaultDate"
+    @saved="onScheduleSaved"
+    @deleted="onScheduleSaved"
+  />
+  <InviteFriendsDialog
+    v-model="inviteDialogOpen"
+    :activity="inviteTarget"
+    @invited="onInvited"
+  />
 </template>
 
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { ElMessage } from 'element-plus'
-import { useRouter } from 'vue-router'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { useRoute, useRouter } from 'vue-router'
 import { activityApi, placeApi, scheduleApi } from '../api'
 import { myUserId, on } from '../composables/useChatSocket'
 import ActivityEntryCard from '../components/ActivityEntryCard.vue'
 import ActivityFormDialog from '../components/ActivityFormDialog.vue'
+import ScheduleFormDialog from '../components/ScheduleFormDialog.vue'
+import InviteFriendsDialog from '../components/InviteFriendsDialog.vue'
+import { calendarDayKey, groupEntriesByDay, mergeCalendarEntries } from '../utils/calendarEntries'
 import { categoryText, fmt, fmtClock, fmtRange, pad2, phaseTagType, phaseText, toDate, transportText } from '../utils/format'
+import { openAmapNavigation } from '../utils/amapNavigation'
 
 const router = useRouter()
+const route = useRoute()
 const tab = ref('calendar')
+const highlightedId = ref(null)
+let highlightTimer = null
 const mine = ref([])
+const schedules = ref([])
 const pendingInvites = ref([])
 const shareOptions = ref([])
 const shareLoading = ref(false)
@@ -283,10 +366,31 @@ const editDialogOpen = ref(false)
 const editTarget = ref(null)
 /** 手动新建活动弹窗 */
 const createOpen = ref(false)
+/** 个人日程弹窗 */
+const scheduleDialogOpen = ref(false)
+const scheduleTarget = ref(null)
+const scheduleDefaultDate = ref(null)
+/** 保存/创建后直接邀请 */
+const inviteDialogOpen = ref(false)
+const inviteTarget = ref(null)
 
-async function onCreated() {
+async function onCreated(created) {
   await loadMine()
   tab.value = 'created'
+  if (created?.id) openInvite(created)
+}
+
+function openInvite(activity) {
+  if (!activity?.id) return
+  inviteTarget.value = activity
+  inviteDialogOpen.value = true
+}
+
+async function onInvited() {
+  await loadMine()
+  if (detailActivity.value?.id) {
+    detailActivity.value = mine.value.find((a) => a.id === detailActivity.value.id) || detailActivity.value
+  }
 }
 
 function openEdit(a) {
@@ -294,40 +398,29 @@ function openEdit(a) {
   editDialogOpen.value = true
 }
 
-const activitiesByDay = computed(() => {
-  const map = new Map()
-  for (const a of mine.value) {
-    const d = toDate(a.startTime)
-    if (!d || Number.isNaN(d.getTime())) continue
-    const key = dayKey(d)
-    if (!map.has(key)) map.set(key, [])
-    map.get(key).push(a)
-  }
-  for (const list of map.values()) {
-    list.sort((x, y) => (toDate(x.startTime)?.getTime() ?? 0) - (toDate(y.startTime)?.getTime() ?? 0))
-  }
-  return map
-})
-
-function dayKey(date) {
-  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`
-}
+const calendarEntries = computed(() => mergeCalendarEntries(mine.value, schedules.value))
+const entriesByDay = computed(() => groupEntriesByDay(calendarEntries.value))
 
 const selectedDay = computed(() => {
   const d = calendarDate.value instanceof Date ? calendarDate.value : new Date(calendarDate.value)
   return Number.isNaN(d.getTime()) ? new Date() : d
 })
-const selectedDayEntries = computed(() => activitiesByDay.value.get(dayKey(selectedDay.value)) || [])
+const selectedDayEntries = computed(() => entriesByDay.value.get(calendarDayKey(selectedDay.value)) || [])
 const selectedDayLabel = computed(
   () => `${selectedDay.value.getFullYear()}-${pad2(selectedDay.value.getMonth() + 1)}-${pad2(selectedDay.value.getDate())}`
 )
 
 function visibleEntries(dayStr) {
-  return (activitiesByDay.value.get(dayStr) || []).slice(0, 2)
+  const list = entriesByDay.value.get(dayStr) || []
+  // 已取消/已结束的活动不抢占日历格的两个可见位；它们仍可通过“+N 项”查看
+  const active = list.filter((entry) => entry.kind === 'schedule'
+    || (entry.phase !== 'ENDED' && entry.phase !== 'CANCELLED'))
+  const inactive = list.filter((entry) => !active.includes(entry))
+  return [...active, ...inactive].slice(0, 2)
 }
 
 function hiddenCount(dayStr) {
-  const list = activitiesByDay.value.get(dayStr) || []
+  const list = entriesByDay.value.get(dayStr) || []
   return Math.max(0, list.length - 2)
 }
 
@@ -339,6 +432,44 @@ function openDayList(dayStr) {
 function openActivityDetail(a) {
   detailActivity.value = a
   detailDialog.value = true
+}
+
+function openCalendarEntry(entry) {
+  if (entry.kind === 'activity') {
+    openActivityDetail(entry.raw)
+  } else {
+    openScheduleDialog(entry.raw)
+  }
+}
+
+function openScheduleDialog(schedule = null, date = null) {
+  scheduleTarget.value = schedule
+  scheduleDefaultDate.value = date || calendarDate.value
+  scheduleDialogOpen.value = true
+}
+
+async function onScheduleSaved() {
+  await loadSchedules()
+}
+
+async function deleteSchedule(schedule) {
+  if (!schedule) return
+  try {
+    await ElMessageBox.confirm(`删除「${schedule.title}」？`, '删除个人安排', {
+      type: 'warning',
+      confirmButtonText: '删除',
+      cancelButtonText: '取消'
+    })
+  } catch {
+    return
+  }
+  try {
+    await scheduleApi.remove(schedule.id)
+    ElMessage.success('已删除个人安排')
+    await loadSchedules()
+  } catch (e) {
+    ElMessage.error(e.message || '删除失败')
+  }
 }
 
 async function goPlace(a) {
@@ -359,6 +490,31 @@ async function goPlace(a) {
   } catch (e) {
     ElMessage.error(e.message)
   }
+}
+
+/** 高德导航：多站活动取首个带坐标的站点；单地点活动先取地点详情坐标 */
+async function navigateActivity(a) {
+  if (!a) return
+  let target = (a.stops || []).find((s) => s.longitude != null && s.latitude != null)
+  if (!target && a.placeId) {
+    try {
+      const place = await placeApi.get(a.placeId)
+      target = { name: place.name, longitude: place.longitude, latitude: place.latitude }
+    } catch (e) {
+      // 地点详情失败时走下方统一提示
+    }
+  }
+  if (!target) {
+    ElMessage.info('该活动没有可导航的坐标，请先在地图里打开地点')
+    return
+  }
+  openAmapNavigation({
+    to: {
+      lng: Number(target.longitude),
+      lat: Number(target.latitude),
+      name: target.name || target.placeName || a.title
+    }
+  })
 }
 
 function confirmGoPlace() {
@@ -426,6 +582,14 @@ async function loadMine() {
   }
 }
 
+async function loadSchedules() {
+  try {
+    schedules.value = (await scheduleApi.list()) || []
+  } catch (e) {
+    ElMessage.error(e.message || '加载个人安排失败')
+  }
+}
+
 async function loadInvites() {
   try {
     pendingInvites.value = await activityApi.pendingInvites()
@@ -467,8 +631,38 @@ async function declineInvite(i) {
   }
 }
 
+/** AI 保存后跳转 /activities?activityId=：定位、打开详情并短暂高亮 */
+async function focusRequestedActivity() {
+  const raw = route.query.activityId
+  if (!raw) return
+  const shouldInvite = route.query.invite === '1'
+  const id = Number(raw)
+  const activity = Number.isFinite(id) ? mine.value.find((a) => a.id === id) : null
+  if (!activity) {
+    ElMessage.warning('已保存，但未在当前日程中找到该活动')
+  } else {
+    tab.value = 'calendar'
+    const start = toDate(activity.startTime)
+    if (start && !Number.isNaN(start.getTime())) {
+      calendarDate.value = start
+    }
+    openActivityDetail(activity)
+    if (shouldInvite && isCreatorOf(activity)) {
+      openInvite(activity)
+    }
+    highlightedId.value = id
+    clearTimeout(highlightTimer)
+    highlightTimer = setTimeout(() => {
+      highlightedId.value = null
+    }, 2500)
+  }
+  // 清掉 query，刷新页面不再重复弹窗
+  await router.replace({ path: '/activities' })
+}
+
 onMounted(async () => {
-  await Promise.all([loadMine(), loadInvites(), loadShareOptions()])
+  await Promise.all([loadMine(), loadSchedules(), loadInvites(), loadShareOptions()])
+  await focusRequestedActivity()
   removers = [
     on('ACTIVITY_REMINDER', (frame) => {
       ElMessage.warning(frame.summary)
@@ -490,10 +684,17 @@ onMounted(async () => {
 
 onUnmounted(() => {
   for (const off of removers) off()
+  clearTimeout(highlightTimer)
 })
 </script>
 
 <style scoped>
+.cal-entry--highlight {
+  outline: 2px solid #409eff;
+  outline-offset: 1px;
+  background: #ecf5ff;
+  border-radius: 4px;
+}
 .page {
   max-width: 760px;
   margin: 0 auto;
@@ -688,6 +889,10 @@ onUnmounted(() => {
   background: #f4f4f5;
   color: #909399;
   text-decoration: line-through;
+}
+.cal-entry--schedule {
+  background: #f0f9eb;
+  color: #529b2e;
 }
 .cal-entry--more {
   color: var(--el-text-color-secondary);

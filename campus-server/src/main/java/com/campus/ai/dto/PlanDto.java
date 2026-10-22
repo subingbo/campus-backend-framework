@@ -53,12 +53,44 @@ public class PlanDto {
     private Long lineageActivityId;
     /** 路线数据置信度：AMAP（高德真实返回）/ ESTIMATED（退化估算，不能宣称路线已验证） */
     private String routeConfidence;
+    /** 群计划参与成员（服务端盖章：KNOWN=忙闲可见，UNKNOWN=未授权） */
+    private List<PlanMember> members;
+    /** 与计划时间冲突的成员安排（服务端计算；不含他人日程标题） */
+    private List<PlanConflict> conflicts;
+    /** 冲突/暂定等提示文案 */
+    private List<String> warnings;
 
     @Data
     public static class PlanCoverage {
         private Long userId;
         /** KNOWN = 已授权忙闲；UNKNOWN = 未授权，方案暂定 */
         private String status;
+    }
+
+    @Data
+    public static class PlanMember {
+        private Long userId;
+        private String nickname;
+        /** OWNER / EDITOR / VIEWER */
+        private String role;
+        /** KNOWN = 已授权忙闲；UNKNOWN = 未授权 */
+        private String status;
+    }
+
+    @Data
+    public static class PlanConflict {
+        private Long userId;
+        private String nickname;
+        private LocalDateTime startTime;
+        private LocalDateTime endTime;
+        /** SCHEDULE / ACTIVITY */
+        private String sourceType;
+        /** BLOCKING = 与计划重叠；ADJACENT = 衔接不足 10 分钟 */
+        private String severity;
+        /** 重叠分钟数（ADJACENT 时为 0） */
+        private Integer overlapMinutes;
+        /** 可执行的调整建议 */
+        private String suggestion;
     }
 
     @Data

@@ -77,7 +77,10 @@ function addMinutes(minutes) {
 function buildSpecs() {
   const sat = nextSaturday(15, 0)
   const satLabel = dayLabel(sat)
-  const ongoingStart = addMinutes(-5)
+  const tomorrowLabel = dayLabel(addDays(1, 0, 0))
+  const twoDaysLabel = dayLabel(addDays(2, 0, 0))
+  // 后端拒绝“仍将持续但开始时间早于 now-2min”的活动；演示用进行中活动落在 2 分钟宽限内
+  const ongoingStart = addMinutes(-1)
   const ongoingEnd = addMinutes(55)
   const endedStart = yesterdayAt(19, 0)
   const endedEnd = yesterdayAt(20, 0)
@@ -181,7 +184,17 @@ function buildSpecs() {
         { user: 'demo01', title: `上午例会 · ${satLabel}`, start: nextSaturday(10, 0), end: nextSaturday(11, 0) },
         { user: 'demo01', title: `晚间自习 · ${satLabel}`, start: nextSaturday(20, 0), end: nextSaturday(21, 0) },
         { user: 'demo02', title: `社团值班 · ${satLabel}`, start: nextSaturday(9, 0), end: nextSaturday(10, 0) },
-        { user: 'demo02', title: `运动时间 · ${satLabel}`, start: nextSaturday(17, 0), end: nextSaturday(18, 0) }
+        { user: 'demo02', title: `运动时间 · ${satLabel}`, start: nextSaturday(17, 0), end: nextSaturday(18, 0) },
+        { user: 'demo03', title: `课程复习 · ${satLabel}`, start: nextSaturday(13, 0), end: nextSaturday(14, 0) },
+        { user: 'demo03', title: `小组作业 · ${satLabel}`, start: nextSaturday(19, 0), end: nextSaturday(20, 0) },
+        { user: 'demo04', title: `篮球训练 · ${satLabel}`, start: nextSaturday(10, 0), end: nextSaturday(11, 30) },
+        { user: 'demo04', title: `晚间兼职 · ${satLabel}`, start: nextSaturday(18, 0), end: nextSaturday(19, 0) },
+        { user: 'demo05', title: `实验室值班 · ${satLabel}`, start: nextSaturday(9, 0), end: nextSaturday(11, 0) },
+        { user: 'demo05', title: `英语角 · ${satLabel}`, start: nextSaturday(16, 0), end: nextSaturday(17, 0) },
+        { user: 'demo06', title: `课程设计 · ${satLabel}`, start: nextSaturday(14, 0), end: nextSaturday(16, 0) },
+        { user: 'demo06', title: `夜跑 · ${satLabel}`, start: nextSaturday(20, 0), end: nextSaturday(21, 0) },
+        { user: 'demo07', title: `考研自习 · ${satLabel}`, start: nextSaturday(8, 0), end: nextSaturday(10, 0) },
+        { user: 'demo07', title: `社团例会 · ${satLabel}`, start: nextSaturday(19, 0), end: nextSaturday(20, 30) }
       ]
     },
     {
@@ -240,8 +253,20 @@ function buildSpecs() {
       ],
       posts: [],
       schedules: [
-        { user: 'demo08', title: `课程设计讨论 · ${dayLabel(addDays(2, 15, 0))}`, start: addDays(2, 15, 0), end: addDays(2, 16, 0) },
-        { user: 'demo09', title: `实验课 · ${dayLabel(addDays(2, 14, 0))}`, start: addDays(2, 14, 0), end: addDays(2, 16, 0) }
+        { user: 'demo08', title: `课程设计讨论 · ${twoDaysLabel}`, start: addDays(2, 15, 0), end: addDays(2, 16, 0) },
+        { user: 'demo08', title: `社团材料整理 · ${twoDaysLabel}`, start: addDays(2, 19, 0), end: addDays(2, 20, 0) },
+        { user: 'demo09', title: `实验课 · ${twoDaysLabel}`, start: addDays(2, 14, 0), end: addDays(2, 16, 0) },
+        { user: 'demo09', title: `实验报告 · ${twoDaysLabel}`, start: addDays(2, 19, 0), end: addDays(2, 20, 30) },
+        { user: 'demo10', title: `策划会 · ${twoDaysLabel}`, start: addDays(2, 10, 0), end: addDays(2, 11, 30) },
+        { user: 'demo10', title: `海报设计 · ${twoDaysLabel}`, start: addDays(2, 14, 0), end: addDays(2, 16, 0) },
+        { user: 'demo11', title: `物资采购 · ${twoDaysLabel}`, start: addDays(2, 9, 0), end: addDays(2, 10, 30) },
+        { user: 'demo11', title: `场地对接 · ${twoDaysLabel}`, start: addDays(2, 16, 0), end: addDays(2, 17, 0) },
+        { user: 'demo12', title: `传单排版 · ${twoDaysLabel}`, start: addDays(2, 10, 0), end: addDays(2, 12, 0) },
+        { user: 'demo12', title: `海报打印 · ${twoDaysLabel}`, start: addDays(2, 18, 0), end: addDays(2, 19, 0) },
+        { user: 'demo13', title: `联赛训练 · ${twoDaysLabel}`, start: addDays(2, 15, 0), end: addDays(2, 17, 0) },
+        { user: 'demo13', title: `裁判会议 · ${twoDaysLabel}`, start: addDays(2, 19, 0), end: addDays(2, 20, 0) },
+        { user: 'demo14', title: `社团值班 · ${twoDaysLabel}`, start: addDays(2, 8, 30), end: addDays(2, 10, 0) },
+        { user: 'demo14', title: `活动复盘 · ${twoDaysLabel}`, start: addDays(2, 20, 0), end: addDays(2, 21, 0) }
       ]
     },
     {
@@ -312,7 +337,20 @@ function buildSpecs() {
           likes: ['demo15', 'demo19'], comments: [{ user: 'demo20', content: '早起去买' }]
         }
       ],
-      schedules: []
+      schedules: [
+        { user: 'demo15', title: `课程展示准备 · ${tomorrowLabel}`, start: addDays(1, 9, 0), end: addDays(1, 10, 30) },
+        { user: 'demo15', title: `美食探店 · ${tomorrowLabel}`, start: addDays(1, 19, 0), end: addDays(1, 20, 30) },
+        { user: 'demo16', title: `英语课 · ${tomorrowLabel}`, start: addDays(1, 10, 0), end: addDays(1, 11, 30) },
+        { user: 'demo16', title: `社团例会 · ${tomorrowLabel}`, start: addDays(1, 18, 0), end: addDays(1, 19, 0) },
+        { user: 'demo17', title: `实验课 · ${tomorrowLabel}`, start: addDays(1, 13, 0), end: addDays(1, 15, 0) },
+        { user: 'demo17', title: `夜跑 · ${tomorrowLabel}`, start: addDays(1, 20, 0), end: addDays(1, 21, 0) },
+        { user: 'demo18', title: `早起自习 · ${tomorrowLabel}`, start: addDays(1, 8, 0), end: addDays(1, 9, 30) },
+        { user: 'demo18', title: `面包房兼职 · ${tomorrowLabel}`, start: addDays(1, 17, 0), end: addDays(1, 19, 0) },
+        { user: 'demo19', title: `小组讨论 · ${tomorrowLabel}`, start: addDays(1, 10, 0), end: addDays(1, 12, 0) },
+        { user: 'demo19', title: `水果店采购 · ${tomorrowLabel}`, start: addDays(1, 16, 0), end: addDays(1, 17, 0) },
+        { user: 'demo20', title: `课程复习 · ${tomorrowLabel}`, start: addDays(1, 9, 0), end: addDays(1, 11, 0) },
+        { user: 'demo20', title: `线上讲座 · ${tomorrowLabel}`, start: addDays(1, 19, 0), end: addDays(1, 20, 0) }
+      ]
     }
   ]
 }
@@ -327,7 +365,7 @@ const PRIVATE_MESSAGES = [
 ]
 
 const state = { generatedAt: new Date().toISOString(), users: {}, maps: {} }
-const summary = { created: 0, skipped: 0, messagesSent: 0 }
+const summary = { created: 0, skipped: 0, messagesSent: 0, grants: 0 }
 
 function log(message) {
   console.log(`[demo] ${message}`)
@@ -784,14 +822,33 @@ async function ensureSchedules(spec, map, users, allowCreate) {
       summary.created += 1
     }
     result[schedule.title] = id
-    if (!allowCreate) continue
+  }
+  return result
+}
+
+async function ensureGroupGrants(spec, map, users, allowCreate) {
+  const members = [spec.owner, ...spec.members]
+  let granted = 0
+  for (const username of members) {
+    const user = users[username]
+    if (!allowCreate) {
+      const options = await api('GET', '/api/schedules/share', user.token)
+      const option = (options || []).find((item) => item.groupId === map.groupId)
+      if (!option || !option.granted) {
+        throw new Error(`缺少忙闲授权：${username} -> ${spec.name}`)
+      }
+      continue
+    }
     await api('PUT', '/api/schedules/share', user.token, {
       targetType: 'GROUP',
       targetId: map.groupId,
       grant: true
     })
+    granted += 1
   }
-  return result
+  summary.grants += granted
+  log(`${spec.key} 群忙闲授权：${members.length} 人${allowCreate ? `（本次提交 ${granted} 次）` : '已校验'}`)
+  return { members: members.length, granted }
 }
 
 async function main() {
@@ -809,6 +866,7 @@ async function main() {
     const activityIds = await ensureActivities(spec, map, placeIds, users, !VERIFY_ONLY)
     const postIds = await ensurePosts(spec, placeIds, users, !VERIFY_ONLY)
     const scheduleIds = await ensureSchedules(spec, map, users, !VERIFY_ONLY)
+    const grants = await ensureGroupGrants(spec, map, users, !VERIFY_ONLY)
 
     state.maps[spec.key] = {
       name: spec.name,
@@ -819,11 +877,12 @@ async function main() {
       activities: activityIds,
       posts: postIds,
       schedules: scheduleIds,
+      grants,
       members: [spec.owner, ...spec.members]
     }
     log(`${spec.key} ${spec.name}: places=${Object.keys(placeIds).length} `
       + `messages=${spec.messages.length} activities=${Object.keys(activityIds).length} `
-      + `posts=${Object.keys(postIds).length}`)
+      + `posts=${Object.keys(postIds).length} schedules=${Object.keys(scheduleIds).length}`)
   }
 
   await ensureFriends(users, !VERIFY_ONLY)
@@ -845,7 +904,8 @@ async function main() {
   console.log('\n演示账号（密码统一 demo1234）：')
   for (const line of accountLines) console.log(`  ${line}`)
   console.log(`\n${VERIFY_ONLY ? 'VERIFY OK' : 'SEED OK'} `
-    + `created=${summary.created} skipped=${summary.skipped} messagesSent=${summary.messagesSent}`)
+    + `created=${summary.created} skipped=${summary.skipped} messagesSent=${summary.messagesSent} `
+    + `grants=${summary.grants}`)
   console.log('推荐演示：demo01（A）、demo08（B）、demo15（C）；admin/admin123 保留用于管理端。')
   if (!VERIFY_ONLY) console.log(`state: ${STATE_FILE}`)
 }

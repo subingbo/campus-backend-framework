@@ -164,6 +164,7 @@
           <el-button v-if="canEdit" size="small" @click="openEdit">编辑</el-button>
           <el-button v-if="canEdit" size="small" type="danger" plain @click="removeFromMap">移除</el-button>
           <el-button size="small" @click="openPlaceChat(selectedPlace)">聊天</el-button>
+          <el-button size="small" @click="navigateSelectedPlace">🧭 导航</el-button>
           <el-dropdown v-if="otherMaps.length" @command="shareToMap">
             <el-button size="small">分享</el-button>
             <template #dropdown>
@@ -241,6 +242,7 @@
           <el-button v-if="canEdit" size="small" @click="openEdit">编辑</el-button>
           <el-button v-if="canEdit" size="small" type="danger" plain @click="removeFromMap">从地图移除</el-button>
           <el-button size="small" @click="openPlaceChat(selectedPlace)">地点聊天</el-button>
+          <el-button size="small" @click="navigateSelectedPlace">🧭 高德导航</el-button>
           <el-dropdown v-if="otherMaps.length" @command="shareToMap">
             <el-button size="small">分享到其他地图</el-button>
             <template #dropdown>
@@ -364,6 +366,7 @@ import ChatPanel from '../components/ChatPanel.vue'
 import ActivityEntryCard from '../components/ActivityEntryCard.vue'
 import ActivityFormDialog from '../components/ActivityFormDialog.vue'
 import { toDate } from '../utils/format'
+import { openAmapNavigation } from '../utils/amapNavigation'
 
 const route = useRoute()
 const mapId = computed(() => Number(route.params.id))
@@ -590,6 +593,18 @@ async function locateToMap({ recenter = true, actionText = '已定位到当前�
 
 async function locateMe() {
   await locateToMap()
+}
+
+/** 高德导航：优先用实时定位作起点，定位失败则打开终点地点页 */
+async function navigateSelectedPlace() {
+  const place = selectedPlace.value
+  if (!place || place.longitude == null || place.latitude == null) return
+  const loc = await locate()
+  const from = loc ? { lng: loc.lng, lat: loc.lat, name: '我的位置' } : null
+  openAmapNavigation({
+    from,
+    to: { lng: Number(place.longitude), lat: Number(place.latitude), name: place.name }
+  })
 }
 
 async function locateAndPick() {

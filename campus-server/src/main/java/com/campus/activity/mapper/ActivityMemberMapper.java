@@ -14,6 +14,12 @@ public interface ActivityMemberMapper {
 
     int delete(@Param("activityId") Long activityId, @Param("userId") Long userId);
 
+    /** 仅未签到成员可取消报名；返回影响行数，0 表示未报名或已签到 */
+    int deleteIfNotCheckedIn(@Param("activityId") Long activityId, @Param("userId") Long userId);
+
+    /** 查询签到状态；null 表示成员行不存在 */
+    Integer selectCheckedIn(@Param("activityId") Long activityId, @Param("userId") Long userId);
+
     int exists(@Param("activityId") Long activityId, @Param("userId") Long userId);
 
     long countByActivityId(@Param("activityId") Long activityId);

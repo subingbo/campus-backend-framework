@@ -18,6 +18,13 @@ public interface MessageMapper {
 
     ChatMessageResponse selectLastByConversation(@Param("conversationId") Long conversationId);
 
+    ChatMessageResponse selectById(@Param("id") Long id);
+
+    /** 幂等查询：同一发送者在同一会话内的 clientMsgId 只对应一条消息 */
+    ChatMessageResponse selectByClientMsgId(@Param("conversationId") Long conversationId,
+                                           @Param("senderId") Long senderId,
+                                           @Param("clientMsgId") String clientMsgId);
+
     /** 群聊上一轮 @AI 的 AGENT 回复（不含普通文本消息），无则 null */
     com.campus.social.entity.Message selectAgentReply(@Param("conversationId") Long conversationId);
 }

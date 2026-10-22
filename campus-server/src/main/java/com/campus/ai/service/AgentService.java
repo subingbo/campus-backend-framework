@@ -4,6 +4,7 @@ import com.campus.ai.config.LlmProperties;
 import com.campus.ai.dto.AiUserLocation;
 import com.campus.ai.dto.GeoEvent;
 import com.campus.ai.dto.PlanDto;
+import com.campus.ai.dto.PlanStop;
 import com.campus.ai.entity.AiConversation;
 import com.campus.ai.entity.AiMessage;
 import com.campus.ai.llm.LlmClient;
@@ -11,6 +12,7 @@ import com.campus.ai.llm.LlmResponse;
 import com.campus.ai.llm.LlmToolCall;
 import com.campus.ai.mapper.AiConversationMapper;
 import com.campus.ai.mapper.AiMessageMapper;
+import com.campus.ai.plan.PlanSource;
 import com.campus.ai.plan.PlanValidationException;
 import com.campus.ai.tool.AgentToolkit;
 import com.campus.ai.trace.adapter.TraceRun;
@@ -70,6 +72,7 @@ public class AgentService {
     private static final int TOOL_CALLS_PER_ROUND = 5;
     private static final int HISTORY_LIMIT = 12;
     private static final DateTimeFormatter NOW_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
+    private static final DateTimeFormatter CONFLICT_TIME_FORMAT = DateTimeFormatter.ofPattern("MM-dd HH:mm");
     private static final Logger RUN_LOG = LoggerFactory.getLogger("AI_RUN");
 
     private static final String SYSTEM_PROMPT_TEMPLATE = """
@@ -238,7 +241,12 @@ public class AgentService {
                 if (StringUtils.hasText(content)) {
                     traceRun.stepEnd(TraceStatus.SUCCESS);
                     flushGeo(listener, tracker);
-                    persistMessage(conversation.getId(), AiMessage.ROLE_ASSISTANT, content,
+                    String notice = tracker.conflictNotice();
+                    String finalContent = StringUtils.hasText(notice) ? content + notice : content;
+                    if (StringUtils.hasText(notice)) {
+                        listener.onDelta(notice);
+                    }
+                    persistMessage(conversation.getId(), AiMessage.ROLE_ASSISTANT, finalContent,
                             tracker.geoJson(), listener);
                     listener.onDone();
                     tracker.done(tracker.hasDraft ? "draft" : "answer");
@@ -251,9 +259,12 @@ public class AgentService {
             }
             if (tracker.hasDraft) {
                 // 草稿已成功提交：预算耗尽按成功收流；补落一条简短收尾消息（含 geo_json），保证刷新后芯片/地图可回放
-                persistMessage(conversation.getId(), AiMessage.ROLE_ASSISTANT,
-                        "已生成行程草稿（本轮步数预算用尽，未及补充说明），请在上方卡片查看、编辑或保存为活动。",
+                String base = "已生成行程草稿（本轮步数预算用尽，未及补充说明），请在上方卡片查看、编辑或保存为活动。";
+                String notice = tracker.conflictNotice();
+                String finalContent = StringUtils.hasText(notice) ? base + notice : base;
+                persistMessage(conversation.getId(), AiMessage.ROLE_ASSISTANT, finalContent,
                         tracker.geoJson(), listener);
+                listener.onDelta(finalContent);
                 listener.onDone();
                 tracker.done("draft");
             } else {
@@ -334,7 +345,7 @@ public class AgentService {
         traceRun.toolCall(call.id(), name, call.arguments());
         if (TOOL_SUBMIT_PLAN.equals(name)) {
             long start = System.nanoTime();
-            String result = handleSubmitPlan(call.arguments(), conversation, listener, traceRun);
+            String result = handleSubmitPlan(call.arguments(), conversation, listener, tracker, traceRun);
             long elapsed = elapsedMs(start);
             boolean accepted = result.contains("\"accepted\":true");
             if (accepted) {
@@ -397,6 +408,7 @@ public class AgentService {
             }
         }
         tracker.tool(name, !result.contains("\"error\""), repeated);
+        listener.onTool(name);
         if (!repeated && AgentToolkit.TOOL_ROUTE_INFO.equals(name)) {
             tracker.route(result);
         }
@@ -404,7 +416,7 @@ public class AgentService {
     }
 
     private String handleSubmitPlan(String arguments, AiConversation conversation,
-                                    AgentChatListener listener, TraceRun traceRun) {
+                                    AgentChatListener listener, RunTracker tracker, TraceRun traceRun) {
         int nextVersion = conversation.getPlanVersion() == null ? 1 : conversation.getPlanVersion() + 1;
         try {
             PlanDto plan;
@@ -418,6 +430,8 @@ public class AgentService {
                 throw ex;
             }
             traceRun.validationPassed("SUBMIT", plan, nextVersion);
+            // 模型可能漏填 source：按本轮实时坐标补盖起点标签，避免保存时把“我的位置”建成正式地点
+            stampRunOrigin(plan);
             // 群语境盖章：groupId/sourceMapIds/来源标签/规划指纹由后端写入，模型不可指定
             toolkit.stampGroupPlanContext(plan);
             // 谱系活动只允许 revise 由后端写入，LLM 草稿一律不带
@@ -427,7 +441,29 @@ public class AgentService {
                     conversation.getId(), planJson, nextVersion, AiConversation.STATUS_DRAFT);
             traceRun.draft(plan, nextVersion, conversation.getId());
             listener.onPlan(plan);
-            return "{\"accepted\":true,\"message\":\"草稿已生成并展示。请用一两句话说明看点与可修改之处\"}";
+            tracker.conflictNotice(buildConflictNotice(plan));
+            Map<String, Object> accepted = new LinkedHashMap<>();
+            accepted.put("accepted", true);
+            StringBuilder message = new StringBuilder("草稿已生成并展示。请用一两句话说明看点与可修改之处");
+            if (plan.getConflicts() != null && !plan.getConflicts().isEmpty()) {
+                message.append("；检测到 ").append(plan.getConflicts().size())
+                        .append(" 位成员时间冲突，请在回答中逐条说明成员、冲突时段和建议");
+                accepted.put("conflicts", plan.getConflicts().stream().map(c -> {
+                    Map<String, Object> row = new LinkedHashMap<>();
+                    row.put("nickname", c.getNickname());
+                    row.put("startTime", c.getStartTime() == null ? null : c.getStartTime().toString());
+                    row.put("endTime", c.getEndTime() == null ? null : c.getEndTime().toString());
+                    row.put("severity", c.getSeverity());
+                    row.put("suggestion", c.getSuggestion());
+                    return row;
+                }).toList());
+            }
+            if (plan.getWarnings() != null && !plan.getWarnings().isEmpty()) {
+                accepted.put("warnings", plan.getWarnings());
+                message.append("；方案含未授权忙闲成员，请说明为暂定");
+            }
+            accepted.put("message", message.toString());
+            return objectMapper.writeValueAsString(accepted);
         } catch (PlanValidationException ex) {
             // 已在解析/校验处记录 plan/validate FAILED，这里只回填模型可读错误
             return "{\"accepted\":false,\"error\":\"" + escape(ex.getMessage()) + "\"}";
@@ -438,6 +474,27 @@ public class AgentService {
             traceRun.validationFailed("SUBMIT", "DRAFT_SAVE_FAILED", nextVersion);
             log.warn("submit_plan 处理异常：{}", ex.toString());
             return "{\"accepted\":false,\"error\":\"草稿处理失败，请重试\"}";
+        }
+    }
+
+    /**
+     * 本轮实时定位可能被模型写进 submit_plan 但漏了 source；按坐标兜底标记。
+     * 只标记无 placeId 且距实时定位约 30m 内的站点，真实场地（有 placeId）不受影响。
+     */
+    private void stampRunOrigin(PlanDto plan) {
+        AiUserLocation location = AgentToolkit.currentRunLocation();
+        if (location == null || location.getLongitude() == null || location.getLatitude() == null) {
+            return;
+        }
+        for (PlanStop stop : plan.getStops()) {
+            if (stop.getPlaceId() != null || stop.getLongitude() == null || stop.getLatitude() == null) {
+                continue;
+            }
+            double dLng = Math.abs(stop.getLongitude() - location.getLongitude());
+            double dLat = Math.abs(stop.getLatitude() - location.getLatitude());
+            if (dLng <= 0.0003 && dLat <= 0.0003) {
+                stop.setSource(PlanSource.USER_LOCATION);
+            }
         }
     }
 
@@ -476,6 +533,44 @@ public class AgentService {
     private void status(AgentChatListener listener, RunTracker tracker, String value) {
         tracker.firstVisible();
         listener.onStatus(value);
+    }
+
+    /**
+     * 冲突摘要（确定性，不依赖模型转述）：直接拼进最终助手回复并落库。
+     * 只包含成员昵称、时段、严重度与建议；他人日程标题不会出现在这里。
+     */
+    private String buildConflictNotice(PlanDto plan) {
+        List<PlanDto.PlanConflict> conflicts = plan.getConflicts();
+        List<String> warnings = plan.getWarnings();
+        boolean hasConflicts = conflicts != null && !conflicts.isEmpty();
+        boolean hasWarnings = warnings != null && !warnings.isEmpty();
+        if (!hasConflicts && !hasWarnings) {
+            return null;
+        }
+        StringBuilder text = new StringBuilder("\n\n");
+        if (hasConflicts) {
+            text.append("⚠️ 系统核验：计划与 ").append(conflicts.size()).append(" 项同伴安排冲突\n");
+            for (PlanDto.PlanConflict conflict : conflicts) {
+                text.append("- ").append(conflict.getNickname()).append(" ")
+                        .append(conflictTime(conflict.getStartTime())).append("–")
+                        .append(conflictTime(conflict.getEndTime())).append(" 与计划冲突");
+                if ("BLOCKING".equals(conflict.getSeverity())) {
+                    text.append("（重叠 ").append(conflict.getOverlapMinutes()).append(" 分钟）");
+                } else {
+                    text.append("（前后衔接不足 10 分钟）");
+                }
+                text.append("。建议：").append(conflict.getSuggestion()).append("\n");
+            }
+        }
+        if (hasWarnings) {
+            text.append(hasConflicts ? "另：" : "ℹ️ ");
+            text.append(String.join("；", warnings)).append("\n");
+        }
+        return text.toString();
+    }
+
+    private String conflictTime(LocalDateTime time) {
+        return time == null ? "" : CONFLICT_TIME_FORMAT.format(time);
     }
 
     private void delta(AgentChatListener listener, RunTracker tracker, String piece) {
@@ -531,6 +626,8 @@ public class AgentService {
         private final List<String> errorTrail = new ArrayList<>();
         private String toolError;
         private boolean hasDraft;
+        /** submit_plan 盖章后的冲突/暂定摘要：确定性拼进最终助手回复，不依赖模型转述 */
+        private String conflictNotice;
         private String outcome;
         private String stopCause;
 
@@ -608,6 +705,14 @@ public class AgentService {
 
         void draft() {
             this.hasDraft = true;
+        }
+
+        void conflictNotice(String notice) {
+            this.conflictNotice = notice;
+        }
+
+        String conflictNotice() {
+            return conflictNotice;
         }
 
         /** 累积本轮地理事件（仅计数进 AI_RUN，内容只随助手消息落库） */

@@ -15,6 +15,9 @@ public interface ActivityMapper {
 
     Activity selectById(@Param("id") Long id);
 
+    /** 报名/接受邀请的事务内行锁：同一活动的容量判定必须串行化 */
+    Activity selectByIdForUpdate(@Param("id") Long id);
+
     List<ActivityResponse> selectByPlaceId(@Param("placeId") Long placeId,
                                            @Param("currentUserId") Long currentUserId,
                                            @Param("limit") int limit);

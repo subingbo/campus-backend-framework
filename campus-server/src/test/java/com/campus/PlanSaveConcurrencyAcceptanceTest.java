@@ -560,7 +560,8 @@ class PlanSaveConcurrencyAcceptanceTest {
             if (seq > 0) {
                 stops.append(',');
             }
-            LocalDateTime start = LocalDateTime.now().plusHours(6).withSecond(0).withNano(0).plusMinutes(30L * seq);
+            // 站间留 30 分钟转场，避免新增的交通硬校验把“只改站点名”的用例判成不可行
+            LocalDateTime start = LocalDateTime.now().plusHours(6).withSecond(0).withNano(0).plusMinutes(60L * seq);
             stops.append("""
                      {"name":"%s","longitude":%s,"latitude":%s,"startTime":"%s","endTime":"%s","transportMode":"WALK"}
                     """.formatted(name, 113.3730 + 0.0005 * seq, 23.1340 + 0.0005 * seq,

@@ -2,8 +2,8 @@ package com.campus.ai.plan;
 
 import com.campus.ai.dto.PlanDto;
 import com.campus.ai.dto.PlanStop;
-import com.campus.ai.travel.RouteInfo;
-import com.campus.ai.travel.TravelInfoProvider;
+import com.campus.travel.ItineraryTravelChecker;
+import com.campus.travel.TravelInfoProvider;
 import com.campus.common.exception.BusinessException;
 import com.campus.common.result.ResultCode;
 import com.campus.map.service.SharedMapService;
@@ -16,7 +16,6 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
-import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -40,11 +39,10 @@ public class PlanValidator {
     public static final String RULE_SET = "plan-v1";
 
     private static final List<String> CATEGORIES = List.of("MEETING", "COMPETITION", "OTHER");
-    private static final List<String> TRANSPORTS = List.of("WALK", "RIDE", "DRIVE", "TRANSIT");
+    private static final List<String> TRANSPORTS = List.of("WALK", "RIDE", "DRIVE", "TAXI", "TRANSIT");
     private static final List<String> SOURCES = List.of(PlanSource.GROUP_MAP, PlanSource.PERSONAL_MAP,
-            PlanSource.AMAP_POI);
+            PlanSource.AMAP_POI, PlanSource.USER_LOCATION);
     private static final int MAX_STOPS = 8;
-    private static final int MAX_SEGMENT_CHECKS = 8;
     private static final java.time.format.DateTimeFormatter HHMMSS =
             java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss");
 
@@ -53,6 +51,7 @@ public class PlanValidator {
     private final PlaceService placeService;
     private final SharedMapService sharedMapService;
     private final TravelInfoProvider travelInfoProvider;
+    private final ItineraryTravelChecker travelChecker;
 
     public PlanValidator(@Qualifier("redisObjectMapper") ObjectMapper objectMapper,
                          PlaceService placeService,
@@ -64,6 +63,7 @@ public class PlanValidator {
         this.placeService = placeService;
         this.sharedMapService = sharedMapService;
         this.travelInfoProvider = travelInfoProvider;
+        this.travelChecker = new ItineraryTravelChecker(travelInfoProvider);
     }
 
     public ObjectMapper objectMapper() {
@@ -168,6 +168,10 @@ public class PlanValidator {
                 // 模型给的来源标签只保留可识别值；权威覆写在提交盖章阶段
                 stop.setSource(null);
             }
+            if (PlanSource.USER_LOCATION.equals(stop.getSource()) && stop.getPlaceId() != null) {
+                throw fail("USER_LOCATION_WITH_PLACE", "实时起点站点不能关联地点",
+                        Map.of("stopSeq", i + 1));
+            }
             if (stop.getStayMinutes() != null) {
                 long stay = stop.getStayMinutes().longValue();
                 stop.setStayMinutes((int) Math.min(Math.max(stay, 5), 600));
@@ -262,7 +266,8 @@ public class PlanValidator {
         }
         if (plan.getConstraintStatus() != null
                 && !"FEASIBLE".equals(plan.getConstraintStatus())
-                && !"TENTATIVE".equals(plan.getConstraintStatus())) {
+                && !"TENTATIVE".equals(plan.getConstraintStatus())
+                && !"CONFLICT".equals(plan.getConstraintStatus())) {
             plan.setConstraintStatus(null);
         }
         // routeConfidence 不信任模型自述，清空后由交通段重算覆写
@@ -271,89 +276,73 @@ public class PlanValidator {
     }
 
     /**
-     * 站点间交通运输硬校验：相邻两站都含坐标且起止时间齐备时，实际交通耗时必须 ≤ 两站间隔，否则拒绝提交。
-     * 高德不可用退化为直线估算（provider 标记 estimated），仍然按耗时校验——这正是“两个小时排三个地点”的兜底线。
-     * 依据本次重算结果覆写 routeSegments 与 totalTravelMinutes，模型给值不作数。
+     * 站点间交通运输三态校验：不可行优先于未核验。
+     * 高德不可用退化为直线估算（provider 标记 estimated），仍然按耗时校验；
+     * 缺字段/超段只标 PARTIAL，不能宣称“已全部核验”。依据本次重算结果覆写
+     * routeSegments 与 totalTravelMinutes，模型给值不作数。
      */
     private void validateTravelFeasibility(PlanDto plan) {
-        List<PlanStop> stops = plan.getStops();
-        List<PlanDto.PlanRouteSegment> segments = new ArrayList<>();
-        long total = 0;
-        boolean anyEstimated = false;
-        for (int i = 0; i < stops.size() - 1; i++) {
-            PlanStop current = stops.get(i);
-            PlanStop next = stops.get(i + 1);
-            if (current.getEndTime() == null || next.getStartTime() == null
-                    || current.getLongitude() == null || next.getLongitude() == null) {
-                continue;
-            }
-            String mode = "RIDE".equals(next.getTransportMode()) ? "RIDE"
-                    : "DRIVE".equals(next.getTransportMode()) ? "DRIVE"
-                    : "TRANSIT".equals(next.getTransportMode()) ? "TRANSIT" : "WALK";
-            if ("TRANSIT".equals(mode)) {
-                continue; // 公交暂无可靠路线接口，不作为硬校验依据
-            }
-            RouteInfo route;
-            try {
-                route = travelInfoProvider.searchRoute(mode,
-                        current.getLongitude(), current.getLatitude(),
-                        next.getLongitude(), next.getLatitude());
-            } catch (BusinessException ex) {
-                throw failWithCode(ex.getCode(), "ROUTE_ESTIMATE_FAILED", ex.getMessage(),
-                        Map.of("fromSeq", i + 1, "toSeq", i + 2));
-            }
-            if (route.getDurationSeconds() == null) {
-                continue;
-            }
-            long travelSeconds = Math.max(0, route.getDurationSeconds());
-            long gapSeconds = Duration.between(current.getEndTime(), next.getStartTime()).getSeconds();
-            long travelMinutes = (travelSeconds + 59) / 60;
-            anyEstimated |= route.isEstimated() || "estimate".equals(route.getProvider());
-            PlanDto.PlanRouteSegment segment = new PlanDto.PlanRouteSegment();
-            segment.setFromSeq(i + 1);
-            segment.setToSeq(i + 2);
-            segment.setTransportMode(mode);
-            segment.setDistanceMeters(route.getDistanceMeters());
-            segment.setDurationMinutes((int) travelMinutes);
-            segments.add(segment);
-            total += travelMinutes;
-            if (segments.size() > MAX_SEGMENT_CHECKS) {
-                break;
-            }
-            // 按秒比较：此前 gap 向下取整、耗时向上取整，按真实秒数留间隔也可能差 1 分钟被拒；
-            // 文案给出可执行的"最早开始时间"与交通方式口径（未填 transportMode 按步行估算）
-            if (gapSeconds < travelSeconds) {
-                LocalDateTime earliest = current.getEndTime().plusSeconds(travelSeconds);
-                Map<String, Object> details = new LinkedHashMap<>();
-                details.put("fromSeq", i + 1);
-                details.put("toSeq", i + 2);
-                details.put("transportMode", mode);
-                details.put("availableMinutes", Math.max(0, gapSeconds) / 60);
-                details.put("requiredMinutes", travelMinutes);
-                details.put("earliestStart", earliest.format(HHMMSS));
-                throw new PlanValidationException(ResultCode.BAD_REQUEST.getCode(),
-                        "TRAVEL_TIME_CONFLICT", String.format(
-                        "「%s」→「%s」%s约 %d 分钟，但时间表只留了 %d 分钟；请把「%s」的开始时间设为 %s 或更晚"
-                                + "（该段按目标站交通方式计算，未填写时按步行估算）",
-                        current.getName(), next.getName(), transportLabel(mode), travelMinutes,
-                        Math.max(0, gapSeconds) / 60, next.getName(), earliest.format(HHMMSS)),
-                        details);
-            }
+        List<ItineraryTravelChecker.Leg> legs = new ArrayList<>();
+        for (int i = 0; i < plan.getStops().size(); i++) {
+            PlanStop stop = plan.getStops().get(i);
+            ItineraryTravelChecker.Leg leg = new ItineraryTravelChecker.Leg();
+            leg.setSeq(i + 1);
+            leg.setName(stop.getName());
+            leg.setLongitude(stop.getLongitude());
+            leg.setLatitude(stop.getLatitude());
+            leg.setStartTime(stop.getStartTime());
+            leg.setEndTime(stop.getEndTime());
+            leg.setTransportMode(stop.getTransportMode());
+            legs.add(leg);
         }
-        if (!segments.isEmpty()) {
+        ItineraryTravelChecker.Result result = travelChecker.check(legs);
+        // 1) 已确认不可行：即使其他段 provider 异常，也必须先报这一条可执行的冲突
+        if (!result.getViolations().isEmpty()) {
+            ItineraryTravelChecker.Violation violation = result.getViolations().get(0);
+            Map<String, Object> details = new LinkedHashMap<>();
+            details.put("fromSeq", violation.getFromSeq());
+            details.put("toSeq", violation.getToSeq());
+            details.put("transportMode", violation.getTransportMode());
+            details.put("availableMinutes", violation.getAvailableMinutes());
+            details.put("requiredMinutes", (long) violation.getRequiredMinutes());
+            details.put("earliestStart", violation.getEarliestStart().format(HHMMSS));
+            throw new PlanValidationException(ResultCode.BAD_REQUEST.getCode(),
+                    "TRAVEL_TIME_CONFLICT", ItineraryTravelChecker.message(violation), details);
+        }
+        // 2) AI 路径保持严格：provider 异常直接拒绝，避免把未知当可行
+        if (result.hasProviderError()) {
+            ItineraryTravelChecker.Unverified error = result.getUnverified().stream()
+                    .filter(u -> u.getReason() == ItineraryTravelChecker.UnverifiedReason.PROVIDER_ERROR)
+                    .findFirst().orElseThrow();
+            throw failWithCode(error.getCode() == null ? ResultCode.BAD_REQUEST.getCode() : error.getCode(),
+                    "ROUTE_ESTIMATE_FAILED", error.getDetail(),
+                    Map.of("fromSeq", error.getFromSeq(), "toSeq", error.getToSeq()));
+        }
+        if (!result.getSegments().isEmpty()) {
+            List<PlanDto.PlanRouteSegment> segments = new ArrayList<>();
+            for (ItineraryTravelChecker.Segment source : result.getSegments()) {
+                PlanDto.PlanRouteSegment segment = new PlanDto.PlanRouteSegment();
+                segment.setFromSeq(source.getFromSeq());
+                segment.setToSeq(source.getToSeq());
+                segment.setTransportMode(source.getTransportMode());
+                segment.setDistanceMeters(source.getDistanceMeters());
+                segment.setDurationMinutes(source.getDurationMinutes());
+                segments.add(segment);
+            }
             plan.setRouteSegments(segments);
-            plan.setTotalTravelMinutes((int) total);
-            plan.setRouteConfidence(anyEstimated ? "ESTIMATED" : "AMAP");
+            plan.setTotalTravelMinutes(result.getTotalMinutes());
         }
-    }
-
-    private String transportLabel(String mode) {
-        return switch (mode) {
-            case "RIDE" -> "骑行";
-            case "DRIVE" -> "驾车";
-            case "TRANSIT" -> "公交";
-            default -> "步行";
-        };
+        if (result.fullyVerified()) {
+            if (!result.getSegments().isEmpty()) {
+                plan.setRouteConfidence(result.isAnyEstimated() ? "ESTIMATED" : "AMAP");
+            }
+        } else {
+            // 3) 缺字段/超段：明确标部分未核验，不冒充全部通过
+            plan.setRouteConfidence("PARTIAL");
+            List<String> warnings = plan.getWarnings() == null ? new ArrayList<>() : plan.getWarnings();
+            warnings.add("部分站点缺少时间/坐标或超出校验段数，未做交通校验");
+            plan.setWarnings(warnings);
+        }
     }
 
     private PlanValidationException fail(String ruleId, String message, Map<String, Object> details) {

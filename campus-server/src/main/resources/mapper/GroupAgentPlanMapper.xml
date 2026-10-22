@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.campus.ai.mapper.GroupAgentPlanMapper">
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO group_agent_plan (group_conversation_id, message_id, ai_conversation_id,
+                                      asker_id, plan_json, plan_version, created_at)
+        VALUES (#{groupConversationId}, #{messageId}, #{aiConversationId},
+                #{askerId}, #{planJson}, #{planVersion}, NOW())
+    </insert>
+
+    <select id="selectById" resultType="com.campus.ai.entity.GroupAgentPlan">
+        SELECT id, group_conversation_id AS groupConversationId, message_id AS messageId,
+               ai_conversation_id AS aiConversationId, asker_id AS askerId,
+               plan_json AS planJson, plan_version AS planVersion, created_at AS createdAt
+        FROM group_agent_plan
+        WHERE id = #{id}
+        LIMIT 1
+    </select>
+
+    <select id="selectByMessageId" resultType="com.campus.ai.entity.GroupAgentPlan">
+        SELECT id, group_conversation_id AS groupConversationId, message_id AS messageId,
+               ai_conversation_id AS aiConversationId, asker_id AS askerId,
+               plan_json AS planJson, plan_version AS planVersion, created_at AS createdAt
+        FROM group_agent_plan
+        WHERE message_id = #{messageId}
+        LIMIT 1
+    </select>
+
+    <select id="selectByConversation" resultType="com.campus.ai.entity.GroupAgentPlan">
+        SELECT id, group_conversation_id AS groupConversationId, message_id AS messageId,
+               ai_conversation_id AS aiConversationId, asker_id AS askerId,
+               plan_json AS planJson, plan_version AS planVersion, created_at AS createdAt
+        FROM group_agent_plan
+        WHERE group_conversation_id = #{conversationId}
+        ORDER BY id ASC
+        LIMIT #{limit}
+    </select>
+</mapper>

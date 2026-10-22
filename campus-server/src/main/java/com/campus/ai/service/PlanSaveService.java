@@ -6,6 +6,7 @@ import com.campus.ai.dto.PlanStop;
 import com.campus.ai.dto.RevisePlanResponse;
 import com.campus.ai.entity.AiConversation;
 import com.campus.ai.mapper.AiConversationMapper;
+import com.campus.ai.plan.PlanSource;
 import com.campus.ai.plan.PlanValidationException;
 import com.campus.ai.plan.PlanValidator;
 import com.campus.ai.trace.adapter.TraceSaveRun;
@@ -156,18 +157,34 @@ public class PlanSaveService {
         String operation = plan.getLineageActivityId() != null ? "UPDATE" : "CREATE";
         try {
             List<ActivityStopRequest> stops = new ArrayList<>();
+            Long primaryPlaceId = null;
             for (PlanStop stop : plan.getStops()) {
+                // 实时起点/返程点只存在于草稿与会话，不写 place、不写活动站点
+                if (PlanSource.USER_LOCATION.equals(stop.getSource())) {
+                    continue;
+                }
                 if (stop.getPlaceId() == null) {
                     stop.setPlaceId(ensurePlace(stop));
                 }
                 ActivityStopRequest request = new ActivityStopRequest();
                 request.setName(stop.getName());
                 request.setPlaceId(stop.getPlaceId());
+                request.setLongitude(stop.getLongitude() == null
+                        ? null : BigDecimal.valueOf(stop.getLongitude()));
+                request.setLatitude(stop.getLatitude() == null
+                        ? null : BigDecimal.valueOf(stop.getLatitude()));
                 request.setStartTime(stop.getStartTime());
                 request.setEndTime(stop.getEndTime());
                 request.setTransportMode(stop.getTransportMode());
                 request.setNote(stop.getNote());
                 stops.add(request);
+                if (primaryPlaceId == null && stop.getPlaceId() != null) {
+                    primaryPlaceId = stop.getPlaceId();
+                }
+            }
+            if (primaryPlaceId == null) {
+                throw new BusinessException(ResultCode.BAD_REQUEST.getCode(),
+                        "行程至少需要一个可定位的地点");
             }
 
             // 谱系保存：已保存活动的修订 → 走现有活动编辑接口原地更新（不建重复活动）
@@ -202,7 +219,7 @@ public class PlanSaveService {
             }
 
             CreateActivityRequest request = new CreateActivityRequest();
-            request.setPlaceId(stops.get(0).getPlaceId());
+            request.setPlaceId(primaryPlaceId);
             request.setTitle(plan.getTitle());
             request.setDescription(plan.getSummary());
             request.setCategory(plan.getCategory());

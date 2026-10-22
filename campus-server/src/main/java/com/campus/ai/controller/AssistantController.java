@@ -17,14 +17,17 @@ import com.campus.ai.plan.PlanValidator;
 import com.campus.ai.service.AgentChatListener;
 import com.campus.ai.service.AgentService;
 import com.campus.ai.service.PlanSaveService;
+import com.campus.ai.tool.AgentToolkit;
 import com.campus.ai.trace.dto.TraceTrigger;
 import com.campus.ai.trace.service.AgentTraceService;
-import com.campus.ai.travel.RouteInfo;
-import com.campus.ai.travel.TravelInfoProvider;
+import com.campus.travel.RouteInfo;
+import com.campus.travel.TravelInfoProvider;
 import com.campus.common.exception.BusinessException;
 import com.campus.common.ratelimit.RateLimiter;
 import com.campus.common.result.Result;
 import com.campus.common.result.ResultCode;
+import com.campus.map.dto.MapDetailResponse;
+import com.campus.map.service.SharedMapService;
 import com.campus.security.user.SecurityUtils;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.swagger.v3.oas.annotations.Operation;
@@ -75,6 +78,7 @@ public class AssistantController {
     private final PlanSaveService planSaveService;
     private final PlanValidator planValidator;
     private final TravelInfoProvider travelInfoProvider;
+    private final SharedMapService sharedMapService;
     private final AiConversationMapper conversationMapper;
     private final AiMessageMapper messageMapper;
     private final RateLimiter rateLimiter;
@@ -105,6 +109,8 @@ public class AssistantController {
         AiConversation conversation = requireOwned(id);
         ChatDetailResponse response = new ChatDetailResponse();
         response.setConversation(toSession(conversation));
+        response.setSourceGroupConversationId(conversation.getSourceGroupConversationId());
+        response.setSourceMapId(conversation.getSourceMapId());
         List<AiMessage> recent = messageMapper.selectRecent(id, 30);
         Collections.reverse(recent);
         response.setMessages(recent.stream().map(this::toMessageItem).toList());
@@ -137,6 +143,10 @@ public class AssistantController {
         SSE_POOL.submit(() -> {
             SecurityContextHolder.getContext().setAuthentication(authentication);
             try {
+                Long groupId = resolveGroupId(request.getReferenceMapIds(), userId);
+                if (groupId != null) {
+                    AgentToolkit.setGroupContext(userId, groupId);
+                }
                 agentService.run(conversation, request.getContent(), listener, request.getUserLocation(),
                         TraceTrigger.chat());
             } catch (Exception ex) {
@@ -145,10 +155,35 @@ public class AssistantController {
                     listener.onError("助手处理异常，请稍后重试");
                 }
             } finally {
+                AgentToolkit.clearGroupContext();
                 SecurityContextHolder.clearContext();
             }
         });
         return emitter;
+    }
+
+    /**
+     * 参考地图 → 群语境：仅当用户是该地图成员（myRole 非空）时取第一张群地图，
+     * 让个人 AI 助手也能读群成员忙闲并生成同伴冲突提示；非群地图/无权地图直接跳过。
+     */
+    private Long resolveGroupId(List<Long> referenceMapIds, Long userId) {
+        if (referenceMapIds == null || referenceMapIds.isEmpty()) {
+            return null;
+        }
+        for (Long mapId : referenceMapIds) {
+            if (mapId == null) {
+                continue;
+            }
+            try {
+                MapDetailResponse detail = sharedMapService.getMapDetailAs(mapId, userId);
+                if (detail != null && detail.getGroupId() != null && detail.getMyRole() != null) {
+                    return detail.getGroupId();
+                }
+            } catch (BusinessException ex) {
+                log.debug("参考地图 {} 无权访问，跳过群语境：{}", mapId, ex.getMessage());
+            }
+        }
+        return null;
     }
 
     @Operation(summary = "保存当前草稿为活动（幂等；body 可选带 expectedPlanVersion 防旧版本覆盖，不一致返回 409）")
