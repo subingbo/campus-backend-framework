@@ -2,7 +2,8 @@
   <el-dialog
     :model-value="modelValue"
     :title="dialogTitle"
-    :width="showVenuePicker ? '560px' : '500px'"
+    :width="showVenuePicker ? 'min(560px, 94vw)' : 'min(500px, 94vw)'"
+    class="activity-form-dialog"
     @update:model-value="(v) => emit('update:modelValue', v)"
     @closed="onDialogClosed"
   >
@@ -605,5 +606,51 @@ async function submit() {
 }
 .stops-add {
   margin-bottom: 8px;
+}
+@media (max-width: 600px) {
+  :global(.activity-form-dialog .el-form-item) {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  :global(.activity-form-dialog .el-form-item__label) {
+    width: auto !important;
+    padding: 0 0 4px;
+    line-height: 1.4;
+  }
+  :global(.activity-form-dialog .el-form-item__content) {
+    width: 100%;
+    margin-left: 0 !important;
+  }
+  :global(.activity-form-dialog .el-dialog__body) {
+    max-height: 66vh;
+    overflow: auto;
+  }
+  :global(.activity-form-dialog .el-dialog__footer) {
+    position: sticky;
+    bottom: 0;
+    background: #fff;
+    padding-top: 8px;
+  }
+  .stop-row__head {
+    flex-wrap: wrap;
+  }
+  .stop-row__place {
+    flex: 1 1 100%;
+    order: 2;
+  }
+  .stop-row__ops {
+    order: 1;
+  }
+  .stop-row__line {
+    flex-wrap: wrap;
+  }
+  .stop-row__line > * {
+    flex: 1 1 100% !important;
+    width: 100% !important;
+  }
+  .pick-map {
+    height: 180px;
+  }
 }
 </style>

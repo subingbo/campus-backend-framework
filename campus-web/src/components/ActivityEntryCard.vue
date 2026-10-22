@@ -242,4 +242,28 @@ async function cancel() {
   font-size: 12px;
   color: #888;
 }
+@media (max-width: 600px) {
+  .activity-card__head {
+    align-items: flex-start;
+  }
+  .activity-card__title {
+    white-space: normal;
+  }
+  .activity-card__actions {
+    gap: 6px;
+  }
+  .checkin-input {
+    width: 100%;
+  }
+  .activity-card__actions .el-button {
+    flex: 1 1 auto;
+  }
+  .invite-row {
+    flex-wrap: wrap;
+  }
+  .invite-select {
+    flex: 1 1 100%;
+    width: 100%;
+  }
+}
 </style>

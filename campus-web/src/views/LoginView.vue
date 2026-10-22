@@ -40,12 +40,14 @@
 
 <script setup>
 import { reactive, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { authApi } from '../api'
 import { beginSession } from '../api/authSession'
+import { safeRedirect } from '../utils/redirect'
 
 const router = useRouter()
+const route = useRoute()
 const mode = ref('login')
 const loading = ref(false)
 const form = reactive({ username: '', password: '', nickname: '' })
@@ -63,7 +65,7 @@ async function submit() {
     const tokens = await authApi.login({ username: form.username, password: form.password })
     beginSession(tokens)
     ElMessage.success('登录成功')
-    router.push('/')
+    router.replace(safeRedirect(route.query.redirect))
   } catch (e) {
     ElMessage.error(e.message)
   } finally {

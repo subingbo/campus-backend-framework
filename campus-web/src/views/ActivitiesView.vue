@@ -10,6 +10,11 @@
 
     <el-tabs v-model="tab">
       <el-tab-pane label="日历" name="calendar">
+        <!-- 手机端收起 7 列月历，改为日期选择 + 当日列表 -->
+        <div class="mobile-day-picker">
+          <el-date-picker v-model="calendarDate" type="date" :clearable="false" placeholder="选择日期" />
+          <span class="hint">{{ selectedDayLabel }}</span>
+        </div>
         <el-calendar v-model="calendarDate" class="activity-calendar">
           <template #date-cell="{ data }">
             <div class="cal-cell" :class="{ 'cal-cell--today': data.isSelected }">
@@ -199,7 +204,7 @@
     </el-tabs>
   </div>
 
-  <el-dialog v-model="detailDialog" :title="detailActivity?.title || '活动详情'" width="440px">
+  <el-dialog v-model="detailDialog" :title="detailActivity?.title || '活动详情'" width="min(440px, 94vw)">
     <div v-if="detailActivity" class="detail-body">
       <div class="row row--flat">
         <div class="row__main">
@@ -252,7 +257,7 @@
     </template>
   </el-dialog>
 
-  <el-dialog v-model="mapPickDialog" title="该地点出现在多个地图" width="360px">
+  <el-dialog v-model="mapPickDialog" title="该地点出现在多个地图" width="min(360px, 92vw)">
     <el-radio-group v-model="mapPickChoice" class="map-pick">
       <el-radio v-for="m in placeMaps" :key="m.id" :value="m.id">
         {{ m.name }}（{{ roleText(m.myRole) }}）
@@ -828,6 +833,9 @@ onUnmounted(() => {
   gap: 10px;
   padding: 28px 0;
 }
+.mobile-day-picker {
+  display: none;
+}
 @media (max-width: 600px) {
   .page {
     padding: 0 16px 40px;
@@ -837,6 +845,23 @@ onUnmounted(() => {
   }
   .hero h1 {
     font-size: 24px;
+  }
+  .activity-calendar {
+    display: none;
+  }
+  .mobile-day-picker {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 8px;
+  }
+  .row {
+    flex-wrap: wrap;
+  }
+  .row__actions {
+    width: 100%;
+    justify-content: flex-end;
+    flex-wrap: wrap;
   }
 }
 

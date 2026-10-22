@@ -629,4 +629,29 @@ function formatTime(value) {
 .chat-panel__ai-btn {
   flex-shrink: 0;
 }
+@media (max-width: 600px) {
+  .chat-msg {
+    max-width: 92%;
+  }
+  .chat-panel__input {
+    flex-wrap: wrap;
+    gap: 6px;
+    padding-bottom: env(safe-area-inset-bottom, 0);
+  }
+  .chat-panel__ai-btn {
+    flex: 1 1 100%;
+  }
+  .chat-panel__input .el-input {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+  .chat-panel__agent-status {
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+  .chat-panel__offline,
+  .chat-panel__pending {
+    white-space: normal;
+  }
+}
 </style>

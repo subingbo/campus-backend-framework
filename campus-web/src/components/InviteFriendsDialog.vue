@@ -2,7 +2,8 @@
   <el-dialog
     :model-value="modelValue"
     :title="`邀请好友加入「${activity?.title || '活动'}」`"
-    width="520px"
+    width="min(520px, 94vw)"
+    class="invite-friends-dialog"
     :close-on-click-modal="false"
     @update:model-value="(value) => emit('update:modelValue', value)"
   >
@@ -153,4 +154,22 @@ function goFriends() {
 .invite-row { display: flex; align-items: center; margin-right: 0; }
 .invite-row__name { margin-right: 8px; }
 .empty { margin: 8px 0; }
+@media (max-width: 600px) {
+  :global(.invite-friends-dialog .el-dialog__footer) {
+    position: sticky;
+    bottom: 0;
+    background: #fff;
+    padding-top: 8px;
+  }
+  .invite-list {
+    max-height: 52vh;
+  }
+  .invite-row {
+    align-items: flex-start;
+  }
+  .invite-row__name {
+    flex: 1 1 100%;
+    margin-right: 0;
+  }
+}
 </style>

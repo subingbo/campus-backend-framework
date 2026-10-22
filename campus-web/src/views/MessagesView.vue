@@ -489,5 +489,12 @@ onUnmounted(() => {
   .last-msg {
     max-width: 100%;
   }
+  .toolbar {
+    flex-wrap: wrap;
+  }
+  :deep(.el-tabs__item) {
+    padding: 0 10px;
+    font-size: 13px;
+  }
 }
 </style>

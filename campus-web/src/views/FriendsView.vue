@@ -64,8 +64,8 @@
     </div>
   </div>
 
-  <el-dialog v-model="chatOpen" :title="chatPeer" width="420px">
-    <ChatPanel v-if="activeConversation" :conversation="activeConversation" style="height: 380px" />
+  <el-dialog v-model="chatOpen" :title="chatPeer" width="min(420px, 94vw)">
+    <ChatPanel v-if="activeConversation" :conversation="activeConversation" style="height: min(380px, 58vh)" />
   </el-dialog>
 </template>
 

@@ -3,7 +3,7 @@
     <header class="app-topbar">
       <router-link to="/" class="app-topbar__brand">Campus Map</router-link>
       <nav class="app-topbar__nav">
-        <router-link to="/" class="nav-item" :class="{ active: isActive('/') }">我的地图</router-link>
+        <router-link to="/" class="nav-item" :class="{ active: isActive('/') }">地图</router-link>
         <span class="nav-badge-wrap">
           <router-link to="/messages" class="nav-item" :class="{ active: isActive('/messages') }">
             消息
@@ -12,13 +12,24 @@
             {{ summary.total > 99 ? '99+' : summary.total }}
           </span>
         </span>
-        <router-link to="/friends" class="nav-item" :class="{ active: isActive('/friends') }">好友</router-link>
-        <router-link to="/activities" class="nav-item" :class="{ active: isActive('/activities') }">活动日程</router-link>
+        <router-link to="/activities" class="nav-item" :class="{ active: isActive('/activities') }">日程</router-link>
         <router-link to="/assistant" class="nav-item" :class="{ active: isActive('/assistant') }">AI 助手</router-link>
-        <router-link to="/traces" class="nav-item" :class="{ active: isActive('/traces') }">执行追踪</router-link>
       </nav>
       <div class="app-topbar__right">
-        <el-button text size="small" @click="logout">退出</el-button>
+        <el-dropdown trigger="click" @command="onAccountCommand">
+          <button type="button" class="account-trigger">
+            <span class="account-avatar">{{ avatarText }}</span>
+            <span class="account-name">{{ displayName }}</span>
+          </button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item disabled>@{{ username || 'account' }}</el-dropdown-item>
+              <el-dropdown-item command="friends">好友</el-dropdown-item>
+              <el-dropdown-item command="developer">开发者视图</el-dropdown-item>
+              <el-dropdown-item command="logout" divided>退出</el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
       </div>
     </header>
     <main class="app-shell__main">
@@ -28,21 +39,50 @@
 </template>
 
 <script setup>
-import { onMounted, onUnmounted } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { clearSession } from '../api/authSession'
+import { userApi } from '../api'
+import { clearSession, getAccessClaims } from '../api/authSession'
 import { clearOutboxForCurrentUser, connect, disconnect, on } from '../composables/useChatSocket'
 import { useMessageSummary } from '../composables/useMessageSummary'
 
 const route = useRoute()
 const router = useRouter()
 const { summary, refresh: refreshSummary, refreshSoon, reset: resetSummary } = useMessageSummary()
+const profile = ref({ username: '', nickname: '' })
+const username = computed(() => profile.value.username)
+const displayName = computed(() => profile.value.nickname || profile.value.username || '账号')
+const avatarText = computed(() => (displayName.value || '账').slice(0, 1).toUpperCase())
 let removers = []
 
 function isActive(to) {
   if (to === '/') return route.path === '/'
   return route.path.startsWith(to)
+}
+
+async function loadProfile() {
+  const claims = getAccessClaims()
+  profile.value = { username: claims?.username || '', nickname: '' }
+  try {
+    const me = await userApi.me()
+    profile.value = {
+      username: me.username || profile.value.username,
+      nickname: me.nickname || ''
+    }
+  } catch {
+    // 资料加载失败只用 token 里的用户名兜底，不阻塞导航
+  }
+}
+
+function onAccountCommand(command) {
+  if (command === 'friends') {
+    router.push('/friends')
+  } else if (command === 'developer') {
+    router.push('/traces')
+  } else if (command === 'logout') {
+    logout()
+  }
 }
 
 function logout() {
@@ -56,6 +96,7 @@ function logout() {
 onMounted(() => {
   connect()
   refreshSummary()
+  loadProfile()
   removers = [
     // 持久通知/未读变化：以服务端 summary 为准刷新角标，避免前端累加导致重复计数
     on('NOTIFICATION', () => refreshSoon()),
@@ -141,6 +182,37 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
 }
+.account-trigger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: rgba(0, 0, 0, 0.7);
+  cursor: pointer;
+}
+.account-trigger:hover {
+  background: rgba(31, 56, 88, 0.06);
+}
+.account-avatar {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--el-color-primary);
+  color: #fff;
+  font-size: 12px;
+}
+.account-name {
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
 /* 主区接管滚动：页面与工作台都按 100% 高度自适应 */
 .app-shell__main {
   flex: 1;
@@ -154,6 +226,9 @@ onUnmounted(() => {
   }
   .app-topbar__nav {
     gap: 14px;
+  }
+  .account-name {
+    display: none;
   }
 }
 </style>

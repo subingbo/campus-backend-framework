@@ -6,6 +6,10 @@ export const authApi = {
   register: (payload) => http.post('/auth/register', payload)
 }
 
+export const userApi = {
+  me: () => http.get('/users/me')
+}
+
 export const mapApi = {
   list: () => http.get('/maps'),
   detail: (id) => http.get(`/maps/${id}`),

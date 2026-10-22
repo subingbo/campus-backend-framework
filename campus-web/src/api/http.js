@@ -59,7 +59,9 @@ function forceLogin() {
   clearOutboxForCurrentUser()
   clearSession()
   if (window.location.pathname !== '/login') {
-    window.location.href = '/login'
+    // 刷新失败被动登录：带上当前目标，登录后回到原活动/群聊/方案
+    const target = `${window.location.pathname}${window.location.search}${window.location.hash}`
+    window.location.href = `/login?redirect=${encodeURIComponent(target)}`
   }
 }
 
