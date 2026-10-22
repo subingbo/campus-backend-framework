@@ -3,7 +3,7 @@
 > 一键造数：`node tools/seed-demo.mjs`（按 `demoKey` 更新未来活动/日程，不重复生成）  
 > 只检查不写入：`node tools/seed-demo.mjs --verify-only`  
 > 重置预览：`node tools/seed-demo.mjs --reset-demo`（默认 dry-run，只列出 demoKey 记录）  
-> 执行重置并重造：`node tools/seed-demo.mjs --reset-demo --apply`  
+> 执行重置并重造：`node tools/seed-demo.mjs --reset-demo --apply`（取消活动会按正常业务产生取消通知）  
 > 导出账号/地图/日程总表：`node tools/demo-report.mjs --verify` / `--out docs/演示账号与数据总表.md`  
 > 场景校验：`node tools/verify-round3-scenarios.mjs`（Map A 基线 + Map B 临时撤销/恢复）  
 > 前置：MySQL/Redis 与后端 `http://127.0.0.1:8080` 已启动。  
