@@ -1,0 +1,20 @@
+sequenceDiagram
+  participant BIZ as 业务事务
+  participant N as NotificationService
+  participant DB as notification 表
+  participant AC as AfterCommit
+  participant WS as WebSocket
+  participant UI as 消息中心
+  BIZ->>N: create(dedupeKey)
+  N->>DB: 单条 INSERT
+  alt 唯一键冲突
+    DB-->>N: DuplicateKey
+    N-->>BIZ: created=false（不推送）
+  else 首次插入
+    DB-->>N: id
+    N->>AC: register afterCommit
+    BIZ-->>AC: COMMIT
+    AC->>WS: NOTIFICATION（尽力投递）
+    AC->>UI: 刷新角标
+  end
+  Note over DB,UI: 离线/推送失败时，登录后从收件箱查询；WS 不重放

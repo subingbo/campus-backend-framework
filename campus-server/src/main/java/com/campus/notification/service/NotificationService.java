@@ -63,7 +63,7 @@ public class NotificationService {
         notification.setContent(content);
         notification.setTargetType(targetType);
         notification.setTargetId(targetId);
-        notification.setPayloadJson(serializePayload(payload));
+        notification.setPayloadJson(serializePayload(NotificationPayloadPolicy.sanitize(payload)));
         notification.setDedupeKey(normalizedKey);
         try {
             notificationMapper.insert(notification);

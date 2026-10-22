@@ -189,14 +189,14 @@ public class GroupAgentService {
             return;
         }
 
-        String summary = finalText.toString().trim();
+        PlanDto plan = planHolder.get("plan");
+        String summary = GroupAgentPayloadFilter.filterText(finalText.toString().trim(), plan);
         String error = run.getError();
         if (!StringUtils.hasText(summary)) {
             summary = StringUtils.hasText(error)
                     ? "AI 处理失败：" + error
                     : "AI 暂时无法完成这个规划，请换个说法或在 /assistant 里重试。";
         }
-        PlanDto plan = planHolder.get("plan");
         if (plan != null && !StringUtils.hasText(error)) {
             AiConversation current = aiConversationMapper.selectById(conversation.getId());
             int version = current != null && current.getPlanVersion() != null
@@ -333,14 +333,15 @@ public class GroupAgentService {
     /** 群聊实时地理帧（AGENT_GEO）：只广播不落库；群聊历史回放不在本期范围 */
     private void broadcastGeo(GroupAgentRunRegistry.Run run, Long conversationId,
                               java.util.List<com.campus.ai.dto.GeoEvent> events) {
-        if (events == null || events.isEmpty()) {
+        List<com.campus.ai.dto.GeoEvent> safeEvents = GroupAgentPayloadFilter.filterGeoEvents(events);
+        if (safeEvents.isEmpty()) {
             return;
         }
         try {
             Map<String, Object> frame = new LinkedHashMap<>();
             frame.put("conversationId", conversationId);
             frame.put("runId", run.getRunId());
-            frame.put("events", events);
+            frame.put("events", safeEvents);
             broadcastChatMessage(conversationId, FRAME_TYPE_GEO, frame);
         } catch (Exception ex) {
             log.warn("群地理帧广播失败 conversation={}：{}", conversationId, ex.toString());

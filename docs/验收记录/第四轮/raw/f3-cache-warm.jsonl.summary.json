@@ -1,0 +1,146 @@
+{
+  "generatedAt": "2026-10-22T14:27:09.671Z",
+  "base": "http://localhost:8080/api",
+  "model": "qwen-plus",
+  "sunday": "2026-10-25T14:00:00",
+  "repeat": 1,
+  "summary": {
+    "total": 1,
+    "hard": 1,
+    "passed": 1,
+    "passRate": 100,
+    "durationP50": 22398,
+    "durationP95": 22398,
+    "tokensMedian": 12230,
+    "tokensTotal": 12230,
+    "toolCallsMedian": 1
+  },
+  "results": [
+    {
+      "scenarioId": "S1",
+      "scenarioTitle": "Map A 两站步行（全员授权）",
+      "repeat": 1,
+      "asker": "demo01",
+      "mapId": 51,
+      "elapsedMs": 22398,
+      "geoCount": 0,
+      "statuses": [
+        "RUNNING",
+        "RUNNING",
+        "RUNNING",
+        "RUNNING",
+        "DONE"
+      ],
+      "timedOut": false,
+      "error": "",
+      "pass": true,
+      "soft": false,
+      "score": 100,
+      "checks": [
+        {
+          "name": "draft-present",
+          "pass": true,
+          "detail": null
+        },
+        {
+          "name": "constraint-status",
+          "pass": true,
+          "detail": "FEASIBLE != FEASIBLE"
+        },
+        {
+          "name": "stop-count",
+          "pass": true,
+          "detail": "2 < 2"
+        },
+        {
+          "name": "group-map-source",
+          "pass": true,
+          "detail": "sourceMapIds=[51]"
+        },
+        {
+          "name": "amap-route",
+          "pass": true,
+          "detail": "routeConfidence=AMAP"
+        },
+        {
+          "name": "all-members-known",
+          "pass": true,
+          "detail": null
+        },
+        {
+          "name": "travel-total-consistency",
+          "pass": true,
+          "detail": "diff=0"
+        },
+        {
+          "name": "trace-complete",
+          "pass": true,
+          "detail": null
+        }
+      ],
+      "metrics": {
+        "rounds": 2,
+        "outcome": "DRAFT",
+        "totalMs": 21673,
+        "hasDraft": true,
+        "stopCause": "draft",
+        "totalTokens": 12230,
+        "toolCallCount": 1,
+        "firstVisibleMs": 72,
+        "repeatHitCount": 0,
+        "routeCallCount": 0,
+        "routeCacheHitCount": 1,
+        "routeCacheMissCount": 0,
+        "routeEstimatedCount": 0
+      },
+      "trace": {
+        "sessionId": "375ae334-08cc-44bd-ad1d-c2631e2e05b1",
+        "complete": true,
+        "pendingEvents": 0,
+        "totalTokens": 12230,
+        "toolCallCount": 1,
+        "eventCount": 19,
+        "durationMs": 21673,
+        "metrics": {
+          "rounds": 2,
+          "outcome": "DRAFT",
+          "totalMs": 21673,
+          "hasDraft": true,
+          "stopCause": "draft",
+          "totalTokens": 12230,
+          "toolCallCount": 1,
+          "firstVisibleMs": 72,
+          "repeatHitCount": 0,
+          "routeCallCount": 0,
+          "routeCacheHitCount": 1,
+          "routeCacheMissCount": 0,
+          "routeEstimatedCount": 0
+        }
+      },
+      "plan": {
+        "constraintStatus": "FEASIBLE",
+        "stopCount": 2,
+        "sources": [
+          "GROUP_MAP"
+        ],
+        "sourceMapIds": [
+          51
+        ],
+        "groupId": 51,
+        "routeConfidence": "AMAP",
+        "totalTravelMinutes": 5,
+        "memberStatuses": [
+          "KNOWN",
+          "KNOWN",
+          "KNOWN",
+          "KNOWN",
+          "KNOWN",
+          "KNOWN",
+          "KNOWN"
+        ],
+        "conflictCount": 0,
+        "blockingCount": 0
+      }
+    }
+  ]
+}

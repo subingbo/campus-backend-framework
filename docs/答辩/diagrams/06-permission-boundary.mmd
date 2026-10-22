@@ -1,0 +1,9 @@
+flowchart TB
+  PUB["公开地图 / 公开地点"] --> ALL["所有登录用户"]
+  MEM["MEMBERS 地图"] --> MM["map_member（OWNER/EDITOR/VIEWER）"]
+  GRP["群规划摘要"] --> GM["群成员：GroupPlanPublicView 白名单"]
+  GRP --> OWN["发起人：完整对话 / 私有站点 / handoff"]
+  BUSY["FREE_BUSY"] --> KNOWN["授权成员：仅时段"]
+  BUSY --> UNKNOWN["未授权：UNKNOWN，不视为有空"]
+  TRACE["Trace"] --> SELF["仅本人：list/detail/events/export"]
+  ACT["活动签到码"] --> CREATOR["仅创建者可见"]

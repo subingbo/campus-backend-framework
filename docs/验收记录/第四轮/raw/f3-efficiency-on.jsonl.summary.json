@@ -1,0 +1,427 @@
+{
+  "generatedAt": "2026-10-22T14:25:28.946Z",
+  "base": "http://localhost:8080/api",
+  "model": "qwen-plus",
+  "sunday": "2026-10-25T14:00:00",
+  "repeat": 3,
+  "summary": {
+    "total": 3,
+    "hard": 3,
+    "passed": 3,
+    "passRate": 100,
+    "durationP50": 30454,
+    "durationP95": 40087,
+    "tokensMedian": 31325,
+    "tokensTotal": 88694,
+    "toolCallsMedian": 5
+  },
+  "results": [
+    {
+      "scenarioId": "S1",
+      "scenarioTitle": "Map A 两站步行（全员授权）",
+      "repeat": 1,
+      "asker": "demo01",
+      "mapId": 51,
+      "elapsedMs": 30454,
+      "geoCount": 2,
+      "statuses": [
+        "RUNNING",
+        "RUNNING",
+        "RUNNING",
+        "TOOL",
+        "RUNNING",
+        "TOOL",
+        "RUNNING",
+        "TOOL",
+        "RUNNING",
+        "RUNNING",
+        "TOOL",
+        "RUNNING",
+        "RUNNING",
+        "RUNNING",
+        "RUNNING",
+        "RUNNING",
+        "DONE"
+      ],
+      "timedOut": false,
+      "error": "",
+      "pass": true,
+      "soft": false,
+      "score": 100,
+      "checks": [
+        {
+          "name": "draft-present",
+          "pass": true,
+          "detail": null
+        },
+        {
+          "name": "constraint-status",
+          "pass": true,
+          "detail": "FEASIBLE != FEASIBLE"
+        },
+        {
+          "name": "stop-count",
+          "pass": true,
+          "detail": "2 < 2"
+        },
+        {
+          "name": "group-map-source",
+          "pass": true,
+          "detail": "sourceMapIds=[51]"
+        },
+        {
+          "name": "amap-route",
+          "pass": true,
+          "detail": "routeConfidence=AMAP"
+        },
+        {
+          "name": "all-members-known",
+          "pass": true,
+          "detail": null
+        },
+        {
+          "name": "travel-total-consistency",
+          "pass": true,
+          "detail": "diff=0"
+        },
+        {
+          "name": "trace-complete",
+          "pass": true,
+          "detail": null
+        }
+      ],
+      "metrics": {
+        "rounds": 5,
+        "outcome": "DRAFT",
+        "totalMs": 29642,
+        "hasDraft": true,
+        "stopCause": "draft",
+        "totalTokens": 31325,
+        "toolCallCount": 6,
+        "firstVisibleMs": 86,
+        "repeatHitCount": 0,
+        "routeCallCount": 1,
+        "routeCacheHitCount": 3,
+        "routeCacheMissCount": 0,
+        "routeEstimatedCount": 0
+      },
+      "trace": {
+        "sessionId": "a2f72b12-d057-4980-824e-29f616de3634",
+        "complete": true,
+        "pendingEvents": 0,
+        "totalTokens": 31325,
+        "toolCallCount": 6,
+        "eventCount": 48,
+        "durationMs": 29643,
+        "metrics": {
+          "rounds": 5,
+          "outcome": "DRAFT",
+          "totalMs": 29642,
+          "hasDraft": true,
+          "stopCause": "draft",
+          "totalTokens": 31325,
+          "toolCallCount": 6,
+          "firstVisibleMs": 86,
+          "repeatHitCount": 0,
+          "routeCallCount": 1,
+          "routeCacheHitCount": 3,
+          "routeCacheMissCount": 0,
+          "routeEstimatedCount": 0
+        }
+      },
+      "plan": {
+        "constraintStatus": "FEASIBLE",
+        "stopCount": 2,
+        "sources": [
+          "GROUP_MAP"
+        ],
+        "sourceMapIds": [
+          51
+        ],
+        "groupId": 51,
+        "routeConfidence": "AMAP",
+        "totalTravelMinutes": 4,
+        "memberStatuses": [
+          "KNOWN",
+          "KNOWN",
+          "KNOWN",
+          "KNOWN",
+          "KNOWN",
+          "KNOWN",
+          "KNOWN"
+        ],
+        "conflictCount": 0,
+        "blockingCount": 0
+      }
+    },
+    {
+      "scenarioId": "S1",
+      "scenarioTitle": "Map A 两站步行（全员授权）",
+      "repeat": 2,
+      "asker": "demo01",
+      "mapId": 51,
+      "elapsedMs": 40087,
+      "geoCount": 2,
+      "statuses": [
+        "RUNNING",
+        "RUNNING",
+        "RUNNING",
+        "TOOL",
+        "RUNNING",
+        "RUNNING",
+        "TOOL",
+        "RUNNING",
+        "RUNNING",
+        "TOOL",
+        "RUNNING",
+        "RUNNING",
+        "TOOL",
+        "RUNNING",
+        "RUNNING",
+        "RUNNING",
+        "DONE"
+      ],
+      "timedOut": false,
+      "error": "",
+      "pass": true,
+      "soft": false,
+      "score": 100,
+      "checks": [
+        {
+          "name": "draft-present",
+          "pass": true,
+          "detail": null
+        },
+        {
+          "name": "constraint-status",
+          "pass": true,
+          "detail": "FEASIBLE != FEASIBLE"
+        },
+        {
+          "name": "stop-count",
+          "pass": true,
+          "detail": "2 < 2"
+        },
+        {
+          "name": "group-map-source",
+          "pass": true,
+          "detail": "sourceMapIds=[51]"
+        },
+        {
+          "name": "amap-route",
+          "pass": true,
+          "detail": "routeConfidence=AMAP"
+        },
+        {
+          "name": "all-members-known",
+          "pass": true,
+          "detail": null
+        },
+        {
+          "name": "travel-total-consistency",
+          "pass": true,
+          "detail": "diff=0"
+        },
+        {
+          "name": "trace-complete",
+          "pass": true,
+          "detail": null
+        }
+      ],
+      "metrics": {
+        "rounds": 6,
+        "outcome": "DRAFT",
+        "totalMs": 39369,
+        "hasDraft": true,
+        "stopCause": "draft",
+        "totalTokens": 33292,
+        "toolCallCount": 5,
+        "firstVisibleMs": 59,
+        "repeatHitCount": 0,
+        "routeCallCount": 1,
+        "routeCacheHitCount": 2,
+        "routeCacheMissCount": 0,
+        "routeEstimatedCount": 0
+      },
+      "trace": {
+        "sessionId": "f223ed26-bdcb-47bd-9263-96dd96da8ada",
+        "complete": true,
+        "pendingEvents": 0,
+        "totalTokens": 33292,
+        "toolCallCount": 5,
+        "eventCount": 49,
+        "durationMs": 39370,
+        "metrics": {
+          "rounds": 6,
+          "outcome": "DRAFT",
+          "totalMs": 39369,
+          "hasDraft": true,
+          "stopCause": "draft",
+          "totalTokens": 33292,
+          "toolCallCount": 5,
+          "firstVisibleMs": 59,
+          "repeatHitCount": 0,
+          "routeCallCount": 1,
+          "routeCacheHitCount": 2,
+          "routeCacheMissCount": 0,
+          "routeEstimatedCount": 0
+        }
+      },
+      "plan": {
+        "constraintStatus": "FEASIBLE",
+        "stopCount": 2,
+        "sources": [
+          "GROUP_MAP"
+        ],
+        "sourceMapIds": [
+          51
+        ],
+        "groupId": 51,
+        "routeConfidence": "AMAP",
+        "totalTravelMinutes": 5,
+        "memberStatuses": [
+          "KNOWN",
+          "KNOWN",
+          "KNOWN",
+          "KNOWN",
+          "KNOWN",
+          "KNOWN",
+          "KNOWN"
+        ],
+        "conflictCount": 0,
+        "blockingCount": 0
+      }
+    },
+    {
+      "scenarioId": "S1",
+      "scenarioTitle": "Map A 两站步行（全员授权）",
+      "repeat": 3,
+      "asker": "demo01",
+      "mapId": 51,
+      "elapsedMs": 26887,
+      "geoCount": 0,
+      "statuses": [
+        "RUNNING",
+        "RUNNING",
+        "RUNNING",
+        "TOOL",
+        "RUNNING",
+        "RUNNING",
+        "RUNNING",
+        "RUNNING",
+        "RUNNING",
+        "DONE"
+      ],
+      "timedOut": false,
+      "error": "",
+      "pass": true,
+      "soft": false,
+      "score": 100,
+      "checks": [
+        {
+          "name": "draft-present",
+          "pass": true,
+          "detail": null
+        },
+        {
+          "name": "constraint-status",
+          "pass": true,
+          "detail": "FEASIBLE != FEASIBLE"
+        },
+        {
+          "name": "stop-count",
+          "pass": true,
+          "detail": "2 < 2"
+        },
+        {
+          "name": "group-map-source",
+          "pass": true,
+          "detail": "sourceMapIds=[51]"
+        },
+        {
+          "name": "amap-route",
+          "pass": true,
+          "detail": "routeConfidence=AMAP"
+        },
+        {
+          "name": "all-members-known",
+          "pass": true,
+          "detail": null
+        },
+        {
+          "name": "travel-total-consistency",
+          "pass": true,
+          "detail": "diff=0"
+        },
+        {
+          "name": "trace-complete",
+          "pass": true,
+          "detail": null
+        }
+      ],
+      "metrics": {
+        "rounds": 4,
+        "outcome": "DRAFT",
+        "totalMs": 26191,
+        "hasDraft": true,
+        "stopCause": "draft",
+        "totalTokens": 24077,
+        "toolCallCount": 3,
+        "firstVisibleMs": 45,
+        "repeatHitCount": 0,
+        "routeCallCount": 1,
+        "routeCacheHitCount": 3,
+        "routeCacheMissCount": 0,
+        "routeEstimatedCount": 0
+      },
+      "trace": {
+        "sessionId": "3b019015-d35e-4476-bb2d-976595635fd6",
+        "complete": true,
+        "pendingEvents": 0,
+        "totalTokens": 24077,
+        "toolCallCount": 3,
+        "eventCount": 33,
+        "durationMs": 26192,
+        "metrics": {
+          "rounds": 4,
+          "outcome": "DRAFT",
+          "totalMs": 26191,
+          "hasDraft": true,
+          "stopCause": "draft",
+          "totalTokens": 24077,
+          "toolCallCount": 3,
+          "firstVisibleMs": 45,
+          "repeatHitCount": 0,
+          "routeCallCount": 1,
+          "routeCacheHitCount": 3,
+          "routeCacheMissCount": 0,
+          "routeEstimatedCount": 0
+        }
+      },
+      "plan": {
+        "constraintStatus": "FEASIBLE",
+        "stopCount": 2,
+        "sources": [
+          "GROUP_MAP"
+        ],
+        "sourceMapIds": [
+          51
+        ],
+        "groupId": 51,
+        "routeConfidence": "AMAP",
+        "totalTravelMinutes": 5,
+        "memberStatuses": [
+          "KNOWN",
+          "KNOWN",
+          "KNOWN",
+          "KNOWN",
+          "KNOWN",
+          "KNOWN",
+          "KNOWN"
+        ],
+        "conflictCount": 0,
+        "blockingCount": 0
+      }
+    }
+  ]
+}

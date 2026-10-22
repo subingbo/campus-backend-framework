@@ -1,0 +1,19 @@
+erDiagram
+  SYS_USER ||--o{ CAMPUS_GROUP : owns
+  CAMPUS_GROUP ||--|| SHARED_MAP : has
+  SHARED_MAP ||--o{ MAP_MEMBER : members
+  SHARED_MAP ||--o{ MAP_PLACE : contains
+  PLACE ||--o{ MAP_PLACE : collected
+  SHARED_MAP ||--o{ CONVERSATION : group_chat
+  CONVERSATION ||--o{ MESSAGE : contains
+  SYS_USER ||--o{ ACTIVITY : creates
+  ACTIVITY ||--o{ ACTIVITY_MEMBER : members
+  ACTIVITY ||--o{ ACTIVITY_STOP : stops
+  SYS_USER ||--o{ PERSONAL_SCHEDULE : owns
+  SYS_USER ||--o{ SCHEDULE_SHARE_PERMISSION : grants
+  SYS_USER ||--o{ AI_CONVERSATION : owns
+  AI_CONVERSATION ||--o{ AI_MESSAGE : contains
+  AI_CONVERSATION ||--o{ GROUP_AGENT_PLAN : snapshot
+  SYS_USER ||--o{ NOTIFICATION : receives
+  AI_CONVERSATION ||--o{ AGENT_TRACE_SESSION : traced
+  AGENT_TRACE_SESSION ||--o{ AGENT_TRACE_EVENT : events

@@ -1,0 +1,9 @@
+flowchart LR
+  I["意图 + 候选地点"] --> B["群体忙闲<br/>FREE_BUSY / UNKNOWN"]
+  B --> F["FreeWindowSolver<br/>区间合并 / 补集 / 时长筛选"]
+  F --> P["SpatiotemporalPlanner<br/>排列剪枝 / 停留 / 缓冲"]
+  P --> R["高德真实路线<br/>TravelInfoProvider"]
+  R --> S["Top-3 方案<br/>score / routeConfidence"]
+  S --> V["PlanValidator<br/>时间 / 交通三态 / 权限"]
+  V -->|通过| D["可保存草稿"]
+  V -->|失败| E["可执行错误提示"]

@@ -81,6 +81,7 @@ node tools/verify-round3-scenarios.mjs # Map A 基线 + Map B 临时撤销/恢�
 - 活动 `description` / 日程 `note` 带 `[DEMO:...]`：重跑按 key 更新未来记录，已开始/已结束/已签到不改写；`--reset-demo` 只处理这些种子记录。
 - 脚本非破坏性、可重复执行；不会删除现有用户/地图，也不会自动触发 `@AI`。
 - 详细账号、地图分配和演示顺序见 [docs/demo-accounts.md](docs/demo-accounts.md)；完整数据表见 [docs/演示账号与数据总表.md](docs/演示账号与数据总表.md)；启动/切号/调试见 [docs/调试指南.md](docs/调试指南.md)。
+- 生产部署、8 个迁移、时区、单实例边界与部署后 smoke 见 [docs/部署与运维.md](docs/部署与运维.md)。
 
 ## 核心接口（脚手架基础设施 · campus-framework）
 
@@ -119,12 +120,12 @@ LLM 不参与写日志；Trace 写入失败不影响主业务。
 | GET  | `/api/agent/traces/{sessionId}/events` | 事件分页（按 seq 升序，可按 type/callId/step 筛选；`afterSeq` 增量追加） |
 | GET  | `/api/agent/traces/{sessionId}/export?format=jsonl` | 流式导出 JSONL |
 
-- 前端入口：登录后顶栏「执行追踪」→ `/traces`（会话列表 + Turn/Step 时间线/并行工具泳道 +
+- 前端入口：右上角账号菜单「开发者视图」→ `/traces`（会话列表 + Turn/Step 时间线/并行工具泳道 +
   耗时 p50/p95 指标卡 + 草稿版本 diff + 自动刷新/终态尾部补拉 + 成本估算 + JSONL 下载；路由懒加载）。
 - 仅本人可读；非本人/不存在 404。
 - 默认保存脱敏摘要：不保存聊天原文、地点名/地址/备注、精确经纬度/轨迹、JWT/API Key。
 - 成本按 `campus.agent.trace.pricing` 读取时估算；旧 Trace/混合模型/缺 usage 显示“不可估算”。
-- 部署前先执行迁移：`campus-server/src/main/resources/db/migration/20261019_01__create_agent_trace.sql`、`20261022_01__add_message_client_msg_id.sql`（聊天幂等列）、`20261022_02__add_group_agent_plan.sql`（群规划快照）、`20261023_01__create_notification.sql`（消息中心收件箱）。启动时 `SchemaPreconditionChecker` 会校验这四项前置结构，缺失即 fail-fast 并给出迁移路径。
+- 部署前按顺序执行 `campus-server/src/main/resources/db/migration/` 下 8 个脚本（多站行程、AI 表、个人日程、AI 地图回放、Trace、聊天幂等、群规划快照、通知收件箱）。启动时 `SchemaPreconditionChecker` 会校验这些前置表/列/索引，缺失即 fail-fast 并给出迁移路径；完整步骤见 [docs/部署与运维.md](docs/部署与运维.md)。
 - 详细说明：[docs/agent-trace/README.md](docs/agent-trace/README.md)、
   [事件协议](docs/agent-trace/events-v1.md)、[隐私](docs/agent-trace/privacy.md)、
   [API](docs/agent-trace/api.md)、[脱敏样例](docs/agent-trace/sample-session.jsonl)。
@@ -139,13 +140,19 @@ LLM 不参与写日志；Trace 写入失败不影响主业务。
 - 通知 `payload_json` 只存路由所需最小字段（activityId/inviteId/fromUserId 等），不写签到码、私人日程标题或私有坐标；点击后由目标业务接口重新校验权限。
 - 部署前执行 `20261023_01__create_notification.sql`；`SchemaPreconditionChecker` 会校验通知表与唯一键。
 
+## 第四轮 Agent 验收与答辩材料
+
+- 真实 qwen-plus 评测：`node tools/eval/run.mjs --repeat 3 --save`；结果见 [第四轮_Agent验收.md](docs/验收记录/第四轮_Agent验收.md) 与 [第四轮_评测报告.md](docs/验收记录/第四轮_评测报告.md)。
+- 答辩材料（**不含视频**）：[docs/答辩/00-README.md](docs/答辩/00-README.md)；含创新点、架构图（`.mmd`/`.svg`）、权限边界、可靠性、量化证据、答辩页大纲和现场 Checklist。
+- 部署与运维：[docs/部署与运维.md](docs/部署与运维.md)。
+
 ## 验收用例（自动化）
 
 ```bash
 mvn test
 ```
 
-四个验收用例都在 `campus-server` 模块（`mvn -pl campus-server -am test` 等价）。`InfrastructureAcceptanceTest`（脚手架侧 401/403/刷新/登出/限流）+ `MvpBusinessAcceptanceTest`、`SharedMapAcceptanceTest`、`EnhancementAcceptanceTest`（业务侧），均使用 Testcontainers 启动 MySQL 与 Redis（需本机 Docker）。
+当前基线为 **185 个后端测试**（第三轮 168 + 第四轮隐私/时区/消融/Trace 用例；`mvn -pl campus-server -am test`，需本机 Docker，Testcontainers 启动 MySQL/Redis）和 **46 个前端 node 测试**（`npm --prefix campus-web test`）。测试覆盖认证/地图/活动/日程/AI/Trace/消息中心/并发与隐私边界；完整命令与最新结果见 [docs/验收记录/第三轮验收.md](docs/验收记录/第三轮验收.md) 和 [docs/验收记录/第四轮_Agent验收.md](docs/验收记录/第四轮_Agent验收.md)。
 
 ## 项目结构
 
@@ -291,7 +298,7 @@ docker compose exec -T mysql mysql -ucampus -pcampus123 campus < campus-server/s
 
 - 全新初始化：`schema.sql` 已含全部表。
 - 存量库：执行 `db/migration/20261016_01__create_personal_schedule.sql`（个人日程+授权表）；此前若未执行 20261015 两个迁移，一并执行；2026-10-22 起还需执行 `20261022_01__add_message_client_msg_id.sql`（聊天幂等）与 `20261022_02__add_group_agent_plan.sql`（群规划快照）；2026-10-23 起加执行 `20261023_01__create_notification.sql`（消息中心收件箱）。
-- 演示脚本：`node tools/phase-g-demo.mjs demoGX .ai-run/phase-g-demoGX.jsonl`；话术见 `docs/比赛演示脚本.md`。
+- 演示脚本：`node tools/verify-round2-real-llm.mjs`（真实 LLM 群 @AI）与 `node tools/eval/run.mjs --repeat 3`（第四轮评测）；`phase-g/h-demo.mjs` 是使用 alice/bob/carol 的工程验收脚本，不要在 demo 库直接跑。话术见 `docs/比赛演示脚本.md`。
 
 ### 已知限制（V1）
 

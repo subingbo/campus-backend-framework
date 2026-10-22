@@ -1,0 +1,10 @@
+flowchart LR
+  U["浏览器 / 移动端 Web"] -->|HTTPS 同源| N["Vite 静态资源 + 反向代理"]
+  N -->|HTTP / SSE / WS| B["Spring Boot campus-server"]
+  B --> F["campus-framework<br/>JWT / 限流 / Result / Redis"]
+  B --> DB[("MySQL 8<br/>33 表")]
+  B --> R[("Redis 7<br/>会话 / 缓存 / 未读 / 限流")]
+  B --> L["DashScope<br/>qwen-plus"]
+  B --> A["高德 Web 服务<br/>路线 / POI"]
+  B --> T["Trace writer<br/>脱敏 / 有界队列 / JSONL"]
+  T --> DB

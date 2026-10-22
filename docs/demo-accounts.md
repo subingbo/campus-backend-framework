@@ -16,7 +16,7 @@
 
 | 账号 | 密码 | 昵称 | 地图/群聊（角色） | 未来日程 | 忙闲授权群 | 好友 |
 |---|---|---|---|---|---|---|
-| demo01 | demo1234 | 林晓 | `[DEMO] 周末去哪儿` OWNER；`[DEMO] 校园美食地图` EDITOR | 2 条 | A、C | 陈晨、王宁 |
+| demo01 | demo1234 | 林晓 | `[DEMO] 周末去哪儿` OWNER；`[DEMO] 校园美食地图` EDITOR | 2 条 | A、C | 陈晨、王宁、赵可（live 库） |
 | demo02 | demo1234 | 陈晨 | `[DEMO] 周末去哪儿` EDITOR；`[DEMO] 校园美食地图` EDITOR | 2 条 | A、C | 林晓、王宁 |
 | demo03 | demo1234 | 王宁 | `[DEMO] 周末去哪儿` EDITOR；`[DEMO] 校园美食地图` EDITOR | 2 条 | A、C | 林晓、陈晨 |
 | demo04 | demo1234 | 赵可 | `[DEMO] 周末去哪儿` EDITOR | 2 条 | A | 林晓 |

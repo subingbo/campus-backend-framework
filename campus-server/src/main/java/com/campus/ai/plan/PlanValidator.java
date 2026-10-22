@@ -71,16 +71,24 @@ public class PlanValidator {
     }
 
     public PlanDto parseAndValidate(String planJson, Long userId) {
+        return parseAndValidate(planJson, userId, false);
+    }
+
+    public PlanDto parseAndValidate(String planJson, Long userId, boolean groupContext) {
         PlanDto plan;
         try {
             plan = lenientMapper.readValue(planJson, PlanDto.class);
         } catch (Exception ex) {
             throw new PlanValidationException("PLAN_JSON_INVALID", "规划草稿 JSON 无法解析");
         }
-        return validate(plan, userId);
+        return validate(plan, userId, groupContext);
     }
 
     public PlanDto validate(PlanDto plan, Long userId) {
+        return validate(plan, userId, false);
+    }
+
+    public PlanDto validate(PlanDto plan, Long userId, boolean groupContext) {
         if (plan == null) {
             throw new PlanValidationException("PLAN_EMPTY", "规划草稿为空");
         }
@@ -209,7 +217,10 @@ public class PlanValidator {
             stop.setSeq(i + 1);
         }
         validateSpatialExtension(plan);
-        if (plan.getReferenceMapId() != null) {
+        if (groupContext) {
+            // 群语境下参考地图由服务端 sourceMapId 盖章；模型给的 referenceMapId 不可信，直接丢弃
+            plan.setReferenceMapId(null);
+        } else if (plan.getReferenceMapId() != null) {
             // 复用共享地图的可见性校验：非成员且非公开即拒绝（防止引用他人地图）。
             // 校验可能发生在群聊 agent 线程（无 SecurityContext），必须显式传 userId
             try {

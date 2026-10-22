@@ -83,6 +83,18 @@ class PlanValidatorTravelCheckTest {
     }
 
     @Test
+    void groupContextDropsModelSuppliedReferenceMap() {
+        PlanDto plan = planWithGapSeconds(10 * 60);
+        plan.setReferenceMapId(999L);
+        PlanValidator validator = new PlanValidator(new ObjectMapper(), mock(PlaceService.class),
+                mock(SharedMapService.class), provider(600L, false));
+
+        PlanDto validated = validator.validate(plan, 1L, true);
+
+        assertThat(validated.getReferenceMapId()).isNull();
+    }
+
+    @Test
     void gapShorterThanTravelIsRejectedWithActionableMessage() {
         // 真实步行 10 分钟、只留 8 分钟 → 拒绝；文案含"步行约 10 分钟"、"只留了 8 分钟"与最早可设时间
         String earliest = START.plusMinutes(30).plusSeconds(600).format(HHMMSS);

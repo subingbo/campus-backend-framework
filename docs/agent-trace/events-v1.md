@@ -32,6 +32,7 @@
 | `session/end` | status、reason、durationMs、droppedCount | 保存成功/显式中断 |
 | `turn/start` | messageLength、hasUserLocation、historyLimit | 不记录消息正文 |
 | `turn/end` | outcome、reason、rounds、toolCallCount、hasDraft、durationMs | DRAFT/ANSWERED/ERROR/CANCELLED/BUDGET_EXCEEDED |
+| `run/metrics` | rounds、totalTokens、toolCallCount、firstVisibleMs、totalMs、routeCallCount、routeEstimatedCount、repeatHitCount、routeCacheHitCount、routeCacheMissCount、hasDraft、outcome、stopCause | 单次 run 性能/质量汇总；评测脚本读取，不替代 AI_RUN 日志 |
 | `step/start` | round | 每轮 Agent 循环 |
 | `step/end` | round、status | 每轮结束 |
 | `llm/request` | provider、model、maxTokens、messageCount、toolCount、stream | 无 prompt 文本 |
