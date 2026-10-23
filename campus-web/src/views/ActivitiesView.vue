@@ -1,5 +1,5 @@
 <template>
-  <div class="page">
+  <div class="page content-page">
     <div class="hero">
       <div class="hero__text">
         <h1>活动日程</h1>

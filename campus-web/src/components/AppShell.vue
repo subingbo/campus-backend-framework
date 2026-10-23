@@ -3,13 +3,15 @@
     class="app-shell"
     :class="{
       'app-shell--immersive': isImmersive,
+      'app-shell--content-v2': isContentV2,
+      'ui-v2': isContentV2,
       'app-shell--mobile-nav': route.meta.mobileNav === true
     }"
   >
     <header class="app-topbar">
       <div class="app-topbar__left">
         <router-link to="/" class="app-topbar__brand">
-          <span v-if="isImmersive" class="app-topbar__mark">
+          <span v-if="isImmersive || isContentV2" class="app-topbar__mark">
             <AppIcon name="pin" :size="15" />
           </span>
           <span class="app-topbar__brand-text">Campus Map</span>
@@ -43,7 +45,7 @@
           <button type="button" class="account-trigger">
             <span class="account-avatar">{{ avatarText }}</span>
             <span class="account-name">{{ displayName }}</span>
-            <AppIcon v-if="isImmersive" name="chevron-down" :size="14" class="account-chevron" />
+            <AppIcon v-if="isImmersive || isContentV2" name="chevron-down" :size="14" class="account-chevron" />
           </button>
           <template #dropdown>
             <el-dropdown-menu>
@@ -75,6 +77,7 @@ import AppIcon from './ui/AppIcon.vue'
 const route = useRoute()
 const router = useRouter()
 const isImmersive = computed(() => route.meta.immersive === true)
+const isContentV2 = computed(() => route.meta.uiV2 === true)
 const { summary, refresh: refreshSummary, refreshSoon, reset: resetSummary } = useMessageSummary()
 const profile = ref({ username: '', nickname: '' })
 const username = computed(() => profile.value.username)
@@ -272,6 +275,49 @@ onUnmounted(() => {
   font-size: 13px;
 }
 
+/* ===== 内容页：正常流顶栏 + 暖灰内容画布 ===== */
+.app-shell--content-v2 .app-topbar {
+  background: var(--ui-surface);
+  border-bottom-color: var(--ui-line);
+}
+
+.app-shell--content-v2 .app-topbar__brand {
+  color: var(--ui-ink);
+}
+
+.app-shell--content-v2 .app-topbar__nav {
+  overflow: visible;
+}
+
+.app-shell--content-v2 .nav-item {
+  color: var(--ui-ink-2);
+}
+
+.app-shell--content-v2 .nav-item:hover {
+  color: var(--ui-ink);
+}
+
+.app-shell--content-v2 .nav-item.active {
+  color: var(--ui-accent);
+}
+
+.app-shell--content-v2 .nav-badge {
+  background: var(--ui-accent);
+}
+
+.app-shell--content-v2 .account-trigger {
+  color: var(--ui-ink-2);
+}
+
+.app-shell--content-v2 .account-trigger:hover {
+  background: var(--ui-surface-2);
+}
+
+.app-shell--content-v2 .account-avatar {
+  background: var(--ui-accent-tint);
+  color: var(--ui-accent);
+}
+
 /* ===== 地图沉浸模式：左右两个悬浮胶囊，中间留给地图 ===== */
 .app-shell--immersive .app-topbar {
   position: absolute;
@@ -379,6 +425,27 @@ onUnmounted(() => {
     height: 100dvh;
   }
 
+  .app-shell--content-v2.app-shell--mobile-nav .app-topbar {
+    height: 56px;
+    padding: 0 16px;
+    gap: 12px;
+  }
+
+  .app-shell--content-v2.app-shell--mobile-nav .app-topbar__nav {
+    flex: 1;
+    gap: 12px;
+    overflow: visible;
+  }
+
+  .app-shell--content-v2.app-shell--mobile-nav .nav-item {
+    padding: 4px 0;
+  }
+
+  .app-shell--content-v2.app-shell--mobile-nav .app-shell__main {
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+
   /* 首页 / AI 助手：保留一条紧凑导航栏，避免沉浸页面失去导航出口 */
   .app-shell--immersive.app-shell--mobile-nav .app-topbar {
     display: flex;
@@ -450,6 +517,9 @@ onUnmounted(() => {
 
 @media (max-width: 389px) {
   .app-shell--immersive.app-shell--mobile-nav .app-topbar__brand-text {
+    display: none;
+  }
+  .app-shell--content-v2 .app-topbar__brand-text {
     display: none;
   }
 }

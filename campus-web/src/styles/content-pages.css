@@ -1,0 +1,201 @@
+/* ============================================================
+   内容页公共层（阶段 4）
+   只负责内容页布局、PageHeader、EP 分段与 Teleport 主题；
+   页面业务样式仍放在各自视图 / scoped 块中。
+   ============================================================ */
+
+/* ---------- 内容页画布 ---------- */
+.app-shell.app-shell--content-v2 {
+  background: var(--ui-bg);
+}
+
+.app-shell.app-shell--content-v2 .app-shell__main {
+  background: var(--ui-bg);
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.app-shell.app-shell--content-v2 .content-page {
+  width: 100%;
+  max-width: var(--ui-content-narrow, 760px);
+  min-height: 100%;
+  margin: 0 auto;
+  padding: 32px 24px 56px;
+  box-sizing: border-box;
+  background: transparent;
+  color: var(--ui-ink);
+}
+
+/* ---------- 页头 ---------- */
+.ui-page-header {
+  display: flex;
+  align-items: flex-end;
+  gap: 16px;
+  min-width: 0;
+  margin: 0 0 20px;
+}
+
+.ui-page-header__main {
+  flex: 1;
+  min-width: 0;
+}
+
+.ui-page-header__title {
+  margin: 0;
+  font-size: 24px;
+  line-height: 32px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--ui-ink);
+}
+
+.ui-page-header__description {
+  margin: 6px 0 0;
+  max-width: 560px;
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--ui-ink-2);
+}
+
+.ui-page-header__summary {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ui-page-header__actions {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* ---------- Element Plus 分段 Tabs（保留 EP 语义） ---------- */
+.content-page .el-tabs__header {
+  margin: 0 0 16px;
+}
+
+.content-page .el-tabs__nav-wrap::after {
+  height: 1px;
+  background: var(--ui-line);
+}
+
+.content-page .el-tabs__item {
+  height: 38px;
+  padding: 0 14px;
+  font-size: 13px;
+  color: var(--ui-ink-2);
+  transition: color var(--ui-dur) var(--ui-ease), background var(--ui-dur) var(--ui-ease);
+}
+
+.content-page .el-tabs__item:hover {
+  color: var(--ui-ink);
+}
+
+.content-page .el-tabs__item.is-active {
+  color: var(--ui-ink);
+  font-weight: 600;
+}
+
+.content-page .el-tabs__item:focus-visible {
+  outline: 2px solid var(--ui-accent);
+  outline-offset: -2px;
+  border-radius: var(--ui-radius-sm);
+}
+
+.content-page .el-tabs__active-bar {
+  height: 2px;
+  border-radius: 2px;
+  background: var(--ui-accent);
+}
+
+.content-page .el-tabs__content {
+  overflow: visible;
+}
+
+/* ---------- 内容页通用容器 ---------- */
+.content-page .ui-content-section {
+  min-width: 0;
+  background: var(--ui-surface);
+  border-radius: var(--ui-radius-xl);
+  box-shadow: var(--ui-shadow-1);
+}
+
+.content-page .ui-content-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.content-page .ui-content-toolbar__spacer {
+  flex: 1;
+}
+
+/* ---------- Teleport 主题：必须显式带类 ---------- */
+.ui-content-overlay {
+  background-color: var(--ui-overlay);
+}
+
+.ui-content-overlay .el-dialog {
+  border-radius: var(--ui-radius-xl);
+  background: var(--ui-surface);
+  box-shadow: var(--ui-shadow-3);
+}
+
+.ui-content-overlay .el-dialog__header {
+  padding: 20px 24px 8px;
+}
+
+.ui-content-overlay .el-dialog__body {
+  padding: 8px 24px 4px;
+  color: var(--ui-ink-2);
+}
+
+.ui-content-overlay .el-dialog__footer {
+  padding: 8px 24px 20px;
+}
+
+.ui-content-popper.el-popper,
+.ui-content-popper .el-popper {
+  border: 1px solid var(--ui-line);
+  border-radius: var(--ui-radius-lg);
+  background: var(--ui-surface);
+  box-shadow: var(--ui-shadow-2);
+}
+
+.ui-content-popper .el-select-dropdown__item.is-selected {
+  color: var(--ui-accent);
+  font-weight: 600;
+}
+
+/* ---------- 断点 ---------- */
+@media (max-width: 768px) {
+  .app-shell.app-shell--content-v2 .content-page {
+    padding: 24px 16px 40px;
+  }
+
+  .ui-page-header {
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+
+  .ui-page-header__title {
+    font-size: 22px;
+    line-height: 30px;
+  }
+
+  .ui-page-header__actions {
+    width: 100%;
+  }
+}
+
+@media (max-width: 389px) {
+  .app-shell.app-shell--content-v2 .content-page {
+    padding: 20px 12px 36px;
+  }
+}

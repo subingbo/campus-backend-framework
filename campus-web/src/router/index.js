@@ -20,9 +20,9 @@ const router = createRouter({
       children: [
         { path: '', component: MapListView, meta: { immersive: true, mobileNav: true } },
         { path: 'maps/:id', component: MapWorkspaceView, meta: { immersive: true } },
-        { path: 'messages', component: () => import('../views/MessagesView.vue') },
+        { path: 'messages', component: () => import('../views/MessagesView.vue'), meta: { uiV2: true, mobileNav: true } },
         { path: 'friends', component: FriendsView },
-        { path: 'activities', component: ActivitiesView },
+        { path: 'activities', component: ActivitiesView, meta: { uiV2: true, mobileNav: true } },
         { path: 'assistant', component: AssistantView, meta: { immersive: true, mobileNav: true } },
         {
           path: 'conversations/:conversationId/plans/:planId',

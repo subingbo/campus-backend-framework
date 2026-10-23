@@ -1,5 +1,5 @@
 <template>
-  <div class="page">
+  <div class="page content-page">
     <div class="hero">
       <div>
         <h1>消息中心</h1>
