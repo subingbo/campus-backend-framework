@@ -1,13 +1,25 @@
 <template>
-  <div class="page plan-detail">
-    <div class="plan-detail__head">
-      <el-button text @click="router.back()">← 返回群聊</el-button>
-      <h1>群规划方案</h1>
-      <p class="hint">群成员可查看方案摘要与公开站点地图；完整 AI 对话、私人地图站点与编辑保存仅发起人可见。</p>
-    </div>
+  <div class="page content-page plan-detail">
+    <PageHeader
+      title="群规划方案"
+      description="群成员可查看方案摘要与公开站点地图；完整 AI 对话、私人地图站点与编辑保存仅发起人可见。"
+    >
+      <template #actions>
+        <button type="button" class="ui-btn ui-btn--secondary" @click="router.back()">
+          <AppIcon name="arrow-left" :size="14" />
+          返回群聊
+        </button>
+      </template>
+    </PageHeader>
 
-    <el-alert v-if="error" :title="error" type="error" :closable="false" show-icon />
-    <div v-else-if="loading" v-loading="true" class="plan-detail__loading" />
+    <div v-if="error" class="plan-detail__error">
+      <AppIcon name="alert-circle" :size="15" />
+      <span>{{ error }}</span>
+    </div>
+    <div v-else-if="loading" class="plan-detail__loading">
+      <span class="ui-spinner" />
+      正在加载方案…
+    </div>
 
     <template v-else-if="card">
       <div class="plan-detail__map-card">
@@ -15,7 +27,8 @@
         <p v-else class="hint plan-detail__map-empty">该方案没有可公开的地点坐标</p>
         <p v-if="mapError" class="hint plan-detail__map-error">地图加载失败：{{ mapError }}</p>
         <p v-if="hiddenStopCount" class="hint plan-detail__locked">
-          🔒 {{ hiddenStopCount }} 个站点来自私人地图或来源不可核实，地点详情与相关路线仅发起人可见
+          <AppIcon name="alert-circle" :size="12" />
+          {{ hiddenStopCount }} 个站点来自私人地图或来源不可核实，地点详情与相关路线仅发起人可见
         </p>
         <p v-if="routeSegments.length" class="plan-detail__legend">
           <span v-if="hasRealRoute"><i class="legend-line legend-line--real" />路线预览（高德实际路线）</span>
@@ -43,6 +56,8 @@ import { ElMessage } from 'element-plus'
 import { assistantApi, chatApi } from '../api'
 import { myUserId } from '../composables/useChatSocket'
 import GroupPlanCard from '../components/GroupPlanCard.vue'
+import AppIcon from '../components/ui/AppIcon.vue'
+import PageHeader from '../components/ui/PageHeader.vue'
 import {
   createPlaceMarkerController,
   createRouteLineController,
@@ -167,76 +182,102 @@ async function continuePlan(target) {
 </script>
 
 <style scoped>
-.plan-detail {
-  max-width: 760px;
-  margin: 0 auto;
-  padding: 24px 20px 48px;
+.plan-detail__error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: var(--ui-radius-md);
+  background: var(--ui-danger-tint);
+  color: var(--ui-danger);
+  font-size: 12.5px;
 }
-.plan-detail__head h1 {
-  margin: 8px 0 4px;
-  font-size: 22px;
-}
-.plan-detail__head .hint {
-  margin: 0 0 16px;
-  color: #909399;
-  font-size: 12px;
-}
+
 .plan-detail__loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   min-height: 160px;
+  color: var(--ui-ink-3);
+  font-size: 12.5px;
 }
+
 .plan-detail__map-card {
   margin-bottom: 14px;
+  padding: 12px;
+  border: 1px solid var(--ui-line);
+  border-radius: var(--ui-radius-lg);
+  background: var(--ui-surface);
 }
+
 .plan-detail__map {
   height: 280px;
-  border-radius: 10px;
+  border-radius: var(--ui-radius-md);
   overflow: hidden;
-  background: #f2f4f7;
+  background: var(--ui-surface-2);
 }
+
 .plan-detail__map-empty,
 .plan-detail__map-error,
 .plan-detail__locked {
   margin: 8px 0 0;
-  color: #909399;
+  color: var(--ui-ink-3);
   font-size: 12px;
+  line-height: 1.55;
 }
+
+.plan-detail__locked {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.plan-detail__locked :deep(svg) {
+  flex: none;
+  margin-top: 2px;
+}
+
 .plan-detail__map-error {
-  color: #c45656;
+  color: var(--ui-danger);
 }
+
 .plan-detail__legend {
   display: flex;
   flex-wrap: wrap;
   gap: 14px;
-  margin: 8px 0 0;
-  color: #606266;
+  margin: 10px 0 0;
+  color: var(--ui-ink-2);
   font-size: 12px;
 }
+
 .plan-detail__legend span {
   display: inline-flex;
   align-items: center;
   gap: 6px;
 }
+
 .legend-line {
   display: inline-block;
   width: 26px;
   height: 0;
-  border-top: 3px solid #2ba471;
+  border-top: 3px solid var(--ui-success);
 }
+
 .legend-line--dashed {
   border-top-style: dashed;
-  border-top-color: #909399;
+  border-top-color: var(--ui-ink-3);
 }
+
 .plan-detail__foot {
-  margin-top: 12px;
-  color: #909399;
+  margin-top: 10px;
+  color: var(--ui-ink-3);
   font-size: 12px;
+  line-height: 1.55;
 }
-@media (max-width: 600px) {
-  .plan-detail {
-    padding: 16px 12px 36px;
-  }
+
+@media (max-width: 768px) {
   .plan-detail__map {
-    height: 200px;
+    height: 210px;
   }
 }
 </style>

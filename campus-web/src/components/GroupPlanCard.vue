@@ -1,7 +1,8 @@
 <template>
   <div v-if="view" class="chat-agent-card">
     <h4>
-      🧭 {{ view.title || 'AI 规划（未确认）' }}
+      <AppIcon name="route" :size="14" />
+      {{ view.title || 'AI 规划（未确认）' }}
       <span v-if="view.planVersion" class="chat-agent-card__ver">v{{ view.planVersion }}</span>
     </h4>
     <span v-if="view.constraintStatus === 'CONFLICT'" class="chat-agent-card__badge conflict">有成员时间冲突</span>
@@ -13,19 +14,27 @@
       {{ s.seq || i + 1 }}. {{ s.name }}
       <span v-if="s.startTime">（{{ fmtClock(s.startTime) }}<template v-if="s.endTime">-{{ fmtClock(s.endTime) }}</template><template
         v-if="s.stayMinutes">，停留 {{ s.stayMinutes }} 分钟</template>）</span>
-      <span v-if="!s.locationVisible" class="chat-agent-card__hidden">🔒 地点详情仅发起人可见</span>
+      <span v-if="!s.locationVisible" class="chat-agent-card__hidden">
+        <AppIcon name="alert-circle" :size="11" />
+        地点详情仅发起人可见
+      </span>
       <button
         v-if="s.longitude != null && s.latitude != null"
         type="button"
         class="chat-agent-card__nav"
         title="在高德中导航到这里"
         @click.stop="navigateStop(s)"
-      >🧭 导航</button>
+      >
+        <AppIcon name="navigation" :size="11" />
+        导航
+      </button>
     </p>
     <p v-for="(seg, i) in (view.routeSegments || []).slice(0, 8)" :key="'seg' + i" class="chat-agent-card__seg">
       ↳ {{ modeLabel(seg.transportMode) }} {{ seg.durationMinutes }} 分钟
     </p>
-    <p v-if="view.totalTravelMinutes">🚦 全程交通约 {{ view.totalTravelMinutes }} 分钟
+    <p v-if="view.totalTravelMinutes" class="chat-agent-card__seg chat-agent-card__seg--total">
+      <AppIcon name="route" :size="11" />
+      全程交通约 {{ view.totalTravelMinutes }} 分钟
       <span v-if="view.routeConfidence === 'ESTIMATED'" class="chat-agent-card__routebadge">估算（未验证）</span>
       <span v-else-if="view.routeConfidence === 'AMAP'" class="chat-agent-card__routebadge ok">高德实测</span>
       <span v-else-if="view.routeConfidence === 'PARTIAL'" class="chat-agent-card__routebadge">部分未核验</span>
@@ -33,8 +42,14 @@
     <p v-if="coverageNote" class="chat-agent-card__cov">{{ coverageNote }}</p>
     <div v-if="members.length || conflicts.length || view.warnings?.length" class="chat-agent-card__people">
       <button type="button" class="chat-agent-card__people-toggle" @click="peopleOpen = !peopleOpen">
-        <span>👥 成员 {{ knownMemberCount }}/{{ members.length }}</span>
-        <span v-if="conflicts.length" class="chat-agent-card__people-conflict">⚠ {{ conflicts.length }} 个冲突</span>
+        <span>
+          <AppIcon name="users" :size="11" />
+          成员 {{ knownMemberCount }}/{{ members.length }}
+        </span>
+        <span v-if="conflicts.length" class="chat-agent-card__people-conflict">
+          <AppIcon name="alert-circle" :size="11" />
+          {{ conflicts.length }} 个冲突
+        </span>
         <span class="chat-agent-card__people-chevron">{{ peopleOpen ? '收起' : '展开' }}</span>
       </button>
       <template v-if="peopleOpen">
@@ -50,7 +65,10 @@
         <p v-for="(warning, i) in (view.warnings || [])" :key="'w-' + i" class="chat-agent-card__warn">{{ warning }}</p>
       </template>
     </div>
-    <div v-if="view.reason" class="chat-agent-card__reason">💡 <MarkdownText :text="view.reason" /></div>
+    <div v-if="view.reason" class="chat-agent-card__reason">
+      <AppIcon name="sparkles" :size="11" />
+      <MarkdownText :text="view.reason" />
+    </div>
     <div v-if="showActions" class="chat-agent-card__actions">
       <el-button v-if="showViewAction" size="small" @click="emit('view', card)">查看完整方案</el-button>
       <el-button
@@ -69,6 +87,7 @@
 <script setup>
 import { computed, ref } from 'vue'
 import MarkdownText from './MarkdownText.vue'
+import AppIcon from './ui/AppIcon.vue'
 import { fmtClock } from '../utils/format'
 import { openAmapNavigation } from '../utils/amapNavigation'
 
@@ -112,89 +131,153 @@ function navigateStop(stop) {
 <style scoped>
 .chat-agent-card {
   margin: 8px 0;
-  padding: 10px;
-  border: 1px solid #d9ecff;
-  border-radius: 8px;
-  background: #f5faff;
+  padding: 12px;
+  border: 0;
+  border-radius: var(--ui-radius-lg);
+  background: var(--ui-surface-2);
+  color: var(--ui-ink-2);
 }
 .chat-agent-card h4 {
-  margin: 0 0 6px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0 0 7px;
   font-size: 13px;
+  font-weight: 600;
+  color: var(--ui-ink);
+  overflow-wrap: anywhere;
+}
+.chat-agent-card h4 :deep(svg) {
+  flex: none;
+  color: var(--ui-accent);
 }
 .chat-agent-card__ver {
-  margin-left: 4px;
-  color: #909399;
+  margin-left: 2px;
+  color: var(--ui-ink-3);
   font-size: 11px;
-  font-weight: normal;
+  font-weight: 400;
 }
 .chat-agent-card__badge {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
   padding: 1px 8px;
   margin: 0 6px 6px 0;
-  border-radius: 10px;
-  font-size: 11px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 500;
 }
-.chat-agent-card__badge.ok { background: #f0f9eb; color: #529b2e; }
-.chat-agent-card__badge.tentative { background: #fdf6ec; color: #b88230; }
-.chat-agent-card__badge.conflict { background: #fef0f0; color: #c45656; }
-.chat-agent-card__stop { margin: 4px 0; font-size: 12px; }
+.chat-agent-card__badge.ok { background: var(--ui-success-tint); color: var(--ui-success); }
+.chat-agent-card__badge.tentative { background: var(--ui-warning-tint); color: var(--ui-warning); }
+.chat-agent-card__badge.conflict { background: var(--ui-danger-tint); color: var(--ui-danger); }
+.chat-agent-card__stop { margin: 5px 0; font-size: 12px; line-height: 1.55; overflow-wrap: anywhere; }
 .chat-agent-card__nav {
-  margin-left: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 5px;
+  padding: 2px 7px;
   border: 0;
-  background: transparent;
-  color: #409eff;
+  border-radius: 999px;
+  background: var(--ui-surface);
+  color: var(--ui-accent);
   cursor: pointer;
-  font-size: 11px;
+  font-size: 10.5px;
 }
-.chat-agent-card__hidden { margin-left: 6px; color: #909399; font-size: 11px; }
-.chat-agent-card__seg { margin: 2px 0 2px 12px; color: #909399; font-size: 11px; }
-.chat-agent-card__routebadge { margin-left: 6px; color: #909399; font-size: 11px; }
-.chat-agent-card__routebadge.ok { color: #529b2e; }
-.chat-agent-card__cov { margin: 4px 0; color: #606266; font-size: 11px; }
-.chat-agent-card__people { margin-top: 6px; }
+.chat-agent-card__nav:hover { background: var(--ui-surface-3); }
+.chat-agent-card__nav:focus-visible,
+.chat-agent-card__people-toggle:focus-visible {
+  outline: 2px solid var(--ui-accent);
+  outline-offset: 2px;
+}
+.chat-agent-card__hidden {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 5px;
+  color: var(--ui-ink-3);
+  font-size: 10.5px;
+}
+.chat-agent-card__seg { margin: 2px 0 2px 12px; color: var(--ui-ink-3); font-size: 11px; overflow-wrap: anywhere; }
+.chat-agent-card__seg--total {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-left: 0;
+  color: var(--ui-ink-2);
+}
+.chat-agent-card__seg--total :deep(svg) {
+  color: var(--ui-accent);
+}
+.chat-agent-card__routebadge { margin-left: 5px; color: var(--ui-ink-3); font-size: 10.5px; }
+.chat-agent-card__routebadge.ok { color: var(--ui-success); }
+.chat-agent-card__cov { margin: 5px 0; color: var(--ui-ink-2); font-size: 11px; }
+.chat-agent-card__people { margin-top: 8px; border-top: 1px solid var(--ui-line); padding-top: 8px; }
 .chat-agent-card__people-toggle {
   display: flex;
   align-items: center;
   gap: 8px;
   width: 100%;
+  min-height: 32px;
+  padding: 2px 0;
   border: 0;
   background: transparent;
-  color: #606266;
+  color: var(--ui-ink-2);
   cursor: pointer;
   font-size: 11px;
   text-align: left;
 }
-.chat-agent-card__people-conflict { color: #c45656; }
-.chat-agent-card__people-chevron { margin-left: auto; color: #909399; }
-.chat-agent-card__member { margin: 3px 0; font-size: 11px; }
-.chat-agent-card__member em { margin-left: 3px; font-style: normal; opacity: 0.6; }
-.chat-agent-card__conflict {
-  padding: 4px 6px;
-  margin-top: 4px;
-  border-radius: 6px;
-  background: #fff7e6;
-  color: #ad4e00;
-  font-size: 11px;
+.chat-agent-card__people-toggle > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
 }
-.chat-agent-card__warn { color: #c0781c; font-size: 11px; }
-.chat-agent-card__reason { margin-top: 6px; font-size: 11px; color: #606266; }
+.chat-agent-card__people-conflict { color: var(--ui-danger); }
+.chat-agent-card__people-chevron { margin-left: auto; color: var(--ui-accent); }
+.chat-agent-card__member { margin: 3px 0; font-size: 11px; color: var(--ui-ink-2); }
+.chat-agent-card__member em { margin-left: 3px; font-style: normal; opacity: 0.65; }
+.chat-agent-card__conflict {
+  padding: 6px 8px;
+  margin-top: 5px;
+  border-radius: var(--ui-radius-sm);
+  background: var(--ui-warning-tint);
+  color: var(--ui-warning);
+  font-size: 11px;
+  line-height: 1.55;
+}
+.chat-agent-card__warn { color: var(--ui-warning); font-size: 11px; }
+.chat-agent-card__reason {
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--ui-line);
+  font-size: 11px;
+  color: var(--ui-ink-2);
+}
+.chat-agent-card__reason :deep(svg) {
+  flex: none;
+  margin-top: 3px;
+  color: var(--ui-accent);
+}
 .chat-agent-card__actions {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-top: 8px;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 10px;
 }
-.chat-agent-card__hint { color: #909399; font-size: 11px; }
+.chat-agent-card__actions .el-button {
+  flex: 1 1 auto;
+  margin-left: 0;
+  min-height: 34px;
+}
+.chat-agent-card__hint { color: var(--ui-ink-3); font-size: 11px; line-height: 1.5; }
 @media (max-width: 600px) {
-  .chat-agent-card__actions {
-    flex-wrap: wrap;
-  }
-  .chat-agent-card__actions .el-button {
-    flex: 1 1 auto;
-  }
-  .chat-agent-card__stop,
-  .chat-agent-card__seg {
-    word-break: break-word;
+  .chat-agent-card__nav,
+  .chat-agent-card__people-toggle {
+    min-height: 40px;
   }
 }
 </style>

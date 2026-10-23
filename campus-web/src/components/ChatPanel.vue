@@ -66,7 +66,7 @@
         :rows="2"
         resize="none"
         placeholder="输入消息，Enter 发送"
-        @keydown.enter.exact.prevent="submit"
+        @keydown.enter.exact="onComposerKeydown"
         @input="notifyTyping"
       />
       <el-button type="primary" @click="submit">发送</el-button>
@@ -321,6 +321,12 @@ async function reloadAndMerge() {
   }
 }
 
+function onComposerKeydown(event) {
+  if (event.isComposing || event.keyCode === 229) return
+  event.preventDefault()
+  submit()
+}
+
 function submit() {
   const content = draft.value.trim()
   if (!content) return
@@ -386,6 +392,8 @@ function formatTime(value) {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  display: flex;
+  flex-direction: column;
   padding: 4px 2px;
 }
 .chat-panel__empty {
@@ -409,6 +417,7 @@ function formatTime(value) {
   font-size: 11px;
   color: rgba(0, 0, 0, 0.45);
   margin-bottom: 2px;
+  overflow-wrap: anywhere;
 }
 .chat-msg__bubble {
   padding: 7px 11px;

@@ -139,6 +139,15 @@
   background-color: var(--ui-overlay);
 }
 
+/* 群聊规划卡：压过 ChatPanel 遗留的同名旧卡片规则 */
+.ui-v2 .chat-panel .chat-agent-card {
+  border: 0;
+  border-radius: var(--ui-radius-lg);
+  background: var(--ui-surface-2);
+  padding: 12px;
+  box-shadow: none;
+}
+
 .ui-content-overlay .el-dialog {
   border-radius: var(--ui-radius-xl);
   background: var(--ui-surface);

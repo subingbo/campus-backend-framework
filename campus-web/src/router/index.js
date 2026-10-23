@@ -21,12 +21,13 @@ const router = createRouter({
         { path: '', component: MapListView, meta: { immersive: true, mobileNav: true } },
         { path: 'maps/:id', component: MapWorkspaceView, meta: { immersive: true } },
         { path: 'messages', component: () => import('../views/MessagesView.vue'), meta: { uiV2: true, mobileNav: true } },
-        { path: 'friends', component: FriendsView },
+        { path: 'friends', component: FriendsView, meta: { uiV2: true, mobileNav: true } },
         { path: 'activities', component: ActivitiesView, meta: { uiV2: true, mobileNav: true } },
         { path: 'assistant', component: AssistantView, meta: { immersive: true, mobileNav: true } },
         {
           path: 'conversations/:conversationId/plans/:planId',
-          component: () => import('../views/PlanDetailView.vue')
+          component: () => import('../views/PlanDetailView.vue'),
+          meta: { uiV2: true, mobileNav: true }
         },
         // 执行追踪页面较大，懒加载避免进主包
         { path: 'traces', component: () => import('../views/TraceCenterView.vue') }
