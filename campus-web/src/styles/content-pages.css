@@ -192,6 +192,24 @@
   .ui-page-header__actions {
     width: 100%;
   }
+
+  /* 移动端日期时间范围改为上下两行，避免两个 datetime 在窄屏被截断 */
+  .ui-dialog .el-date-editor--datetimerange {
+    display: flex;
+    flex-wrap: wrap;
+    width: 100%;
+    height: auto;
+    padding: 4px 8px;
+  }
+
+  .ui-dialog .el-date-editor--datetimerange .el-range-input {
+    width: 100%;
+    text-align: left;
+  }
+
+  .ui-dialog .el-date-editor--datetimerange .el-range-separator {
+    display: none;
+  }
 }
 
 @media (max-width: 389px) {

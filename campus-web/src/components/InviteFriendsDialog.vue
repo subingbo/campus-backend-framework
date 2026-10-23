@@ -3,7 +3,9 @@
     :model-value="modelValue"
     :title="`邀请好友加入「${activity?.title || '活动'}」`"
     width="min(520px, 94vw)"
-    class="invite-friends-dialog"
+    class="invite-friends-dialog ui-dialog"
+    modal-class="ui-content-overlay"
+    append-to-body
     :close-on-click-modal="false"
     @update:model-value="(value) => emit('update:modelValue', value)"
   >
@@ -149,16 +151,16 @@ function goFriends() {
 
 <style scoped>
 .invite-summary { margin: 0 0 10px; }
-.invite-cancelled { margin-left: 8px; color: #c45656; }
+.invite-cancelled { margin-left: 8px; color: var(--ui-danger); }
 .invite-list { display: flex; flex-direction: column; gap: 6px; max-height: 320px; overflow: auto; }
 .invite-row { display: flex; align-items: center; margin-right: 0; }
 .invite-row__name { margin-right: 8px; }
 .empty { margin: 8px 0; }
-@media (max-width: 600px) {
+@media (max-width: 768px) {
   :global(.invite-friends-dialog .el-dialog__footer) {
     position: sticky;
     bottom: 0;
-    background: #fff;
+    background: var(--ui-surface);
     padding-top: 8px;
   }
   .invite-list {

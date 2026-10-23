@@ -4,6 +4,8 @@
     :title="dialogTitle"
     :width="showVenuePicker ? 'min(560px, 94vw)' : 'min(500px, 94vw)'"
     class="activity-form-dialog ui-dialog"
+    modal-class="ui-content-overlay"
+    append-to-body
     @update:model-value="(v) => emit('update:modelValue', v)"
     @closed="onDialogClosed"
   >
@@ -18,7 +20,7 @@
         </el-form-item>
         <template v-if="venue.mode === 'existing'">
           <el-form-item label="来源地图">
-            <el-select v-model="venue.mapId" placeholder="选择地图" style="width: 100%" @change="onVenueMapChange">
+            <el-select v-model="venue.mapId" placeholder="选择地图" style="width: 100%" popper-class="ui-content-popper" @change="onVenueMapChange">
               <el-option v-for="m in maps" :key="m.id" :label="m.name" :value="m.id" />
             </el-select>
           </el-form-item>
@@ -29,6 +31,7 @@
               placeholder="选择活动地点"
               style="width: 100%"
               :disabled="!venue.mapId"
+              popper-class="ui-content-popper"
             >
               <el-option v-for="p in venuePlaces" :key="p.id" :label="p.name" :value="p.id">
                 <span>{{ p.name }}</span>
@@ -41,7 +44,7 @@
         </template>
         <template v-else>
           <el-form-item label="来源地图">
-            <el-select v-model="venue.mapId" placeholder="选择可编辑的地图" style="width: 100%" @change="onVenueMapChange">
+            <el-select v-model="venue.mapId" placeholder="选择可编辑的地图" style="width: 100%" popper-class="ui-content-popper" @change="onVenueMapChange">
               <el-option v-for="m in editableMaps" :key="m.id" :label="m.name" :value="m.id" />
             </el-select>
           </el-form-item>
@@ -59,7 +62,7 @@
             <el-input v-model="venue.name" maxlength="128" placeholder="新地点名称，如：图书馆北门草坪" />
           </el-form-item>
           <el-form-item label="地点分类">
-            <el-select v-model="venue.categoryId" placeholder="选择分类" style="width: 100%">
+            <el-select v-model="venue.categoryId" placeholder="选择分类" style="width: 100%" popper-class="ui-content-popper">
               <el-option v-for="c in categories" :key="c.id" :label="c.name" :value="c.id" />
             </el-select>
           </el-form-item>
@@ -89,6 +92,7 @@
           start-placeholder="开始时间"
           end-placeholder="结束时间"
           style="width: 100%"
+          popper-class="ui-content-popper"
         />
       </el-form-item>
       <el-form-item label="人数上限">
@@ -104,7 +108,7 @@
             <span class="stop-row__name">{{ s.name }}</span>
             <el-tag size="small" effect="plain">坐标站</el-tag>
           </template>
-          <el-select v-else v-model="s.placeId" filterable size="small" placeholder="选择地点" class="stop-row__place">
+          <el-select v-else v-model="s.placeId" filterable size="small" placeholder="选择地点" class="stop-row__place" popper-class="ui-content-popper">
             <el-option v-for="p in stopOptions" :key="p.id" :label="p.label" :value="p.id" />
           </el-select>
           <span class="stop-row__ops">
@@ -121,8 +125,9 @@
             start-placeholder="到达"
             end-placeholder="离开"
             style="flex: 1"
+            popper-class="ui-content-popper"
           />
-          <el-select v-model="s.transportMode" size="small" placeholder="交通" clearable style="width: 96px">
+          <el-select v-model="s.transportMode" size="small" placeholder="交通" clearable style="width: 96px" popper-class="ui-content-popper">
             <el-option value="WALK" label="步行" />
             <el-option value="RIDE" label="骑行" />
             <el-option value="DRIVE" label="驾车" />
@@ -532,7 +537,7 @@ async function submit() {
 .opt-hint {
   float: right;
   margin-left: 12px;
-  color: #909399;
+  color: var(--ui-ink-3);
   font-size: 12px;
 }
 .pick-map-wrap {
@@ -541,27 +546,27 @@ async function submit() {
 .pick-map {
   width: 100%;
   height: 220px;
-  border-radius: 6px;
+  border-radius: var(--ui-radius-md);
   overflow: hidden;
-  background: #eef2f5;
+  background: var(--ui-surface-2);
 }
 .pick-map-wrap .hint {
   margin: 4px 0 0;
   font-size: 12px;
-  color: #909399;
+  color: var(--ui-ink-3);
 }
 .stops-title {
   margin: 10px 0 6px;
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 600;
-  color: #606266;
+  color: var(--ui-ink-2);
 }
 .stop-row {
   margin-bottom: 10px;
-  padding: 8px;
-  background: #f7f9fb;
-  border: 1px solid #ebeef5;
-  border-radius: 6px;
+  padding: 10px;
+  background: var(--ui-surface-2);
+  border: 0;
+  border-radius: var(--ui-radius-md);
 }
 .stop-row__head {
   display: flex;
@@ -577,14 +582,14 @@ async function submit() {
   font-size: 11px;
   font-weight: 700;
   color: #fff;
-  background: var(--el-color-primary);
+  background: var(--ui-accent);
   border-radius: 50%;
   flex-shrink: 0;
 }
 .stop-row__name {
   font-size: 13px;
   font-weight: 600;
-  color: #303133;
+  color: var(--ui-ink);
 }
 .stop-row__place {
   flex: 1;
@@ -607,7 +612,7 @@ async function submit() {
 .stops-add {
   margin-bottom: 8px;
 }
-@media (max-width: 600px) {
+@media (max-width: 768px) {
   :global(.activity-form-dialog .el-form-item) {
     display: flex;
     flex-direction: column;
@@ -629,7 +634,7 @@ async function submit() {
   :global(.activity-form-dialog .el-dialog__footer) {
     position: sticky;
     bottom: 0;
-    background: #fff;
+    background: var(--ui-surface);
     padding-top: 8px;
   }
   .stop-row__head {

@@ -36,7 +36,7 @@
         <span>{{ m.nickname || m.username }}（{{ m.checkedIn ? '已签 ' + fmtClock(m.checkedInAt) : '未签' }}）</span>
       </div>
       <div v-if="isCreator && !compact && activity.phase !== 'ENDED' && !isCancelled" class="invite-row">
-        <el-select v-model="inviteChoice" size="small" filterable placeholder="邀请好友参加" class="invite-select">
+        <el-select v-model="inviteChoice" size="small" filterable placeholder="邀请好友参加" class="invite-select" popper-class="ui-content-popper">
           <el-option v-for="f in friends" :key="f.userId" :value="f.userId" :label="f.nickname || f.username" />
         </el-select>
         <el-button size="small" type="primary" plain @click="invite">发邀请</el-button>
@@ -176,87 +176,94 @@ async function cancel() {
 
 <style scoped>
 .activity-card {
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 8px;
-  padding: 8px 10px;
-  margin-bottom: 8px;
-  background: #fff;
+  border: 0;
+  border-bottom: 1px solid var(--ui-line);
+  border-radius: 0;
+  padding: 12px 2px;
+  margin-bottom: 0;
+  background: transparent;
 }
 .activity-card.is-urgent {
-  border-left: 3px solid var(--el-color-warning);
+  border-left: 2px solid var(--ui-warning);
+  padding-left: 10px;
 }
 .activity-card.is-compact {
-  padding: 6px 8px;
+  padding: 10px 0;
 }
 .activity-card__head {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 8px;
 }
 .activity-card__title {
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ui-ink);
 }
 .activity-card__actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 6px;
   align-items: center;
+  margin-top: 8px;
+}
+.activity-card__actions .hint {
+  flex: 1 1 100%;
+  order: -1;
+  margin: 0 0 2px;
 }
 .activity-card__actions .el-button + .el-button {
   margin-left: 0;
 }
 .checkin-input {
-  width: 96px;
+  width: 110px;
 }
 .checkin-code {
   display: block;
-  margin-top: 4px;
+  margin-top: 6px;
   font-variant-numeric: tabular-nums;
-  color: var(--el-color-primary);
+  color: var(--ui-accent);
   font-weight: 600;
 }
 .activity-card__members {
-  margin-top: 6px;
-  border-top: 1px dashed var(--el-border-color-lighter);
-  padding-top: 6px;
+  margin-top: 8px;
+  border-top: 1px solid var(--ui-line);
+  padding-top: 8px;
 }
 .activity-card__member {
   font-size: 12px;
-  color: var(--el-text-color-regular);
+  color: var(--ui-ink-2);
   line-height: 1.8;
 }
 .invite-row {
   display: flex;
   gap: 8px;
-  margin-top: 6px;
+  margin-top: 8px;
 }
 .invite-select {
   flex: 1;
 }
 .hint {
-  margin: 2px 0;
+  margin: 3px 0;
   font-size: 12px;
-  color: #888;
+  color: var(--ui-ink-3);
 }
-@media (max-width: 600px) {
+@media (max-width: 768px) {
   .activity-card__head {
     align-items: flex-start;
-  }
-  .activity-card__title {
-    white-space: normal;
   }
   .activity-card__actions {
     gap: 6px;
   }
-  .checkin-input {
-    width: 100%;
-  }
   .activity-card__actions .el-button {
     flex: 1 1 auto;
+  }
+  .checkin-input {
+    width: 100%;
   }
   .invite-row {
     flex-wrap: wrap;

@@ -2,7 +2,10 @@
   <el-dialog
     :model-value="modelValue"
     :title="schedule ? '编辑个人安排' : '新建个人安排'"
-    width="460px"
+    width="min(460px, 94vw)"
+    class="schedule-form-dialog ui-dialog"
+    modal-class="ui-content-overlay"
+    append-to-body
     :close-on-click-modal="false"
     @update:model-value="(value) => emit('update:modelValue', value)"
   >
@@ -19,6 +22,7 @@
           end-placeholder="结束"
           :clearable="false"
           style="width: 100%"
+          popper-class="ui-content-popper"
         />
       </el-form-item>
       <el-form-item label="备注">
@@ -156,8 +160,20 @@ async function remove() {
 <style scoped>
 .hint {
   margin: 0;
-  color: #909399;
+  color: var(--ui-ink-3);
   font-size: 12px;
   line-height: 1.5;
+}
+@media (max-width: 768px) {
+  :global(.schedule-form-dialog .el-dialog__body) {
+    max-height: 60vh;
+    overflow: auto;
+  }
+  :global(.schedule-form-dialog .el-dialog__footer) {
+    position: sticky;
+    bottom: 0;
+    background: var(--ui-surface);
+    padding-top: 8px;
+  }
 }
 </style>

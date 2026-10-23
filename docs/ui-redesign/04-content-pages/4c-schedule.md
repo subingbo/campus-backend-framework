@@ -37,6 +37,44 @@
 - 活动/个人安排的接受、报名、签到、删除等写操作未在自动化中执行，避免改演示数据；4C2 做弹窗时一起回归。
 - 失败注入只覆盖了代码路径，未逐个阻断四个接口。
 
-## 下一步
+## 4C2 · 活动卡与关联弹窗
 
-4C2：活动卡、活动详情、创建/编辑、个人安排、邀请好友、地图选择弹窗；完成后日程改造才算完成。
+### 改动
+
+- `ActivityEntryCard`：去描边/阴影，改发丝分隔；标题允许换行；签到提示单独一行；签到码用 accent；成员区改实线；移动端断点 768。
+- 工作台复用点仍由 `.ui-detail-panel .activity-card` 覆盖，未改 props/emit；工作台地点活动卡截图通过。
+- `ActivityFormDialog`：保留 `activity-form-dialog` + `ui-dialog`，增加 `append-to-body`、`modal-class="ui-content-overlay"`；所有下拉/日期面板加 `ui-content-popper`；站点与地图选点改 surface-2；移动端 footer sticky、body 滚动。
+- `ScheduleFormDialog`、`InviteFriendsDialog`：补 `ui-dialog`、`ui-content-overlay`、`append-to-body`；移动端 footer sticky。
+- 活动详情、多地图选择 Dialog：补 `ui-dialog`、overlay、teleport。
+- 移动端 `el-date-editor--datetimerange` 改为上下两行，修复 390 下日期时间被截断。
+
+### 实测
+
+| 项目 | 结果 |
+|---|---|
+| 390 新建活动 | 表单字段完整，日期/下拉、footer 可见；无横向滚动 |
+| 390 个人安排 | 日期时间两行完整（2026-10-23 22:00:00 / 23:00:00），保存/取消可见 |
+| 1440 活动详情 | 详情、行程时间线、活动卡、footer 正常 |
+| 1440 活动卡 | 标题/时间/签到提示/按钮分层；工作台活动卡无回退 |
+| build / test | build 通过；50/50 |
+
+### 截图
+
+- `4c2-form-390x844.png`
+- `4c2-schedule-form-390x844.png`
+- `4c2-detail-1440x900.png`
+- `4c2-cards-1440x900.png`
+- `4c2-cards-390x844.png`
+- `4c2-workspace-1440x900.png`
+
+### 未做/边界
+
+- 报名、退出、签到、邀请、编辑保存、取消活动等写操作未实际提交；沿用原权限/签到窗口逻辑，只换视觉。
+- `ElMessageBox` 取消/删除确认仍是 Element Plus 默认皮肤；未强行改，避免破坏焦点与确认语义。
+- 邀请好友弹窗与地图多选弹窗未截图；已补主题类/teleport，留待阶段 5 任务链回归。
+- 真机键盘与 200% 字体仍待阶段 5。
+
+## 结论
+
+- 日程页与活动卡/弹窗已完成本轮视觉统一；页面与弹窗均使用同一套暖灰底、发丝线、圆角、按钮与状态层级。
+- 4C1 + 4C2 合计构成本轮日程改造，后续阶段 4D/4E 再处理好友/聊天/登录。

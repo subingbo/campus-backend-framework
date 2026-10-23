@@ -278,7 +278,7 @@
     </el-tabs>
   </div>
 
-  <el-dialog v-model="detailDialog" :title="detailActivity?.title || '活动详情'" width="min(440px, 94vw)">
+  <el-dialog v-model="detailDialog" :title="detailActivity?.title || '活动详情'" width="min(440px, 94vw)" class="ui-dialog" modal-class="ui-content-overlay" append-to-body>
     <div v-if="detailActivity" class="detail-body">
       <div class="row row--flat">
         <div class="row__main">
@@ -331,7 +331,7 @@
     </template>
   </el-dialog>
 
-  <el-dialog v-model="mapPickDialog" title="该地点出现在多个地图" width="min(360px, 92vw)">
+  <el-dialog v-model="mapPickDialog" title="该地点出现在多个地图" width="min(360px, 92vw)" class="ui-dialog" modal-class="ui-content-overlay" append-to-body>
     <el-radio-group v-model="mapPickChoice" class="map-pick">
       <el-radio v-for="m in placeMaps" :key="m.id" :value="m.id">
         {{ m.name }}（{{ roleText(m.myRole) }}）
