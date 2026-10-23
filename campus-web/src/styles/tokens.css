@@ -1,0 +1,111 @@
+/* ============================================================
+   Campus Map · UI v2 tokens
+   仅定义变量，不覆盖 Element Plus；生产样式在阶段 2 通过
+   .ui-v2 / .app-shell--immersive 作用域逐步接入。
+   ============================================================ */
+
+:root {
+  /* ---- 色板：暖白底 + 雾霭蓝强调 ---- */
+  --ui-bg: #f6f6f3;
+  --ui-bg-sunken: #efefea;
+  --ui-surface: #ffffff;
+  --ui-surface-2: #f3f3ef;
+  --ui-surface-3: #eaeae4;
+
+  --ui-ink: #21231e;
+  --ui-ink-2: #5a5d55;
+  --ui-ink-3: #6a6e64;
+
+  --ui-line: rgba(28, 30, 25, 0.07);
+  --ui-line-strong: rgba(28, 30, 25, 0.12);
+
+  --ui-accent: #3d6fb4;
+  --ui-accent-hover: #335c99;
+  --ui-accent-tint: #edf2fa;
+  --ui-accent-ring: rgba(61, 111, 180, 0.16);
+
+  --ui-danger: #a84a41;
+  --ui-danger-tint: #f8eeec;
+  --ui-warning: #8a5a1f;
+  --ui-warning-tint: #f7f0e3;
+  --ui-success: #447052;
+  --ui-success-tint: #edf4ef;
+
+  /* ---- 阴影：暖灰，不用蓝色投影 ---- */
+  --ui-shadow-1: 0 1px 2px rgba(28, 30, 25, 0.04), 0 2px 8px rgba(28, 30, 25, 0.04);
+  --ui-shadow-2: 0 10px 30px -12px rgba(28, 30, 25, 0.16), 0 2px 6px rgba(28, 30, 25, 0.04);
+  --ui-shadow-3: 0 24px 60px -24px rgba(28, 30, 25, 0.22);
+  --ui-shadow-focus: 0 0 0 2px var(--ui-surface), 0 0 0 4px var(--ui-accent);
+
+  /* ---- 圆角 ---- */
+  --ui-radius-sm: 8px;
+  --ui-radius-md: 10px;
+  --ui-radius-lg: 12px;
+  --ui-radius-xl: 18px;
+  --ui-radius-sheet: 22px;
+  --ui-radius-pill: 999px;
+
+  /* ---- 间距 ---- */
+  --ui-space-1: 4px;
+  --ui-space-2: 8px;
+  --ui-space-3: 12px;
+  --ui-space-4: 16px;
+  --ui-space-5: 20px;
+  --ui-space-6: 24px;
+  --ui-space-7: 32px;
+  --ui-space-8: 40px;
+
+  /* ---- 字体 ---- */
+  --ui-font-sans: 'PingFang SC', 'Microsoft YaHei', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --ui-font-mono: ui-monospace, 'Cascadia Code', Consolas, monospace;
+
+  --ui-text-xs: 12px;
+  --ui-text-sm: 13px;
+  --ui-text-base: 14px;
+  --ui-text-md: 15px;
+  --ui-text-lg: 17px;
+  --ui-text-xl: 20px;
+  --ui-text-2xl: 24px;
+
+  --ui-leading-tight: 1.35;
+  --ui-leading-normal: 1.55;
+  --ui-leading-relaxed: 1.65;
+
+  /* ---- 控件尺寸 ---- */
+  --ui-control-sm: 30px;
+  --ui-control-md: 36px;
+  --ui-control-lg: 44px;
+  --ui-tap: 44px;
+
+  /* ---- 面板宽度 ---- */
+  --ui-panel-list: 300px;
+  --ui-panel-list-sm: 280px;
+  --ui-panel-detail: 380px;
+  --ui-panel-detail-sm: 360px;
+  --ui-panel-chat: 360px;
+  --ui-panel-ai: 400px;
+  --ui-content-narrow: 760px;
+  --ui-content-wide: 1100px;
+
+  /* ---- 动效 ---- */
+  --ui-dur-fast: 120ms;
+  --ui-dur: 160ms;
+  --ui-dur-slow: 220ms;
+  --ui-ease: cubic-bezier(0.2, 0, 0, 1);
+  --ui-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* ---- 层级 ---- */
+  --ui-z-map: 0;
+  --ui-z-controls: 10;
+  --ui-z-panel: 20;
+  --ui-z-topbar: 30;
+  --ui-z-popover: 40;
+  --ui-z-sheet: 50;
+  --ui-z-dialog: 60;
+  --ui-z-toast: 70;
+
+  /* ---- 地图与覆盖层 ---- */
+  --ui-map-bg: #ecece6;
+  --ui-overlay: rgba(20, 22, 18, 0.22);
+  --ui-overlay-soft: rgba(20, 22, 18, 0.18);
+}

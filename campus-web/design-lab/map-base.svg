@@ -1,0 +1,172 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 900" preserveAspectRatio="xMidYMid slice" role="img" aria-label="校园地图示意底图">
+  <rect width="1440" height="900" fill="#E9E9E2"/>
+
+  <!-- 绿地 -->
+  <path d="M0 0H520L566 108L492 224L524 352L402 424L232 392L0 322Z" fill="#DFE7D7"/>
+  <path d="M980 0H1440V430L1284 474L1112 392L1012 262L980 122Z" fill="#E0E8D8"/>
+  <path d="M0 598L238 618L372 750L300 900H0Z" fill="#E2E9DC"/>
+  <path d="M742 900L730 804L860 742L1012 782L1042 900Z" fill="#E3EADB"/>
+  <path d="M980 520L1110 500L1150 570L1050 610L980 570Z" fill="#E1E9D9"/>
+
+  <!-- 水面 -->
+  <path d="M392 412C438 396 492 414 516 452C538 488 520 532 482 548C440 566 392 548 372 510C354 476 360 436 392 412Z" fill="#D5E2E6" stroke="#C6D5D9" stroke-width="1"/>
+  <path d="M1288 588C1316 580 1344 594 1350 616C1356 638 1338 656 1312 656C1284 656 1268 638 1272 616C1274 602 1278 592 1288 588Z" fill="#D5E2E6" stroke="#C6D5D9" stroke-width="1"/>
+
+  <!-- 道路：先画浅灰路缘，再画路面，最后画中心虚线 -->
+  <g fill="none" stroke-linecap="round">
+    <path d="M0 620C300 608 600 642 900 620C1080 606 1260 602 1440 618" stroke="#D7D7CE" stroke-width="33"/>
+    <path d="M0 620C300 608 600 642 900 620C1080 606 1260 602 1440 618" stroke="#FCFCF8" stroke-width="29"/>
+    <path d="M0 620C300 608 600 642 900 620C1080 606 1260 602 1440 618" stroke="#DDDDD3" stroke-width="1.2" stroke-dasharray="3 15"/>
+
+    <path d="M982 0C972 240 1002 500 986 900" stroke="#D7D7CE" stroke-width="29"/>
+    <path d="M982 0C972 240 1002 500 986 900" stroke="#FCFCF8" stroke-width="25"/>
+    <path d="M982 0C972 240 1002 500 986 900" stroke="#DDDDD3" stroke-width="1.2" stroke-dasharray="3 15"/>
+
+    <path d="M180 0C360 250 560 540 742 900" stroke="#D7D7CE" stroke-width="22"/>
+    <path d="M180 0C360 250 560 540 742 900" stroke="#FCFCF8" stroke-width="18"/>
+
+    <path d="M300 300H1440" stroke="#DADAD1" stroke-width="16"/>
+    <path d="M300 300H1440" stroke="#FBFBF7" stroke-width="12"/>
+    <path d="M520 300V626" stroke="#DADAD1" stroke-width="14"/>
+    <path d="M520 300V626" stroke="#FBFBF7" stroke-width="10"/>
+    <path d="M0 780H1440" stroke="#DADAD1" stroke-width="18"/>
+    <path d="M0 780H1440" stroke="#FBFBF7" stroke-width="14"/>
+    <path d="M1140 300V620" stroke="#DCDCD3" stroke-width="11"/>
+    <path d="M1140 300V620" stroke="#FBFBF7" stroke-width="8"/>
+    <path d="M740 120C720 240 800 340 780 470S760 600 800 700" stroke="#F6F6F1" stroke-width="5"/>
+    <path d="M340 320C470 350 520 300 650 330S880 380 980 330" stroke="#F6F6F1" stroke-width="4"/>
+    <path d="M1080 380C1140 460 1120 560 1060 640" stroke="#F6F6F1" stroke-width="4"/>
+    <path d="M360 700C500 690 600 720 700 700" stroke="#F6F6F1" stroke-width="4"/>
+  </g>
+
+  <!-- 建筑群 -->
+  <g fill="#F6F6F0" stroke="#D8D8CF" stroke-width="0.9">
+    <!-- 左上 -->
+    <rect x="322" y="96" width="58" height="38" rx="2"/>
+    <rect x="392" y="88" width="76" height="52" rx="2"/>
+    <rect x="482" y="104" width="42" height="70" rx="2"/>
+    <rect x="538" y="82" width="64" height="44" rx="2"/>
+    <rect x="356" y="154" width="98" height="34" rx="2"/>
+    <rect x="470" y="188" width="56" height="42" rx="2"/>
+    <rect x="548" y="146" width="42" height="58" rx="2"/>
+    <!-- 中上 -->
+    <rect x="688" y="72" width="48" height="34" rx="2"/>
+    <rect x="748" y="64" width="72" height="48" rx="2"/>
+    <rect x="834" y="60" width="46" height="66" rx="2"/>
+    <rect x="892" y="78" width="42" height="46" rx="2"/>
+    <rect x="706" y="136" width="92" height="36" rx="2"/>
+    <rect x="818" y="142" width="58" height="42" rx="2"/>
+    <rect x="710" y="188" width="62" height="40" rx="2"/>
+    <rect x="790" y="198" width="84" height="28" rx="2"/>
+    <!-- 右上 -->
+    <rect x="1084" y="138" width="52" height="38" rx="2"/>
+    <rect x="1152" y="132" width="72" height="52" rx="2"/>
+    <rect x="1242" y="146" width="46" height="68" rx="2"/>
+    <rect x="1302" y="158" width="58" height="42" rx="2"/>
+    <rect x="1092" y="200" width="86" height="34" rx="2"/>
+    <rect x="1196" y="212" width="62" height="44" rx="2"/>
+    <rect x="1276" y="228" width="44" height="52" rx="2"/>
+    <!-- 左中 -->
+    <rect x="84" y="360" width="62" height="40" rx="2"/>
+    <rect x="162" y="352" width="74" height="52" rx="2"/>
+    <rect x="252" y="368" width="44" height="66" rx="2"/>
+    <rect x="104" y="424" width="94" height="34" rx="2"/>
+    <rect x="216" y="440" width="62" height="40" rx="2"/>
+    <rect x="92" y="486" width="58" height="44" rx="2"/>
+    <rect x="168" y="500" width="96" height="30" rx="2"/>
+    <!-- 右中 -->
+    <rect x="1076" y="472" width="58" height="40" rx="2"/>
+    <rect x="1150" y="462" width="72" height="52" rx="2"/>
+    <rect x="1240" y="478" width="44" height="64" rx="2"/>
+    <rect x="1300" y="470" width="62" height="42" rx="2"/>
+    <rect x="1088" y="528" width="86" height="30" rx="2"/>
+    <rect x="1192" y="542" width="58" height="40" rx="2"/>
+    <rect x="1268" y="556" width="82" height="28" rx="2"/>
+    <!-- 左下 -->
+    <rect x="112" y="676" width="54" height="36" rx="2"/>
+    <rect x="180" y="668" width="78" height="50" rx="2"/>
+    <rect x="274" y="684" width="42" height="62" rx="2"/>
+    <rect x="126" y="730" width="92" height="32" rx="2"/>
+    <rect x="236" y="744" width="58" height="38" rx="2"/>
+    <rect x="132" y="788" width="64" height="38" rx="2"/>
+    <rect x="216" y="804" width="104" height="28" rx="2"/>
+    <!-- 中下 -->
+    <rect x="618" y="696" width="54" height="36" rx="2"/>
+    <rect x="688" y="686" width="80" height="48" rx="2"/>
+    <rect x="784" y="700" width="42" height="62" rx="2"/>
+    <rect x="630" y="748" width="94" height="30" rx="2"/>
+    <rect x="744" y="762" width="58" height="38" rx="2"/>
+    <rect x="640" y="804" width="68" height="34" rx="2"/>
+    <rect x="726" y="818" width="106" height="26" rx="2"/>
+    <!-- 右下 -->
+    <rect x="1092" y="694" width="58" height="36" rx="2"/>
+    <rect x="1166" y="686" width="74" height="50" rx="2"/>
+    <rect x="1258" y="700" width="42" height="64" rx="2"/>
+    <rect x="1104" y="746" width="92" height="32" rx="2"/>
+    <rect x="1212" y="760" width="58" height="38" rx="2"/>
+    <rect x="1112" y="804" width="66" height="34" rx="2"/>
+    <rect x="1198" y="818" width="96" height="26" rx="2"/>
+    <!-- 中右补充 -->
+    <rect x="876" y="464" width="46" height="32" rx="2"/>
+    <rect x="866" y="516" width="64" height="28" rx="2"/>
+    <rect x="596" y="468" width="56" height="28" rx="2"/>
+    <rect x="920" y="350" width="34" height="26" rx="2"/>
+  </g>
+
+  <!-- 庭院与连廊 -->
+  <g fill="none" stroke="#D8D8CF" stroke-width="0.9">
+    <path d="M392 88V66H468V88"/>
+    <path d="M748 64V44H820V64"/>
+    <path d="M1152 132V112H1224V132"/>
+    <path d="M180 668V650H258V668"/>
+    <path d="M688 686V666H768V686"/>
+    <path d="M1166 686V666H1240V686"/>
+  </g>
+
+  <!-- 运动场 -->
+  <rect x="1096" y="326" width="196" height="104" rx="24" fill="#D9E4D1" stroke="#C7D3BE" stroke-width="1.2"/>
+  <ellipse cx="1194" cy="378" rx="72" ry="36" fill="none" stroke="#F4F7EF" stroke-width="7"/>
+  <ellipse cx="1194" cy="378" rx="30" ry="14" fill="#CFDCC6"/>
+  <path d="M1194 342V414M1122 378H1266" stroke="#F4F7EF" stroke-width="1.4" opacity="0.9"/>
+
+  <!-- 停车场 / 小广场 -->
+  <rect x="540" y="548" width="72" height="44" rx="4" fill="#E4E4DC" stroke="#D6D6CD" stroke-width="0.8"/>
+  <path d="M552 558V582M566 558V582M580 558V582M594 558V582" stroke="#CFCFC6" stroke-width="1.4"/>
+  <rect x="850" y="622" width="60" height="36" rx="4" fill="#E6E6DE" stroke="#D6D6CD" stroke-width="0.8"/>
+
+  <!-- 树 -->
+  <g fill="#CEDBC4">
+    <g><circle cx="70" cy="80" r="9"/><circle cx="104" cy="120" r="7"/><circle cx="48" cy="160" r="6"/><circle cx="92" cy="196" r="5"/></g>
+    <g><circle cx="190" cy="70" r="8"/><circle cx="240" cy="120" r="6"/><circle cx="300" cy="70" r="7"/><circle cx="282" cy="132" r="5"/></g>
+    <g><circle cx="80" cy="260" r="10"/><circle cx="150" cy="300" r="7"/><circle cx="230" cy="250" r="6"/><circle cx="300" cy="290" r="5"/></g>
+    <g><circle cx="1020" cy="70" r="8"/><circle cx="1060" cy="120" r="6"/><circle cx="1380" cy="90" r="9"/><circle cx="1400" cy="180" r="7"/></g>
+    <g><circle cx="1360" cy="300" r="6"/><circle cx="1050" cy="350" r="6"/><circle cx="1012" cy="410" r="5"/><circle cx="1388" cy="430" r="7"/></g>
+    <g><circle cx="60" cy="700" r="8"/><circle cx="90" cy="770" r="6"/><circle cx="300" cy="870" r="7"/><circle cx="350" cy="800" r="5"/></g>
+    <g><circle cx="450" cy="820" r="6"/><circle cx="720" cy="860" r="7"/><circle cx="980" cy="840" r="6"/><circle cx="940" cy="760" r="5"/></g>
+    <g><circle cx="1390" cy="720" r="8"/><circle cx="1400" cy="840" r="6"/><circle cx="1050" cy="860" r="5"/><circle cx="1000" cy="800" r="4"/></g>
+    <g><circle cx="590" cy="390" r="6"/><circle cx="620" cy="420" r="5"/><circle cx="560" cy="610" r="4"/><circle cx="900" cy="570" r="4"/></g>
+  </g>
+
+  <!-- 校园边界 -->
+  <path d="M34 40H1400V860H34Z" fill="none" stroke="#C7C7BE" stroke-width="1.4" stroke-dasharray="7 8" opacity="0.55"/>
+
+  <!-- 道路名 -->
+  <g fill="#96998F" font-family="PingFang SC, Microsoft YaHei, Segoe UI, sans-serif" font-size="11" letter-spacing="0.14em">
+    <text x="700" y="610">康 陵 路</text>
+    <text x="1004" y="150" transform="rotate(90 1004 150)">大学城中环东路</text>
+    <text x="418" y="486" fill="#8EA4A9" letter-spacing="0.08em">中心湖</text>
+    <text x="328" y="292" fill="#9DA096" font-size="9.5" letter-spacing="0.08em">校园北路</text>
+    <text x="1120" y="770" fill="#9DA096" font-size="9.5" letter-spacing="0.08em">南门大街</text>
+  </g>
+
+  <!-- 底图 POI -->
+  <g font-family="PingFang SC, Microsoft YaHei, Segoe UI, sans-serif" font-size="10" fill="#9DA096">
+    <g><circle cx="600" cy="520" r="2.4" fill="#B9BCB2"/><text x="610" y="524">北门</text></g>
+    <g><circle cx="1230" cy="760" r="2.4" fill="#B9BCB2"/><text x="1240" y="764">南门</text></g>
+    <g><circle cx="860" cy="350" r="2.4" fill="#B9BCB2"/><text x="870" y="354">体育馆</text></g>
+    <g><circle cx="300" cy="560" r="2.4" fill="#B9BCB2"/><text x="310" y="564">西区宿舍</text></g>
+    <g><circle cx="760" cy="760" r="2.4" fill="#B9BCB2"/><text x="770" y="764">第一食堂</text></g>
+    <g><circle cx="1330" cy="520" r="2.4" fill="#B9BCB2"/><text x="1240" y="524">东区教学楼</text></g>
+    <g><circle cx="520" cy="130" r="2.4" fill="#B9BCB2"/><text x="530" y="134">北区宿舍</text></g>
+  </g>
+</svg>

@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>样板 · 地图首页（桌面）</title>
+  <link rel="stylesheet" href="./lab.css">
+</head>
+<body class="lab">
+  <div class="map-stage">
+    <img class="map-base" src="./map-base.svg" alt="校园地图示意底图">
+
+    <header class="topbar">
+      <div class="topbar__left">
+      <a class="brand" href="#" aria-label="Campus Map 首页">
+        <span class="brand-mark"><svg class="icon" aria-hidden="true"><use href="./icons.svg#i-pin"></use></svg></span>
+        <span class="brand-name">Campus Map</span>
+      </a>
+      <nav class="nav" aria-label="主导航">
+        <a class="nav-link is-active" href="#">地图</a>
+        <a class="nav-link" href="#">消息 <span class="nav-count">3</span></a>
+        <a class="nav-link" href="#">日程</a>
+        <a class="nav-link" href="#">AI 助手</a>
+      </nav>
+      </div>
+      <button class="account" type="button">
+        <span class="avatar">林</span>
+        <span class="account-name">林晓</span>
+        <svg class="icon icon--sm" aria-hidden="true"><use href="./icons.svg#i-chevron-down"></use></svg>
+      </button>
+    </header>
+
+    <aside class="panel panel--list" aria-label="我的地图">
+      <div class="panel-head">
+        <div class="panel-head__main">
+          <h1 class="panel-title">我的地图</h1>
+          <p class="panel-sub">2 张共享地图 · 与朋友共建</p>
+        </div>
+        <button class="icon-btn icon-btn--raised" type="button" aria-label="创建地图">
+          <svg class="icon" aria-hidden="true"><use href="./icons.svg#i-plus"></use></svg>
+        </button>
+      </div>
+
+      <label class="search">
+        <svg class="icon icon--sm" aria-hidden="true"><use href="./icons.svg#i-search"></use></svg>
+        <input class="map-search" type="search" placeholder="搜索地图或地点" aria-label="搜索地图或地点">
+        <span class="search__kbd">⌘K</span>
+      </label>
+
+      <div class="list-meta"><span>最近更新</span><span>2 张</span></div>
+      <div class="list-scroll" data-render="maps"></div>
+
+      <div class="panel-foot">
+        <button class="text-action" type="button">
+          <svg class="icon icon--sm" aria-hidden="true"><use href="./icons.svg#i-user-plus"></use></svg>
+          邀请码加入
+        </button>
+      </div>
+    </aside>
+
+    <aside class="panel panel--summary" aria-label="当前地图">
+      <div class="summary-eyebrow">当前地图</div>
+      <h2 class="summary-title" data-map-name>周末去哪儿</h2>
+      <p class="summary-desc" data-map-desc>周六下午的校园小聚：图书馆、咖啡、运动场和南门集合点。</p>
+      <div class="summary-people">
+        <div class="avatar-stack" data-render="members" data-max="3"></div>
+        <span class="summary-people__text" data-map-members>7 位成员</span>
+      </div>
+      <div class="summary-facts"><span data-map-places>6 个地点</span> · 10 分钟前更新</div>
+      <div class="summary-actions">
+        <button class="btn btn-primary" type="button">
+          进入地图
+          <svg class="icon icon--sm" aria-hidden="true"><use href="./icons.svg#i-chevron-right"></use></svg>
+        </button>
+        <button class="btn btn-ghost" type="button">
+          <svg class="icon icon--sm" aria-hidden="true"><use href="./icons.svg#i-copy"></use></svg>
+          复制邀请码
+        </button>
+      </div>
+    </aside>
+
+    <button class="marker" type="button" style="left:38%;top:28%" data-place-id="6">
+      <span class="marker__dot"></span><span class="marker__label">快递驿站</span>
+    </button>
+    <button class="marker" type="button" style="left:31%;top:47%" data-place-id="3">
+      <span class="marker__dot"></span><span class="marker__label">西区运动场</span>
+    </button>
+    <button class="marker is-selected" type="button" style="left:54%;top:40%" data-place-id="1">
+      <span class="marker__dot"></span><span class="marker__label">东区图书馆</span>
+    </button>
+    <button class="marker" type="button" style="left:63%;top:55%" data-place-id="2">
+      <span class="marker__dot"></span><span class="marker__label">南门咖啡</span>
+    </button>
+    <button class="marker" type="button" style="left:70%;top:67%" data-place-id="4">
+      <span class="marker__dot"></span><span class="marker__label">校车站</span>
+    </button>
+    <button class="marker" type="button" style="left:48%;top:76%" data-place-id="5">
+      <span class="marker__dot"></span><span class="marker__label">一饭·二楼</span>
+    </button>
+
+    <div class="map-hint map-hint--offset">
+      <svg class="icon icon--sm" aria-hidden="true"><use href="./icons.svg#i-layers"></use></svg>
+      6 个地点 · 点击标记查看
+    </div>
+
+    <div class="map-controls" aria-label="地图控件">
+      <button class="map-control map-control--accent" type="button" aria-label="定位到我">
+        <svg class="icon" aria-hidden="true"><use href="./icons.svg#i-crosshair"></use></svg>
+      </button>
+      <button class="map-control" type="button" aria-label="放大">
+        <svg class="icon" aria-hidden="true"><use href="./icons.svg#i-plus"></use></svg>
+      </button>
+      <button class="map-control" type="button" aria-label="缩小">
+        <svg class="icon" aria-hidden="true"><use href="./icons.svg#i-minus"></use></svg>
+      </button>
+    </div>
+  </div>
+
+  <script src="./sample-data.js"></script>
+  <script src="./lab.js"></script>
+</body>
+</html>

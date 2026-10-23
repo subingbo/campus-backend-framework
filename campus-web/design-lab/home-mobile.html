@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>样板 · 地图首页（移动）</title>
+  <link rel="stylesheet" href="./lab.css">
+</head>
+<body class="lab">
+  <div class="map-stage">
+    <img class="map-base" src="./map-base.svg" alt="校园地图示意底图">
+
+    <header class="mobile-topbar">
+      <span class="brand-mark"><svg class="icon" aria-hidden="true"><use href="./icons.svg#i-pin"></use></svg></span>
+      <span class="brand-name">Campus Map</span>
+      <button class="icon-btn" type="button" aria-label="菜单">
+        <svg class="icon" aria-hidden="true"><use href="./icons.svg#i-menu"></use></svg>
+      </button>
+      <span class="avatar">林</span>
+    </header>
+
+    <div class="mobile-search">
+      <svg class="icon icon--sm" aria-hidden="true"><use href="./icons.svg#i-search"></use></svg>
+      <span>搜索地图或地点</span>
+    </div>
+
+    <button class="marker is-selected" type="button" style="left:50%;top:30%" data-place-id="1">
+      <span class="marker__dot"></span><span class="marker__label">东区图书馆</span>
+    </button>
+    <button class="marker" type="button" style="left:72%;top:40%" data-place-id="2">
+      <span class="marker__dot"></span><span class="marker__label">南门咖啡</span>
+    </button>
+    <button class="marker" type="button" style="left:26%;top:38%" data-place-id="3">
+      <span class="marker__dot"></span><span class="marker__label">西区运动场</span>
+    </button>
+    <button class="marker" type="button" style="left:61%;top:50%" data-place-id="4">
+      <span class="marker__dot"></span><span class="marker__label">校车站</span>
+    </button>
+
+    <div class="mobile-map-controls mobile-map-controls--home" aria-label="地图控件">
+      <button class="map-control map-control--accent" type="button" aria-label="定位到我">
+        <svg class="icon" aria-hidden="true"><use href="./icons.svg#i-crosshair"></use></svg>
+      </button>
+      <button class="map-control" type="button" aria-label="图层">
+        <svg class="icon" aria-hidden="true"><use href="./icons.svg#i-layers"></use></svg>
+      </button>
+    </div>
+
+    <section class="sheet sheet--peek" aria-label="我的地图">
+      <div class="sheet-handle" aria-hidden="true"></div>
+      <div class="sheet-head">
+        <div class="sheet-head__main">
+          <h1 class="sheet-title">我的地图</h1>
+          <p class="sheet-sub">2 张共享地图 · 与朋友共建</p>
+        </div>
+        <button class="icon-btn" type="button" aria-label="展开地图列表">
+          <svg class="icon" aria-hidden="true"><use href="./icons.svg#i-maximize"></use></svg>
+        </button>
+      </div>
+      <div class="sheet-body" data-render="maps"></div>
+      <div class="sheet-foot">
+        <button class="text-action" type="button">
+          <svg class="icon icon--sm" aria-hidden="true"><use href="./icons.svg#i-user-plus"></use></svg>
+          用邀请码加入
+        </button>
+      </div>
+    </section>
+  </div>
+
+  <script src="./sample-data.js"></script>
+  <script src="./lab.js"></script>
+</body>
+</html>
