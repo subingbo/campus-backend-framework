@@ -1,23 +1,41 @@
 <template>
   <div class="page content-page">
-    <div class="hero">
-      <div class="hero__text">
-        <h1>活动日程</h1>
-        <p>会开在地点上，比赛来这儿召集</p>
-      </div>
-      <el-button type="primary" @click="createOpen = true">＋ 新建活动</el-button>
-    </div>
+    <PageHeader
+      title="日程"
+      description="会开在地点上，比赛来这儿召集；个人安排只参与忙闲计算。"
+    >
+      <template #actions>
+        <button type="button" class="ui-btn ui-btn--secondary" @click="openScheduleDialog(null, calendarDate)">
+          新建个人安排
+        </button>
+        <button type="button" class="ui-btn ui-btn--primary" @click="createOpen = true">
+          <AppIcon name="plus" :size="14" />
+          新建活动
+        </button>
+      </template>
+    </PageHeader>
 
     <el-tabs v-model="tab">
       <el-tab-pane label="日历" name="calendar">
         <!-- 手机端收起 7 列月历，改为日期选择 + 当日列表 -->
         <div class="mobile-day-picker">
           <el-date-picker v-model="calendarDate" type="date" :clearable="false" placeholder="选择日期" />
-          <span class="hint">{{ selectedDayLabel }}</span>
+        </div>
+        <div v-if="loadingMine || loadingSchedules" class="activity-state">
+          <span class="ui-spinner" />
+          正在加载日程…
+        </div>
+        <div v-if="mineError || schedulesError" class="activity-error">
+          <AppIcon name="alert-circle" :size="15" />
+          <span>{{ mineError || schedulesError }}</span>
+          <button type="button" class="ui-text-action" @click="retryCalendar">重试</button>
         </div>
         <el-calendar v-model="calendarDate" class="activity-calendar">
           <template #date-cell="{ data }">
-            <div class="cal-cell" :class="{ 'cal-cell--today': data.isSelected }">
+            <div
+              class="cal-cell"
+              :class="{ 'cal-cell--selected': data.isSelected, 'cal-cell--today': data.day === todayKey }"
+            >
               <span class="cal-cell__date">{{ Number(data.day.split('-')[2]) }}</span>
               <div class="cal-cell__days">
                 <span
@@ -44,7 +62,13 @@
         </el-calendar>
         <div class="section">
           <h3>{{ selectedDayLabel }} 的安排（个人日程与群活动）</h3>
-          <p v-if="!selectedDayEntries.length" class="hint empty">这一天还没有安排</p>
+          <EmptyState
+            v-if="!loadingMine && !loadingSchedules && !selectedDayEntries.length"
+            icon="calendar"
+            title="这一天还没有安排"
+            description="可以新建活动，或添加一条个人安排。"
+            compact
+          />
           <div
             v-for="entry in selectedDayEntries"
             :key="entry.key"
@@ -81,6 +105,15 @@
       </el-tab-pane>
 
       <el-tab-pane label="我的日程" name="schedule">
+        <div v-if="loadingMine || loadingSchedules" class="activity-state">
+          <span class="ui-spinner" />
+          正在加载日程…
+        </div>
+        <div v-if="mineError || schedulesError" class="activity-error">
+          <AppIcon name="alert-circle" :size="15" />
+          <span>{{ mineError || schedulesError }}</span>
+          <button type="button" class="ui-text-action" @click="retryCalendar">重试</button>
+        </div>
         <div class="section share-section">
           <div class="share-head">
             <h3>忙闲共享（供群规划使用）</h3>
@@ -90,6 +123,11 @@
             开启后，本群成员和 @AI 规划只能看到你的忙碌时间段，不会看到日程标题、备注或具体内容。
             默认关闭；未授权的成员在群规划中会标记为未知，方案会被标注为暂定。
           </p>
+          <div v-if="shareError" class="activity-error">
+            <AppIcon name="alert-circle" :size="15" />
+            <span>{{ shareError }}</span>
+            <button type="button" class="ui-text-action" @click="loadShareOptions">重试</button>
+          </div>
           <div v-loading="shareLoading" class="share-list">
             <div v-for="option in shareOptions" :key="option.groupId" class="share-row">
               <div class="share-row__main">
@@ -111,9 +149,13 @@
                 <span class="hint">{{ option.granted ? '已授权' : '未授权' }}</span>
               </div>
             </div>
-            <p v-if="!shareLoading && !shareOptions.length" class="hint empty">
-              先创建或加入一张共享地图，才能设置群忙闲共享。
-            </p>
+            <EmptyState
+              v-if="!shareLoading && !shareOptions.length"
+              icon="users"
+              title="还没有可共享的群"
+              description="先创建或加入一张共享地图，才能设置群忙闲共享。"
+              compact
+            />
           </div>
         </div>
         <div class="section">
@@ -126,9 +168,13 @@
           <p class="hint share-note">
             课程、会议、自习等私人安排。它们只用于自己的日历与群忙闲计算，群成员只能看到时段，看不到标题和备注。
           </p>
-          <p v-if="!schedules.length" class="hint empty">
-            还没有个人安排；添加后会自动进入日历，并参与群规划的共同空闲计算。
-          </p>
+          <EmptyState
+            v-if="!loadingSchedules && !schedules.length"
+            icon="calendar"
+            title="还没有个人安排"
+            description="添加后会自动进入日历，并参与群规划的共同空闲计算。"
+            compact
+          />
           <div v-for="s in schedules" :key="'schedule-row-' + s.id" class="row">
             <div class="row__main">
               <strong>{{ s.title }}</strong>
@@ -157,7 +203,7 @@
             />
           </div>
         </template>
-        <div v-if="!mine.length" class="empty-cta">
+        <div v-if="!loadingMine && !mine.length" class="empty-cta">
           <p class="hint">还没有安排或报名任何活动</p>
           <div class="empty-cta__actions">
             <el-button type="primary" @click="$router.push('/')">去地图逛逛</el-button>
@@ -166,9 +212,28 @@
         </div>
       </el-tab-pane>
 
-      <el-tab-pane :label="`收到的邀请${pendingInvites.length ? '（' + pendingInvites.length + '）' : ''}`" name="invites">
+      <el-tab-pane name="invites">
+        <template #label>
+          收到的邀请
+          <span v-if="pendingInvites.length" class="ui-count activity-tab-count">{{ pendingInvites.length }}</span>
+        </template>
         <div class="section">
-          <p v-if="!pendingInvites.length" class="hint empty">暂时没有待响应的召集邀请</p>
+          <div v-if="loadingInvites" class="activity-state">
+            <span class="ui-spinner" />
+            正在加载邀请…
+          </div>
+          <div v-if="invitesError" class="activity-error">
+            <AppIcon name="alert-circle" :size="15" />
+            <span>{{ invitesError }}</span>
+            <button type="button" class="ui-text-action" @click="loadInvites">重试</button>
+          </div>
+          <EmptyState
+            v-if="!loadingInvites && !invitesError && !pendingInvites.length"
+            icon="calendar"
+            title="暂时没有待响应的召集邀请"
+            description="收到活动邀请后会在这里等待你的响应。"
+            compact
+          />
           <div v-for="i in pendingInvites" :key="i.id" class="row">
             <div class="row__main">
               <strong>{{ i.activityTitle }}</strong>
@@ -178,8 +243,8 @@
               <span class="hint">{{ i.inviterNickname }} 邀请你加入</span>
             </div>
             <div class="row__actions">
-              <el-button size="small" type="primary" @click="acceptInvite(i)">接受</el-button>
-              <el-button size="small" @click="declineInvite(i)">拒绝</el-button>
+              <el-button size="small" type="primary" :disabled="isInvitePending(i.id)" @click="acceptInvite(i)">接受</el-button>
+              <el-button size="small" :disabled="isInvitePending(i.id)" @click="declineInvite(i)">拒绝</el-button>
             </div>
           </div>
         </div>
@@ -187,7 +252,16 @@
 
       <el-tab-pane label="我创建的" name="created">
         <div class="section">
-          <div v-if="!createdActivities.length" class="empty-cta">
+          <div v-if="loadingMine" class="activity-state">
+            <span class="ui-spinner" />
+            正在加载创建的活动…
+          </div>
+          <div v-if="mineError" class="activity-error">
+            <AppIcon name="alert-circle" :size="15" />
+            <span>{{ mineError }}</span>
+            <button type="button" class="ui-text-action" @click="loadMine">重试</button>
+          </div>
+          <div v-if="!loadingMine && !mineError && !createdActivities.length" class="empty-cta">
             <p class="hint">还没有创建过活动；可以手动新建，或去地图上点一个地点安排活动</p>
             <el-button type="primary" @click="createOpen = true">＋ 新建活动</el-button>
           </div>
@@ -298,6 +372,9 @@ import ActivityEntryCard from '../components/ActivityEntryCard.vue'
 import ActivityFormDialog from '../components/ActivityFormDialog.vue'
 import ScheduleFormDialog from '../components/ScheduleFormDialog.vue'
 import InviteFriendsDialog from '../components/InviteFriendsDialog.vue'
+import EmptyState from '../components/ui/EmptyState.vue'
+import PageHeader from '../components/ui/PageHeader.vue'
+import AppIcon from '../components/ui/AppIcon.vue'
 import { calendarDayKey, groupEntriesByDay, mergeCalendarEntries } from '../utils/calendarEntries'
 import { categoryText, fmt, fmtClock, fmtRange, pad2, phaseTagType, phaseText, toDate, transportText } from '../utils/format'
 import { openAmapNavigation } from '../utils/amapNavigation'
@@ -313,8 +390,25 @@ const pendingInvites = ref([])
 const shareOptions = ref([])
 const shareLoading = ref(false)
 const shareSaving = ref({})
+const loadingMine = ref(false)
+const mineError = ref('')
+const loadingSchedules = ref(false)
+const schedulesError = ref('')
+const loadingInvites = ref(false)
+const invitesError = ref('')
+const shareError = ref('')
+const pendingInviteActions = ref({})
+const todayKey = calendarDayKey(new Date())
+let mineSeq = 0
+let scheduleSeq = 0
+let inviteSeq = 0
+let shareSeq = 0
 let removers = []
 const myId = myUserId()
+
+function isInvitePending(id) {
+  return pendingInviteActions.value[id] === true
+}
 
 function isCreatorOf(a) {
   return myId != null && a.creatorId === myId
@@ -323,13 +417,18 @@ function isCreatorOf(a) {
 const grantedCount = computed(() => shareOptions.value.filter((item) => item.granted).length)
 
 async function loadShareOptions() {
+  const seq = ++shareSeq
   shareLoading.value = true
+  shareError.value = ''
   try {
-    shareOptions.value = (await scheduleApi.shareOptions()) || []
+    const list = (await scheduleApi.shareOptions()) || []
+    if (seq !== shareSeq) return
+    shareOptions.value = list
   } catch (e) {
-    ElMessage.error(e.message || '加载忙闲共享设置失败')
+    if (seq !== shareSeq) return
+    shareError.value = e.message || '加载忙闲共享设置失败'
   } finally {
-    shareLoading.value = false
+    if (seq === shareSeq) shareLoading.value = false
   }
 }
 
@@ -580,27 +679,56 @@ const scheduleGroups = computed(() => {
 })
 
 async function loadMine() {
+  const seq = ++mineSeq
+  loadingMine.value = true
+  mineError.value = ''
   try {
-    mine.value = await activityApi.mine('all')
+    const list = await activityApi.mine('all')
+    if (seq !== mineSeq) return
+    mine.value = Array.isArray(list) ? list : []
   } catch (e) {
-    ElMessage.error(e.message)
+    if (seq !== mineSeq) return
+    mineError.value = e.message || '活动加载失败'
+  } finally {
+    if (seq === mineSeq) loadingMine.value = false
   }
 }
 
 async function loadSchedules() {
+  const seq = ++scheduleSeq
+  loadingSchedules.value = true
+  schedulesError.value = ''
   try {
-    schedules.value = (await scheduleApi.list()) || []
+    const list = (await scheduleApi.list()) || []
+    if (seq !== scheduleSeq) return
+    schedules.value = list
   } catch (e) {
-    ElMessage.error(e.message || '加载个人安排失败')
+    if (seq !== scheduleSeq) return
+    schedulesError.value = e.message || '加载个人安排失败'
+  } finally {
+    if (seq === scheduleSeq) loadingSchedules.value = false
   }
 }
 
 async function loadInvites() {
+  const seq = ++inviteSeq
+  loadingInvites.value = true
+  invitesError.value = ''
   try {
-    pendingInvites.value = await activityApi.pendingInvites()
+    const list = (await activityApi.pendingInvites()) || []
+    if (seq !== inviteSeq) return
+    pendingInvites.value = list
   } catch (e) {
-    ElMessage.error(e.message)
+    if (seq !== inviteSeq) return
+    invitesError.value = e.message || '活动邀请加载失败'
+  } finally {
+    if (seq === inviteSeq) loadingInvites.value = false
   }
+}
+
+function retryCalendar() {
+  loadMine()
+  loadSchedules()
 }
 
 /** 操作卡回写：按 id 替换列表项；详情弹窗开着时同步替换（保持 phase/urgent 等 computed 生效） */
@@ -617,22 +745,34 @@ function onActivityCancelled() {
 }
 
 async function acceptInvite(i) {
+  if (isInvitePending(i.id)) return
+  pendingInviteActions.value = { ...pendingInviteActions.value, [i.id]: true }
   try {
     await activityApi.acceptInvite(i.id)
     ElMessage.success(`已加入「${i.activityTitle}」`)
     await Promise.all([loadInvites(), loadMine()])
   } catch (e) {
     ElMessage.error(e.message)
+  } finally {
+    const next = { ...pendingInviteActions.value }
+    delete next[i.id]
+    pendingInviteActions.value = next
   }
 }
 
 async function declineInvite(i) {
+  if (isInvitePending(i.id)) return
+  pendingInviteActions.value = { ...pendingInviteActions.value, [i.id]: true }
   try {
     await activityApi.declineInvite(i.id)
     ElMessage.info('已拒绝该邀请')
     await loadInvites()
   } catch (e) {
     ElMessage.error(e.message)
+  } finally {
+    const next = { ...pendingInviteActions.value }
+    delete next[i.id]
+    pendingInviteActions.value = next
   }
 }
 
@@ -701,35 +841,10 @@ onUnmounted(() => {
 
 <style scoped>
 .cal-entry--highlight {
-  outline: 2px solid #409eff;
+  outline: 2px solid var(--ui-accent);
   outline-offset: 1px;
-  background: #ecf5ff;
+  background: var(--ui-accent-tint);
   border-radius: 4px;
-}
-.page {
-  max-width: 760px;
-  margin: 0 auto;
-  padding: 0 32px 56px;
-}
-.hero {
-  margin: 40px 0 12px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-}
-.hero__text {
-  min-width: 0;
-}
-.hero h1 {
-  margin: 0 0 6px;
-  font-size: 28px;
-  font-weight: 600;
-  color: rgba(0, 0, 0, 0.9);
-}
-.hero p {
-  margin: 0;
-  color: rgba(0, 0, 0, 0.55);
 }
 .empty-cta__actions {
   display: flex;
@@ -737,19 +852,20 @@ onUnmounted(() => {
   gap: 10px;
 }
 .section {
-  margin-top: 20px;
+  margin-top: 22px;
   margin-bottom: 12px;
 }
 .section h3 {
   margin: 0 0 12px;
-  font-size: 15px;
-  color: rgba(0, 0, 0, 0.9);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ui-ink);
 }
 .share-section {
   padding: 14px 16px;
-  border-radius: 12px;
-  background: #fff;
-  box-shadow: 0 2px 12px rgba(31, 56, 88, 0.06);
+  border-radius: var(--ui-radius-lg);
+  border: 1px solid var(--ui-line);
+  background: var(--ui-surface);
 }
 .share-head {
   display: flex;
@@ -774,7 +890,7 @@ onUnmounted(() => {
   justify-content: space-between;
   gap: 16px;
   padding: 10px 0;
-  border-top: 1px solid rgba(0, 0, 0, 0.06);
+  border-top: 1px solid var(--ui-line);
 }
 .share-row__main {
   display: flex;
@@ -793,18 +909,22 @@ onUnmounted(() => {
   justify-content: space-between;
   align-items: center;
   gap: 12px;
-  padding: 10px 12px;
-  border-radius: 10px;
-  background: #fff;
-  box-shadow: 0 2px 12px rgba(31, 56, 88, 0.06);
-  margin-bottom: 8px;
+  padding: 12px 2px;
+  border: 0;
+  border-bottom: 1px solid var(--ui-line);
+  border-radius: 0;
+  background: transparent;
+  margin-bottom: 0;
 }
 .row--flat {
-  box-shadow: none;
-  border: 1px solid var(--el-border-color-lighter);
+  background: var(--ui-surface-2);
+  border: 0;
+  border-radius: var(--ui-radius-md);
+  padding: 10px 12px;
 }
 .row--urgent {
-  border-left: 3px solid var(--el-color-warning);
+  border-left: 2px solid var(--ui-warning);
+  padding-left: 10px;
 }
 .row__main {
   display: flex;
@@ -812,14 +932,21 @@ onUnmounted(() => {
   gap: 8px;
   min-width: 0;
   flex-wrap: wrap;
+  flex: 1;
+}
+.row__main strong {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ui-ink);
 }
 .row__actions {
   display: flex;
   align-items: center;
+  gap: 6px;
   flex-shrink: 0;
 }
 .hint {
-  color: rgba(0, 0, 0, 0.45);
+  color: var(--ui-ink-3);
   font-size: 12px;
 }
 .empty {
@@ -836,16 +963,34 @@ onUnmounted(() => {
 .mobile-day-picker {
   display: none;
 }
-@media (max-width: 600px) {
-  .page {
-    padding: 0 16px 40px;
-  }
-  .hero {
-    margin: 24px 0 8px;
-  }
-  .hero h1 {
-    font-size: 24px;
-  }
+.activity-state {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 18px 2px;
+  font-size: 12.5px;
+  color: var(--ui-ink-3);
+}
+.activity-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0;
+  padding: 10px 12px;
+  border-radius: var(--ui-radius-md);
+  background: var(--ui-danger-tint);
+  color: var(--ui-danger);
+  font-size: 12.5px;
+}
+.activity-error .ui-text-action {
+  margin-left: auto;
+  color: var(--ui-danger);
+}
+.activity-tab-count {
+  background: var(--ui-accent-tint);
+  color: var(--ui-accent);
+}
+@media (max-width: 768px) {
   .activity-calendar {
     display: none;
   }
@@ -853,7 +998,7 @@ onUnmounted(() => {
     display: flex;
     align-items: center;
     gap: 10px;
-    margin-bottom: 8px;
+    margin-bottom: 10px;
   }
   .row {
     flex-wrap: wrap;
@@ -863,33 +1008,54 @@ onUnmounted(() => {
     justify-content: flex-end;
     flex-wrap: wrap;
   }
+  .share-row {
+    align-items: flex-start;
+  }
 }
 
 /* ===== 日历视图 ===== */
 .activity-calendar {
-  background: #fff;
-  border-radius: 10px;
-  padding-bottom: 4px;
+  background: var(--ui-surface);
+  border: 1px solid var(--ui-line);
+  border-radius: var(--ui-radius-lg);
+  overflow: hidden;
+}
+.activity-calendar :deep(.el-calendar__header) {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--ui-line);
 }
 .activity-calendar :deep(.el-calendar__body) {
-  padding: 8px 16px 12px;
+  padding: 0 10px 10px;
 }
 .activity-calendar :deep(.el-calendar-table td) {
   vertical-align: top;
+  border-color: var(--ui-line);
+}
+.activity-calendar :deep(.el-calendar-day) {
+  height: 82px;
+  padding: 4px;
 }
 .cal-cell {
   display: flex;
   flex-direction: column;
   gap: 2px;
   min-height: 72px;
-  padding: 2px 4px;
+  padding: 2px 2px;
+  border-radius: 6px;
+}
+.cal-cell--selected {
+  background: var(--ui-accent-tint);
 }
 .cal-cell__date {
   font-size: 12px;
-  color: rgba(0, 0, 0, 0.6);
+  color: var(--ui-ink-3);
 }
 .cal-cell--today .cal-cell__date {
-  color: var(--el-color-primary);
+  color: var(--ui-accent);
+  font-weight: 700;
+}
+.cal-cell--selected .cal-cell__date {
+  color: var(--ui-accent);
   font-weight: 600;
 }
 .cal-cell__days {
@@ -908,29 +1074,29 @@ onUnmounted(() => {
   text-overflow: ellipsis;
 }
 .cal-entry--open {
-  background: var(--el-color-primary-light-9);
-  color: var(--el-color-primary);
+  background: var(--ui-accent-tint);
+  color: var(--ui-accent);
 }
 .cal-entry--ongoing {
-  background: var(--el-color-success-light-9);
-  color: var(--el-color-success);
+  background: var(--ui-success-tint);
+  color: var(--ui-success);
 }
 .cal-entry--ended,
 .cal-entry--cancelled {
-  background: #f4f4f5;
-  color: #909399;
+  background: var(--ui-surface-2);
+  color: var(--ui-ink-3);
   text-decoration: line-through;
 }
 .cal-entry--schedule {
-  background: #f0f9eb;
-  color: #529b2e;
+  background: var(--ui-surface-2);
+  color: var(--ui-ink-2);
 }
 .cal-entry--more {
-  color: var(--el-text-color-secondary);
+  color: var(--ui-ink-3);
 }
 .detail-line {
   margin: 6px 0;
-  color: rgba(0, 0, 0, 0.75);
+  color: var(--ui-ink-2);
   font-size: 13px;
 }
 .detail-stops {
@@ -938,14 +1104,14 @@ onUnmounted(() => {
 }
 .detail-stops h3 {
   font-size: 13px;
-  color: var(--el-text-color-secondary);
+  color: var(--ui-ink-3);
   margin: 0 0 6px;
 }
 .stop-item {
   display: flex;
   gap: 10px;
   padding: 6px 0;
-  border-left: 2px solid var(--el-color-primary-light-7);
+  border-left: 1px solid var(--ui-line);
   margin-left: 6px;
   padding-left: 12px;
 }
@@ -954,7 +1120,7 @@ onUnmounted(() => {
   width: 20px;
   height: 20px;
   border-radius: 50%;
-  background: var(--el-color-primary);
+  background: var(--ui-accent);
   color: #fff;
   font-size: 12px;
   line-height: 20px;
