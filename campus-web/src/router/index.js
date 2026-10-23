@@ -18,12 +18,12 @@ const router = createRouter({
       component: AppShell,
       meta: { auth: true },
       children: [
-        { path: '', component: MapListView },
+        { path: '', component: MapListView, meta: { immersive: true, mobileNav: true } },
         { path: 'maps/:id', component: MapWorkspaceView, meta: { immersive: true } },
         { path: 'messages', component: () => import('../views/MessagesView.vue') },
         { path: 'friends', component: FriendsView },
         { path: 'activities', component: ActivitiesView },
-        { path: 'assistant', component: AssistantView },
+        { path: 'assistant', component: AssistantView, meta: { immersive: true, mobileNav: true } },
         {
           path: 'conversations/:conversationId/plans/:planId',
           component: () => import('../views/PlanDetailView.vue')

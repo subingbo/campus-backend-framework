@@ -1,5 +1,11 @@
 <template>
-  <div class="app-shell" :class="{ 'app-shell--immersive': isImmersive }">
+  <div
+    class="app-shell"
+    :class="{
+      'app-shell--immersive': isImmersive,
+      'app-shell--mobile-nav': route.meta.mobileNav === true
+    }"
+  >
     <header class="app-topbar">
       <div class="app-topbar__left">
         <router-link to="/" class="app-topbar__brand">
@@ -9,17 +15,27 @@
           <span class="app-topbar__brand-text">Campus Map</span>
         </router-link>
         <nav class="app-topbar__nav">
-          <router-link to="/" class="nav-item" :class="{ active: isActive('/') }">地图</router-link>
+          <router-link to="/" class="nav-item" :class="{ active: isActive('/') }">
+            <AppIcon name="compass" :size="17" class="nav-icon" />
+            <span class="nav-label">地图</span>
+          </router-link>
           <span class="nav-badge-wrap">
             <router-link to="/messages" class="nav-item" :class="{ active: isActive('/messages') }">
-              消息
+              <AppIcon name="message" :size="17" class="nav-icon" />
+              <span class="nav-label">消息</span>
             </router-link>
             <span v-if="summary.total" class="nav-badge" aria-label="未读消息">
               {{ summary.total > 99 ? '99+' : summary.total }}
             </span>
           </span>
-          <router-link to="/activities" class="nav-item" :class="{ active: isActive('/activities') }">日程</router-link>
-          <router-link to="/assistant" class="nav-item" :class="{ active: isActive('/assistant') }">AI 助手</router-link>
+          <router-link to="/activities" class="nav-item" :class="{ active: isActive('/activities') }">
+            <AppIcon name="calendar" :size="17" class="nav-icon" />
+            <span class="nav-label">日程</span>
+          </router-link>
+          <router-link to="/assistant" class="nav-item" :class="{ active: isActive('/assistant') }">
+            <AppIcon name="sparkles" :size="17" class="nav-icon" />
+            <span class="nav-label">AI 助手</span>
+          </router-link>
         </nav>
       </div>
       <div class="app-topbar__right">
@@ -203,11 +219,17 @@ onUnmounted(() => {
   text-align: center;
 }
 .nav-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   color: rgba(0, 0, 0, 0.55);
   text-decoration: none;
   font-size: 14px;
   padding: 4px 2px;
   white-space: nowrap;
+}
+.nav-icon {
+  display: none;
 }
 .nav-item.active {
   color: var(--el-color-primary);
@@ -355,6 +377,80 @@ onUnmounted(() => {
   }
   .app-shell--immersive .app-shell__main {
     height: 100dvh;
+  }
+
+  /* 首页 / AI 助手：保留一条紧凑导航栏，避免沉浸页面失去导航出口 */
+  .app-shell--immersive.app-shell--mobile-nav .app-topbar {
+    display: flex;
+    position: static;
+    height: 56px;
+    padding: 0 16px;
+    gap: 12px;
+    background: var(--ui-surface);
+    border-bottom: 1px solid var(--ui-line);
+    pointer-events: auto;
+  }
+  .app-shell--immersive.app-shell--mobile-nav .app-topbar__left {
+    flex: 1;
+    height: auto;
+    padding: 0;
+    gap: 14px;
+    background: transparent;
+    border-radius: 0;
+    box-shadow: none;
+    pointer-events: auto;
+  }
+  .app-shell--immersive.app-shell--mobile-nav .app-topbar__nav {
+    flex: 1;
+    gap: 14px;
+    overflow: hidden;
+  }
+  .app-shell--immersive.app-shell--mobile-nav .nav-item {
+    height: 36px;
+    padding: 0 2px;
+    border-radius: 8px;
+    color: var(--ui-ink-2);
+    font-size: 14px;
+  }
+  .app-shell--immersive.app-shell--mobile-nav .nav-item.active {
+    background: transparent;
+    color: var(--ui-accent);
+  }
+  .app-shell--immersive.app-shell--mobile-nav .nav-badge {
+    position: static;
+  }
+  .app-shell--immersive.app-shell--mobile-nav .app-topbar__right {
+    pointer-events: auto;
+  }
+  .app-shell--immersive.app-shell--mobile-nav .account-trigger {
+    height: 40px;
+    padding: 3px 6px 3px 3px;
+    background: transparent;
+    box-shadow: none;
+  }
+  .app-shell--immersive.app-shell--mobile-nav .account-chevron {
+    display: none;
+  }
+  .app-shell--immersive.app-shell--mobile-nav .app-shell__main {
+    flex: 1;
+    height: auto;
+    min-height: 0;
+    overflow: hidden;
+  }
+}
+
+@media (max-width: 600px) {
+  .nav-icon {
+    display: inline-block;
+  }
+  .nav-label {
+    display: none;
+  }
+}
+
+@media (max-width: 389px) {
+  .app-shell--immersive.app-shell--mobile-nav .app-topbar__brand-text {
+    display: none;
   }
 }
 @media (max-width: 600px) {
