@@ -268,9 +268,14 @@
           <button class="ui-btn ui-btn--primary home-mobile-foot__enter" type="button" :disabled="!selectedMap" @click="enterSelectedMap">
             {{ selectedMap ? `进入「${selectedMap.name}」` : '选择一张地图' }}
           </button>
-          <button class="ui-text-action ui-text-action--muted" type="button" @click="openJoinFromSheet">
-            用邀请码加入
-          </button>
+          <div class="home-mobile-foot__links">
+            <button class="ui-text-action ui-text-action--muted" type="button" @click="openCreateFromSheet">
+              创建地图
+            </button>
+            <button class="ui-text-action ui-text-action--muted" type="button" @click="openJoinFromSheet">
+              用邀请码加入
+            </button>
+          </div>
         </footer>
       </div>
     </BottomSheet>
@@ -649,12 +654,13 @@ function openJoinFromSheet() {
 
 function updateMedia() {
   const width = window.innerWidth
+  const wasMobile = isMobile.value
   isMobile.value = width <= 768
   isWide.value = width >= 1440
   isNarrow.value = width > 768 && width <= 1099
   if (isMobile.value) {
     summaryOpen.value = false
-    mobileSheetOpen.value = false
+    if (!wasMobile) mobileSheetOpen.value = false
   } else if (isNarrow.value) {
     summaryOpen.value = false
   } else if (isWide.value) {

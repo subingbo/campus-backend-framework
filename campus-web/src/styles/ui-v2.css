@@ -448,6 +448,7 @@
 }
 
 .ui-v2 .ui-search__clear {
+  position: relative;
   width: 20px;
   height: 20px;
   display: grid;
@@ -456,6 +457,12 @@
   border-radius: 50%;
   background: var(--ui-surface-3);
   color: var(--ui-ink-3);
+}
+
+.ui-v2 .ui-search__clear::before {
+  content: '';
+  position: absolute;
+  inset: -12px;
 }
 
 .ui-v2 .ui-search__clear:hover {
@@ -2484,6 +2491,7 @@
 .ui-v2 .home-map {
   position: absolute;
   inset: 0;
+  z-index: 0;
 }
 
 .ui-v2 .home-map-loading {
@@ -2869,8 +2877,15 @@
   flex-direction: column;
   gap: 2px;
   flex-shrink: 0;
-  padding: 8px 18px 12px;
+  padding: 8px 18px calc(12px + env(safe-area-inset-bottom, 0));
   box-shadow: inset 0 1px 0 var(--ui-line);
+}
+
+.ui-v2 .home-mobile-foot__links {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
 }
 
 .ui-v2 .home-mobile-foot__enter {
@@ -2882,8 +2897,8 @@
 }
 
 .ui-v2 .home-mobile-foot .ui-text-action {
-  align-self: flex-start;
-  min-height: 36px;
+  min-height: var(--ui-tap);
+  align-self: auto;
 }
 
 .ui-v2 .home-invite-code,
