@@ -1,132 +1,275 @@
 <template>
-  <div class="page content-page">
-    <div class="hero">
-      <div>
-        <h1>消息中心</h1>
-        <p>通知、会话和待办都汇在这里；离线时的通知也会保留</p>
-      </div>
-      <el-tag effect="plain" round>未读 {{ summary.total }}</el-tag>
-    </div>
+  <div class="page content-page messages-page">
+    <PageHeader
+      title="消息中心"
+      description="通知、会话和待办都汇在这里；离线时的通知也会保留"
+    >
+      <template #summary>
+        <span class="ui-pill" :class="{ 'ui-pill--muted': !summary.total }">未读 {{ summary.total }}</span>
+      </template>
+    </PageHeader>
 
-    <el-tabs v-model="activeTab" @tab-change="onTabChange">
+    <el-tabs v-model="activeTab" class="messages-tabs" @tab-change="onTabChange">
       <el-tab-pane name="notifications">
         <template #label>
-          通知
-          <span v-if="summary.unreadNotifications" class="tab-count">{{ summary.unreadNotifications }}</span>
+          <span class="messages-tab-label">
+            通知
+            <span v-if="summary.unreadNotifications" class="ui-count messages-tab-count">{{ summary.unreadNotifications }}</span>
+          </span>
         </template>
-        <div class="toolbar">
-          <el-radio-group v-model="notificationScope" size="small" @change="loadNotifications">
-            <el-radio-button value="all">全部</el-radio-button>
-            <el-radio-button value="unread">未读</el-radio-button>
-          </el-radio-group>
-          <el-button
-            size="small"
-            :disabled="!summary.unreadNotifications"
+
+        <div class="messages-toolbar">
+          <div class="ui-chips messages-scope" role="group" aria-label="通知范围">
+            <button
+              v-for="scope in [{ value: 'all', label: '全部' }, { value: 'unread', label: '未读' }]"
+              :key="scope.value"
+              type="button"
+              class="ui-chip"
+              :class="{ 'is-active': notificationScope === scope.value }"
+              @click="setNotificationScope(scope.value)"
+            >{{ scope.label }}</button>
+          </div>
+          <button
+            type="button"
+            class="ui-text-action ui-text-action--muted messages-read-all"
+            :disabled="!summary.unreadNotifications || isPending('all-read')"
             @click="markAllRead"
-          >全部已读</el-button>
+          >{{ isPending('all-read') ? '处理中…' : '全部已读' }}</button>
         </div>
-        <p v-if="notificationError" class="hint empty">{{ notificationError }}</p>
-        <p v-else-if="!loadingNotifications && !notifications.length" class="hint empty">
-          暂无通知；好友申请、活动邀请、提醒和取消都会在这里留一条记录
-        </p>
-        <div
-          v-for="n in notifications"
-          :key="n.id"
-          class="row row--clickable"
-          :class="{ 'row--unread': !n.read }"
-          @click="openNotification(n)"
-        >
-          <div class="row__main">
-            <span v-if="!n.read" class="dot dot--unread" />
-            <strong>{{ n.title }}</strong>
-            <span v-if="n.content" class="hint">{{ n.content }}</span>
-            <span class="hint">{{ fmt(n.createdAt) }}</span>
-          </div>
-          <div class="row__actions">
-            <el-tag size="small" effect="plain" :type="typeTag(n.type)">{{ typeText(n.type) }}</el-tag>
-            <el-button v-if="!n.read" size="small" text @click.stop="markRead(n)">标记已读</el-button>
-          </div>
+
+        <div v-if="loadingNotifications" class="messages-state">
+          <span class="ui-spinner" />
+          正在加载通知…
         </div>
+        <div v-if="notificationError" class="messages-error">
+          <AppIcon name="alert-circle" :size="15" />
+          <span>{{ notificationError }}</span>
+          <button type="button" class="ui-text-action" @click="loadNotifications">重试</button>
+        </div>
+        <div v-if="!loadingNotifications && notifications.length" class="messages-list">
+          <article
+            v-for="n in notifications"
+            :key="n.id"
+            class="message-row"
+            :class="{ 'is-unread': !n.read }"
+          >
+            <button type="button" class="message-row__open" @click="openNotification(n)">
+              <span v-if="!n.read" class="message-row__dot" aria-hidden="true" />
+              <div class="message-row__main">
+                <div class="message-row__top">
+                  <strong class="message-row__title">{{ n.title }}</strong>
+                  <time class="message-row__time">{{ fmt(n.createdAt) }}</time>
+                </div>
+                <p v-if="n.content" class="message-row__summary">{{ n.content }}</p>
+                <div class="message-row__meta">
+                  <span class="ui-pill ui-pill--muted">{{ typeText(n.type) }}</span>
+                  <span v-if="!n.read" class="message-row__unread">未读</span>
+                </div>
+              </div>
+            </button>
+            <div v-if="!n.read" class="message-row__actions">
+              <button
+                type="button"
+                class="ui-text-action"
+                :disabled="isPending('notification:' + n.id)"
+                @click.stop="markRead(n)"
+              >{{ isPending('notification:' + n.id) ? '处理中…' : '标记已读' }}</button>
+            </div>
+          </article>
+        </div>
+        <EmptyState
+          v-else-if="!loadingNotifications && !notificationError"
+          icon="message"
+          title="暂无通知"
+          description="好友申请、活动邀请、提醒和取消都会在这里留一条记录。"
+          compact
+        />
       </el-tab-pane>
 
       <el-tab-pane name="conversations">
         <template #label>
-          会话
-          <span v-if="summary.unreadChatConversations" class="tab-count">{{ summary.unreadChatConversations }}</span>
+          <span class="messages-tab-label">
+            会话
+            <span v-if="summary.unreadChatConversations" class="ui-count messages-tab-count">{{ summary.unreadChatConversations }}</span>
+          </span>
         </template>
-        <p v-if="!conversations.length" class="hint empty">还没有会话；在地图群聊或好友私聊里发第一条消息吧</p>
-        <div
-          v-for="c in conversations"
-          :key="c.id"
-          class="row row--clickable"
-          @click="openConversation(c)"
-        >
-          <div class="row__main">
-            <strong>{{ c.title || '会话' }}</strong>
-            <el-tag size="small" effect="plain">{{ conversationTypeText(c.type) }}</el-tag>
-            <span v-if="c.lastMessage?.content" class="hint last-msg">{{ c.lastMessage.content }}</span>
-            <span class="hint">{{ fmt(c.lastMessage?.createdAt || c.createdAt) }}</span>
-          </div>
-          <div class="row__actions">
-            <el-badge v-if="c.unread" :value="c.unread" :max="99">
-              <span class="unread-pill">未读</span>
-            </el-badge>
-            <el-button v-else size="small" text>打开</el-button>
-          </div>
+
+        <div v-if="loadingConversations" class="messages-state">
+          <span class="ui-spinner" />
+          正在加载会话…
         </div>
+        <div v-if="conversationError" class="messages-error">
+          <AppIcon name="alert-circle" :size="15" />
+          <span>{{ conversationError }}</span>
+          <button type="button" class="ui-text-action" @click="loadConversations">重试</button>
+        </div>
+        <div v-if="!loadingConversations && conversations.length" class="messages-list">
+          <button
+            v-for="c in conversations"
+            :key="c.id"
+            type="button"
+            class="message-row message-row--button"
+            :class="{ 'is-unread': c.unread }"
+            @click="openConversation(c)"
+          >
+            <span class="message-row__avatar" aria-hidden="true">{{ (c.title || '会').slice(0, 1) }}</span>
+            <div class="message-row__main">
+              <div class="message-row__top">
+                <strong class="message-row__title">{{ c.title || '会话' }}</strong>
+                <time class="message-row__time">{{ fmt(c.lastMessage?.createdAt || c.createdAt) }}</time>
+              </div>
+              <p v-if="c.lastMessage?.content" class="message-row__summary">{{ c.lastMessage.content }}</p>
+              <div class="message-row__meta">
+                <span class="ui-pill ui-pill--muted">{{ conversationTypeText(c.type) }}</span>
+                <span v-if="c.unread" class="ui-count messages-tab-count">{{ c.unread > 99 ? '99+' : c.unread }}</span>
+              </div>
+            </div>
+            <AppIcon name="chevron-right" :size="15" class="message-row__chev" />
+          </button>
+        </div>
+        <EmptyState
+          v-else-if="!loadingConversations && !conversationError"
+          icon="message"
+          title="还没有会话"
+          description="在地图群聊或好友私聊里发第一条消息吧。"
+          compact
+        />
       </el-tab-pane>
 
       <el-tab-pane name="friendRequests">
         <template #label>
-          好友申请
-          <span v-if="summary.pendingFriendRequests" class="tab-count">{{ summary.pendingFriendRequests }}</span>
+          <span class="messages-tab-label">
+            好友申请
+            <span v-if="summary.pendingFriendRequests" class="ui-count messages-tab-count">{{ summary.pendingFriendRequests }}</span>
+          </span>
         </template>
-        <p v-if="!requests.received.length && !requests.sent.length" class="hint empty">没有待处理的好友申请</p>
-        <div v-for="r in requests.received" :key="'received-' + r.id" class="row">
-          <div class="row__main">
-            <strong>{{ r.fromNickname || r.fromUsername }}</strong>
-            <span class="hint">@{{ r.fromUsername }}</span>
-            <span v-if="r.message" class="hint">「{{ r.message }}」</span>
-            <span class="hint">{{ fmt(r.createdAt) }}</span>
-          </div>
-          <div class="row__actions">
-            <el-button size="small" type="primary" @click="acceptFriend(r)">接受</el-button>
-            <el-button size="small" @click="rejectFriend(r)">拒绝</el-button>
-          </div>
+
+        <div v-if="loadingRequests" class="messages-state">
+          <span class="ui-spinner" />
+          正在加载好友申请…
         </div>
-        <div v-if="requests.sent.length" class="section">
-          <h3>我发出的申请</h3>
-          <div v-for="r in requests.sent" :key="'sent-' + r.id" class="row">
-            <div class="row__main">
-              <strong>{{ r.toNickname || r.toUsername }}</strong>
-              <span class="hint">@{{ r.toUsername }}</span>
-              <span class="hint">{{ fmt(r.createdAt) }}</span>
+        <div v-if="requestsError" class="messages-error">
+          <AppIcon name="alert-circle" :size="15" />
+          <span>{{ requestsError }}</span>
+          <button type="button" class="ui-text-action" @click="loadRequests">重试</button>
+        </div>
+        <div v-if="!loadingRequests && requests.received.length" class="messages-list">
+          <article v-for="r in requests.received" :key="'received-' + r.id" class="message-row">
+            <span class="message-row__avatar" aria-hidden="true">{{ (r.fromNickname || r.fromUsername || '?').slice(0, 1) }}</span>
+            <div class="message-row__main">
+              <div class="message-row__top">
+                <strong class="message-row__title">{{ r.fromNickname || r.fromUsername }}</strong>
+                <time class="message-row__time">{{ fmt(r.createdAt) }}</time>
+              </div>
+              <div class="message-row__meta">
+                <span class="message-row__sub">@{{ r.fromUsername }}</span>
+                <span v-if="r.message" class="message-row__sub">「{{ r.message }}」</span>
+              </div>
             </div>
-            <el-tag size="small" effect="plain" :type="requestStatusTag(r.status)">
-              {{ requestStatusText(r.status) }}
-            </el-tag>
+            <div class="message-row__actions">
+              <button
+                type="button"
+                class="ui-btn ui-btn--sm ui-btn--primary"
+                :disabled="isPending('friend:' + r.id)"
+                @click="acceptFriend(r)"
+              >接受</button>
+              <button
+                type="button"
+                class="ui-btn ui-btn--sm ui-btn--ghost"
+                :disabled="isPending('friend:' + r.id)"
+                @click="rejectFriend(r)"
+              >拒绝</button>
+            </div>
+          </article>
+        </div>
+        <EmptyState
+          v-else-if="!loadingRequests && !requestsError && !requests.sent.length"
+          icon="users"
+          title="没有待处理的好友申请"
+          description="新的好友申请会出现在这里。"
+          compact
+        />
+
+        <div v-if="!loadingRequests && requests.sent.length" class="messages-sent">
+          <SectionTitle title="我发出的申请" :count="requests.sent.length" />
+          <div class="messages-list">
+            <article v-for="r in requests.sent" :key="'sent-' + r.id" class="message-row">
+              <span class="message-row__avatar" aria-hidden="true">{{ (r.toNickname || r.toUsername || '?').slice(0, 1) }}</span>
+              <div class="message-row__main">
+                <div class="message-row__top">
+                  <strong class="message-row__title">{{ r.toNickname || r.toUsername }}</strong>
+                  <time class="message-row__time">{{ fmt(r.createdAt) }}</time>
+                </div>
+                <div class="message-row__meta">
+                  <span class="message-row__sub">@{{ r.toUsername }}</span>
+                  <span class="ui-pill message-status" :class="'message-status--' + (r.status === 1 ? 'ok' : r.status === 2 ? 'muted' : 'pending')">
+                    {{ requestStatusText(r.status) }}
+                  </span>
+                </div>
+              </div>
+            </article>
           </div>
         </div>
       </el-tab-pane>
 
       <el-tab-pane name="invites">
         <template #label>
-          活动邀请
-          <span v-if="summary.pendingActivityInvites" class="tab-count">{{ summary.pendingActivityInvites }}</span>
+          <span class="messages-tab-label">
+            活动邀请
+            <span v-if="summary.pendingActivityInvites" class="ui-count messages-tab-count">{{ summary.pendingActivityInvites }}</span>
+          </span>
         </template>
-        <p v-if="!invites.length" class="hint empty">没有待响应的活动邀请</p>
-        <div v-for="i in invites" :key="i.id" class="row">
-          <div class="row__main">
-            <strong>{{ i.activityTitle }}</strong>
-            <span class="hint">{{ fmtRange(i.activityStartTime, i.activityEndTime) }}</span>
-            <span class="hint">📍 {{ i.placeName || '地点' }}</span>
-            <span class="hint">{{ i.inviterNickname }} 邀请你加入</span>
-          </div>
-          <div class="row__actions">
-            <el-button size="small" type="primary" @click="acceptInvite(i)">接受</el-button>
-            <el-button size="small" @click="declineInvite(i)">拒绝</el-button>
-          </div>
+
+        <div v-if="loadingInvites" class="messages-state">
+          <span class="ui-spinner" />
+          正在加载活动邀请…
         </div>
+        <div v-if="invitesError" class="messages-error">
+          <AppIcon name="alert-circle" :size="15" />
+          <span>{{ invitesError }}</span>
+          <button type="button" class="ui-text-action" @click="loadInvites">重试</button>
+        </div>
+        <div v-if="!loadingInvites && invites.length" class="messages-list">
+          <article v-for="i in invites" :key="i.id" class="message-row">
+            <span class="message-row__avatar message-row__avatar--activity" aria-hidden="true">
+              <AppIcon name="calendar" :size="16" />
+            </span>
+            <div class="message-row__main">
+              <div class="message-row__top">
+                <strong class="message-row__title">{{ i.activityTitle }}</strong>
+                <time class="message-row__time">{{ fmt(i.createdAt) }}</time>
+              </div>
+              <p class="message-row__summary">{{ fmtRange(i.activityStartTime, i.activityEndTime) }}</p>
+              <div class="message-row__meta">
+                <span v-if="i.placeName" class="message-row__sub">
+                  <AppIcon name="pin" :size="12" /> {{ i.placeName }}
+                </span>
+                <span class="message-row__sub">{{ i.inviterNickname }} 邀请你加入</span>
+              </div>
+            </div>
+            <div class="message-row__actions">
+              <button
+                type="button"
+                class="ui-btn ui-btn--sm ui-btn--primary"
+                :disabled="isPending('invite:' + i.id)"
+                @click="acceptInvite(i)"
+              >接受</button>
+              <button
+                type="button"
+                class="ui-btn ui-btn--sm ui-btn--ghost"
+                :disabled="isPending('invite:' + i.id)"
+                @click="declineInvite(i)"
+              >拒绝</button>
+            </div>
+          </article>
+        </div>
+        <EmptyState
+          v-else-if="!loadingInvites && !invitesError"
+          icon="calendar"
+          title="没有待响应的活动邀请"
+          description="收到活动邀请后会在这里等待你的响应。"
+          compact
+        />
       </el-tab-pane>
     </el-tabs>
   </div>
@@ -141,6 +284,10 @@ import { on } from '../composables/useChatSocket'
 import { useMessageSummary } from '../composables/useMessageSummary'
 import { fmt, fmtRange } from '../utils/format'
 import { conversationRoute, notificationRoute } from '../utils/notificationTarget'
+import AppIcon from '../components/ui/AppIcon.vue'
+import EmptyState from '../components/ui/EmptyState.vue'
+import PageHeader from '../components/ui/PageHeader.vue'
+import SectionTitle from '../components/ui/SectionTitle.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -152,9 +299,20 @@ const notifications = ref([])
 const loadingNotifications = ref(false)
 const notificationError = ref('')
 const conversations = ref([])
+const loadingConversations = ref(false)
+const conversationError = ref('')
 const requests = ref({ received: [], sent: [] })
+const loadingRequests = ref(false)
+const requestsError = ref('')
 const invites = ref([])
+const loadingInvites = ref(false)
+const invitesError = ref('')
+const pending = ref({})
 let removers = []
+let notificationSeq = 0
+let conversationSeq = 0
+let requestSeq = 0
+let inviteSeq = 0
 
 const TYPE_TEXT = {
   FRIEND_REQUEST: '好友申请',
@@ -164,21 +322,9 @@ const TYPE_TEXT = {
   ACTIVITY_CANCELLED: '活动取消',
   ACTIVITY_MEMBER_JOINED: '成员加入'
 }
-const TYPE_TAG = {
-  FRIEND_REQUEST: 'primary',
-  FRIEND_ACCEPTED: 'success',
-  ACTIVITY_INVITED: 'warning',
-  ACTIVITY_REMINDER: 'warning',
-  ACTIVITY_CANCELLED: 'danger',
-  ACTIVITY_MEMBER_JOINED: 'success'
-}
 
 function typeText(type) {
   return TYPE_TEXT[type] || type
-}
-
-function typeTag(type) {
-  return TYPE_TAG[type] || 'info'
 }
 
 function conversationTypeText(type) {
@@ -189,11 +335,17 @@ function requestStatusText(status) {
   return { 0: '待处理', 1: '已接受', 2: '已拒绝' }[status] || '未知'
 }
 
-function requestStatusTag(status) {
-  return { 0: 'warning', 1: 'success', 2: 'info' }[status] || 'info'
+function isPending(key) {
+  return pending.value[key] === true
+}
+
+function setPending(key, value) {
+  if (value) pending.value[key] = true
+  else delete pending.value[key]
 }
 
 async function loadNotifications() {
+  const seq = ++notificationSeq
   loadingNotifications.value = true
   notificationError.value = ''
   try {
@@ -202,40 +354,72 @@ async function loadNotifications() {
       page: 1,
       size: 50
     })
+    if (seq !== notificationSeq) return
     notifications.value = page?.list || []
   } catch (e) {
+    if (seq !== notificationSeq) return
     notificationError.value = e.message || '通知加载失败'
   } finally {
-    loadingNotifications.value = false
+    if (seq === notificationSeq) loadingNotifications.value = false
   }
 }
 
 async function loadConversations() {
+  const seq = ++conversationSeq
+  loadingConversations.value = true
+  conversationError.value = ''
   try {
-    conversations.value = (await chatApi.conversations()) || []
+    const list = (await chatApi.conversations()) || []
+    if (seq !== conversationSeq) return
+    conversations.value = list
   } catch (e) {
-    ElMessage.error(e.message || '会话加载失败')
+    if (seq !== conversationSeq) return
+    conversationError.value = e.message || '会话加载失败'
+  } finally {
+    if (seq === conversationSeq) loadingConversations.value = false
   }
 }
 
 async function loadRequests() {
+  const seq = ++requestSeq
+  loadingRequests.value = true
+  requestsError.value = ''
   try {
-    requests.value = (await friendApi.requests()) || { received: [], sent: [] }
+    const data = (await friendApi.requests()) || { received: [], sent: [] }
+    if (seq !== requestSeq) return
+    requests.value = data
   } catch (e) {
-    ElMessage.error(e.message || '好友申请加载失败')
+    if (seq !== requestSeq) return
+    requestsError.value = e.message || '好友申请加载失败'
+  } finally {
+    if (seq === requestSeq) loadingRequests.value = false
   }
 }
 
 async function loadInvites() {
+  const seq = ++inviteSeq
+  loadingInvites.value = true
+  invitesError.value = ''
   try {
-    invites.value = (await activityApi.pendingInvites()) || []
+    const list = (await activityApi.pendingInvites()) || []
+    if (seq !== inviteSeq) return
+    invites.value = list
   } catch (e) {
-    ElMessage.error(e.message || '活动邀请加载失败')
+    if (seq !== inviteSeq) return
+    invitesError.value = e.message || '活动邀请加载失败'
+  } finally {
+    if (seq === inviteSeq) loadingInvites.value = false
   }
 }
 
 async function refreshAll() {
   await Promise.all([loadNotifications(), loadConversations(), loadRequests(), loadInvites(), refreshSummary()])
+}
+
+function setNotificationScope(scope) {
+  if (notificationScope.value === scope) return
+  notificationScope.value = scope
+  loadNotifications()
 }
 
 function onTabChange(name) {
@@ -248,6 +432,9 @@ function onTabChange(name) {
 
 async function markRead(n) {
   if (n.read) return
+  const key = `notification:${n.id}`
+  if (isPending(key)) return
+  setPending(key, true)
   try {
     await notificationApi.markRead(n.id)
     n.read = true
@@ -256,24 +443,28 @@ async function markRead(n) {
     }
     await refreshSummary()
   } catch (e) {
-    ElMessage.error(e.message)
+    ElMessage.error(e.message || '标记失败')
+  } finally {
+    setPending(key, false)
   }
 }
 
 async function markAllRead() {
+  if (isPending('all-read') || !summary.unreadNotifications) return
+  setPending('all-read', true)
   try {
     await notificationApi.markAllRead()
     await Promise.all([loadNotifications(), refreshSummary()])
     ElMessage.success('已全部标记为已读')
   } catch (e) {
-    ElMessage.error(e.message)
+    ElMessage.error(e.message || '标记失败')
+  } finally {
+    setPending('all-read', false)
   }
 }
 
 async function openNotification(n) {
-  if (!n.read) {
-    await markRead(n)
-  }
+  if (!n.read) await markRead(n)
   router.push(notificationRoute(n))
 }
 
@@ -282,42 +473,62 @@ function openConversation(c) {
 }
 
 async function acceptFriend(r) {
+  const key = `friend:${r.id}`
+  if (isPending(key)) return
+  setPending(key, true)
   try {
     await friendApi.accept(r.id)
     ElMessage.success('已添加好友')
     await Promise.all([loadRequests(), loadConversations(), refreshSummary()])
   } catch (e) {
-    ElMessage.error(e.message)
+    ElMessage.error(e.message || '操作失败')
+  } finally {
+    setPending(key, false)
   }
 }
 
 async function rejectFriend(r) {
+  const key = `friend:${r.id}`
+  if (isPending(key)) return
+  setPending(key, true)
   try {
     await friendApi.reject(r.id)
     ElMessage.info('已拒绝该好友申请')
     await Promise.all([loadRequests(), refreshSummary()])
   } catch (e) {
-    ElMessage.error(e.message)
+    ElMessage.error(e.message || '操作失败')
+  } finally {
+    setPending(key, false)
   }
 }
 
 async function acceptInvite(i) {
+  const key = `invite:${i.id}`
+  if (isPending(key)) return
+  setPending(key, true)
   try {
     await activityApi.acceptInvite(i.id)
     ElMessage.success(`已加入「${i.activityTitle}」`)
     await Promise.all([loadInvites(), loadNotifications(), refreshSummary()])
   } catch (e) {
-    ElMessage.error(e.message)
+    ElMessage.error(e.message || '操作失败')
+  } finally {
+    setPending(key, false)
   }
 }
 
 async function declineInvite(i) {
+  const key = `invite:${i.id}`
+  if (isPending(key)) return
+  setPending(key, true)
   try {
     await activityApi.declineInvite(i.id)
     ElMessage.info('已拒绝该邀请')
     await Promise.all([loadInvites(), loadNotifications(), refreshSummary()])
   } catch (e) {
-    ElMessage.error(e.message)
+    ElMessage.error(e.message || '操作失败')
+  } finally {
+    setPending(key, false)
   }
 }
 
@@ -357,144 +568,317 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.page {
-  max-width: 760px;
-  margin: 0 auto;
-  padding: 0 32px 56px;
+.messages-page {
+  padding-bottom: 56px;
 }
-.hero {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-  margin: 40px 0 20px;
+
+.messages-tabs :deep(.el-tabs__header) {
+  margin-bottom: 18px;
 }
-.hero h1 {
-  margin: 0 0 6px;
-  font-size: 28px;
-  font-weight: 600;
-  color: rgba(0, 0, 0, 0.9);
+
+.messages-tab-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
 }
-.hero p {
-  margin: 0;
-  color: rgba(0, 0, 0, 0.55);
+
+.messages-tab-count {
+  background: var(--ui-accent-tint);
+  color: var(--ui-accent);
 }
-.toolbar {
+
+.messages-toolbar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 12px;
+  gap: 10px;
+  margin-bottom: 10px;
 }
-.row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
-  padding: 10px 12px;
-  border-radius: 10px;
-  background: #fff;
-  box-shadow: 0 2px 12px rgba(31, 56, 88, 0.06);
-  margin-bottom: 8px;
+
+.messages-scope {
+  flex-wrap: wrap;
 }
-.row--clickable {
-  cursor: pointer;
+
+.messages-scope .ui-chip {
+  height: 32px;
+  padding: 0 12px;
 }
-.row--clickable:hover {
-  box-shadow: 0 4px 16px rgba(31, 56, 88, 0.12);
+
+.messages-read-all {
+  margin-left: auto;
+  font-size: 12px;
 }
-.row--unread {
-  background: #f6f9ff;
-}
-.row__main {
+
+.messages-state {
   display: flex;
   align-items: center;
   gap: 8px;
-  min-width: 0;
-  flex-wrap: wrap;
-  flex: 1;
+  padding: 22px 4px;
+  font-size: 12.5px;
+  color: var(--ui-ink-3);
 }
-.row__actions {
+
+.messages-error {
   display: flex;
   align-items: center;
-  gap: 6px;
-  flex-shrink: 0;
+  gap: 8px;
+  margin-bottom: 10px;
+  padding: 10px 12px;
+  border-radius: var(--ui-radius-md);
+  background: var(--ui-danger-tint);
+  color: var(--ui-danger);
+  font-size: 12.5px;
 }
-.hint {
-  color: rgba(0, 0, 0, 0.45);
+
+.messages-error .ui-text-action {
+  margin-left: auto;
+  color: var(--ui-danger);
+}
+
+.messages-list {
+  border-top: 1px solid var(--ui-line);
+}
+
+.message-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  min-width: 0;
+  padding: 14px 8px;
+  border: 0;
+  border-bottom: 1px solid var(--ui-line);
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  transition: background var(--ui-dur) var(--ui-ease);
+}
+
+.message-row__open {
+  display: flex;
+  flex: 1;
+  align-items: flex-start;
+  gap: 11px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.message-row--button {
+  width: 100%;
+  font: inherit;
+  cursor: pointer;
+}
+
+.message-row.is-clickable,
+.message-row--button {
+  cursor: pointer;
+}
+
+.message-row.is-clickable:hover,
+.message-row--button:hover,
+.message-row:has(.message-row__open:hover) {
+  background: var(--ui-surface-2);
+}
+
+.message-row.is-unread {
+  background: var(--ui-accent-tint);
+}
+
+.message-row.is-unread:hover,
+.message-row.is-unread:has(.message-row__open:hover) {
+  background: #e6eef9;
+}
+
+.message-row__open:focus-visible,
+.message-row--button:focus-visible {
+  outline: 2px solid var(--ui-accent);
+  outline-offset: -2px;
+  border-radius: var(--ui-radius-sm);
+}
+
+.message-row__dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  margin-top: 7px;
+  border-radius: 50%;
+  background: var(--ui-accent);
+}
+
+.message-row__avatar {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  background: var(--ui-surface-2);
+  color: var(--ui-ink-2);
   font-size: 12px;
+  font-weight: 600;
 }
-.empty {
-  text-align: center;
-  padding: 16px 0;
+
+.message-row__avatar--activity {
+  background: var(--ui-accent-tint);
+  color: var(--ui-accent);
 }
-.last-msg {
-  max-width: 340px;
+
+.message-row__main {
+  flex: 1;
+  min-width: 0;
+}
+
+.message-row__top {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+
+.message-row__title {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ui-ink);
 }
-.dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #c9ced6;
-  flex-shrink: 0;
+
+.message-row__time {
+  flex: none;
+  font-size: 11px;
+  color: var(--ui-ink-3);
+  white-space: nowrap;
 }
-.dot--unread {
-  background: #409eff;
+
+.message-row__summary {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  margin: 4px 0 0;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--ui-ink-2);
+  overflow-wrap: anywhere;
 }
-.tab-count {
-  display: inline-block;
-  min-width: 16px;
-  height: 16px;
-  padding: 0 4px;
+
+.message-row__meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 7px;
+}
+
+.message-row__sub {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11.5px;
+  color: var(--ui-ink-3);
+  overflow-wrap: anywhere;
+}
+
+.message-row__unread {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ui-accent);
+}
+
+.message-row__chev {
+  flex: none;
+  margin-top: 8px;
+  color: var(--ui-ink-3);
+}
+
+.message-row__actions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
   margin-left: 4px;
-  border-radius: 8px;
-  background: #f56c6c;
-  color: #fff;
-  font-size: 10px;
-  line-height: 16px;
-  text-align: center;
 }
-.unread-pill {
-  font-size: 12px;
-  color: #409eff;
+
+.message-status--pending {
+  background: var(--ui-warning-tint);
+  color: var(--ui-warning);
 }
-.section {
-  margin-top: 20px;
+
+.message-status--ok {
+  background: var(--ui-success-tint);
+  color: var(--ui-success);
 }
-.section h3 {
-  margin: 0 0 10px;
-  font-size: 14px;
-  color: rgba(0, 0, 0, 0.9);
+
+.message-status--muted {
+  background: var(--ui-surface-2);
+  color: var(--ui-ink-3);
 }
-@media (max-width: 600px) {
-  .page {
-    padding: 0 16px 40px;
+
+.messages-sent {
+  margin-top: 22px;
+}
+
+.messages-sent :deep(.ui-section-title) {
+  margin-bottom: 8px;
+}
+
+@media (max-width: 768px) {
+  .messages-page {
+    padding-bottom: 36px;
   }
-  .hero {
-    margin: 24px 0 16px;
-  }
-  .hero h1 {
-    font-size: 24px;
-  }
-  .row {
-    align-items: flex-start;
-  }
-  .row__actions {
+
+  .message-row {
     flex-wrap: wrap;
+  }
+
+  .message-row__main {
+    flex: 1 1 calc(100% - 42px);
+  }
+
+  .message-row__actions {
+    width: 100%;
+    margin-left: 0;
+    padding-left: 42px;
     justify-content: flex-end;
   }
-  .last-msg {
-    max-width: 100%;
+
+  .message-row__actions .ui-btn {
+    min-height: var(--ui-tap);
   }
-  .toolbar {
-    flex-wrap: wrap;
+
+  .message-row__title {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+    overflow-wrap: anywhere;
   }
-  :deep(.el-tabs__item) {
-    padding: 0 10px;
-    font-size: 13px;
+
+  .messages-tabs :deep(.el-tabs__item) {
+    padding: 0 9px;
+    font-size: 12.5px;
+  }
+}
+
+@media (max-width: 389px) {
+  .message-row {
+    padding-left: 4px;
+    padding-right: 4px;
+  }
+
+  .messages-tabs :deep(.el-tabs__item) {
+    padding: 0 7px;
+    font-size: 12px;
+  }
+
+  .messages-tab-label {
+    gap: 3px;
   }
 }
 </style>
