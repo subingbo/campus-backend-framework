@@ -1,6 +1,17 @@
 <template>
-  <div class="assistant-page ui-v2">
-    <aside class="chat-col">
+  <div class="assistant-page ui-v2" :class="{ 'is-chat-collapsed': chatCollapsed, 'is-keyboard': keyboardMode }">
+    <aside class="chat-col" :class="{ 'is-collapsed': chatCollapsed }" :style="chatPanelStyle">
+      <button
+        class="chat-grabber"
+        :class="{ 'is-collapsed': chatCollapsed }"
+        type="button"
+        :aria-label="chatCollapsed ? '展开对话' : '收起对话'"
+        :aria-expanded="!chatCollapsed"
+        @click="toggleChatCollapsed"
+      >
+        <span class="chat-grabber__bar" aria-hidden="true" />
+        <AppIcon name="chevron-down" :size="14" class="chat-grabber__chev" />
+      </button>
       <header class="chat-head">
         <span class="chat-head__title">
           <AppIcon name="sparkles" :size="15" />
@@ -302,7 +313,7 @@
           :rows="2"
           resize="none"
           placeholder="描述你要办的活动，如：周六下午和社团 6 人漫游校园，最后一起吃晚饭"
-          @keydown.enter.exact.prevent="send"
+          @keydown.enter.exact="onComposerKeydown"
         />
         <el-button type="primary" :disabled="busy || !input.trim()" @click="send">
           {{ busy ? '规划中…' : '发送' }}
@@ -449,6 +460,46 @@ function toggleAttachLocation() {
 }
 
 const isMobile = () => window.matchMedia('(max-width: 768px)').matches
+const chatCollapsed = ref(false)
+const keyboardInset = ref(0)
+const compactViewport = ref(false)
+const KEYBOARD_MIN_INSET = 80
+let viewportBaseline = window.innerHeight
+const keyboardMode = computed(() => keyboardInset.value >= KEYBOARD_MIN_INSET || compactViewport.value)
+const chatPanelStyle = computed(() => {
+  if (window.innerWidth > 768 || chatCollapsed.value) return {}
+  if (keyboardInset.value >= KEYBOARD_MIN_INSET) {
+    return {
+      bottom: `${keyboardInset.value}px`,
+      height: `calc(100% - ${keyboardInset.value}px)`
+    }
+  }
+  if (compactViewport.value) return { height: '100%' }
+  return {}
+})
+
+function toggleChatCollapsed() {
+  chatCollapsed.value = !chatCollapsed.value
+  if (chatCollapsed.value) document.activeElement?.blur?.()
+  nextTick(updateGeoPopupPos)
+}
+
+function updateKeyboardInset() {
+  if (window.innerWidth > 768) {
+    keyboardInset.value = 0
+    compactViewport.value = false
+    viewportBaseline = window.innerHeight
+    return
+  }
+  if (window.innerHeight > viewportBaseline) viewportBaseline = window.innerHeight
+  compactViewport.value = window.innerHeight < viewportBaseline * 0.75
+  const vv = window.visualViewport
+  const raw = vv ? Math.max(0, Math.min(500, Math.round(window.innerHeight - vv.height - vv.offsetTop))) : 0
+  const next = raw >= KEYBOARD_MIN_INSET ? raw : 0
+  if (next === keyboardInset.value) return
+  keyboardInset.value = next
+  nextTick(updateGeoPopupPos)
+}
 
 /** ===== 对话地理信息（实时 + 历史回放）：地图标记/折线/我的位置 + 可点击浮窗 ===== */
 const geoPlaces = ref([])
@@ -603,6 +654,8 @@ function redrawMap({ fitView = false } = {}) {
 function focusGeoPlace(p) {
   if (!p) return
   if (isMobile()) {
+    chatCollapsed.value = true
+    document.activeElement?.blur?.()
     mapRef.value?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
   }
   markerCtrl?.focusPlace({ id: p.key, name: p.name, longitude: Number(p.longitude), latitude: Number(p.latitude) })
@@ -622,16 +675,25 @@ function updateGeoPopupPos() {
   const h = geoPopRef.value?.offsetHeight || 120
   const cw = mapRef.value.clientWidth
   const ch = mapRef.value.clientHeight
+  const mapRect = mapRef.value.getBoundingClientRect()
   const chatEl = document.querySelector('.chat-col')
-  const leftGuard = !isMobile() && chatEl ? chatEl.getBoundingClientRect().right + 8 : 8
+  const mobile = isMobile()
+  const leftGuard = !mobile && chatEl ? chatEl.getBoundingClientRect().right - mapRect.left + 8 : 8
+  const limitBottom = mobile && chatEl ? chatEl.getBoundingClientRect().top - mapRect.top - 8 : ch - 8
+  if (limitBottom < h + 16) {
+    geoPopup.value = null
+    return
+  }
   const below = pt.y - 48 - h < 8
   const minX = leftGuard + w / 2
   const maxX = cw - w / 2 - 8
   const x = maxX > minX ? Math.min(Math.max(pt.x, minX), maxX) : (leftGuard + cw) / 2
-  const top = below ? Math.min(pt.y + 12, Math.max(ch - h - 8, 8)) : pt.y - 48
+  const top = Math.max(8, below
+    ? Math.min(pt.y + 12, Math.max(limitBottom - h, 8))
+    : Math.min(pt.y - 48, limitBottom))
   geoPopupStyle.value = {
     left: `${Math.round(x)}px`,
-    top: `${Math.round(Math.max(top, 8))}px`,
+    top: `${Math.round(top)}px`,
     transform: below ? 'translate(-50%, 0)' : 'translate(-50%, -100%)'
   }
 }
@@ -654,6 +716,10 @@ function onMapClick(lng, lat) {
 function onMarkerClick(place) {
   const item = geoPlaces.value.find((p) => p.key === place.id)
   if (!item) return
+  if (isMobile()) {
+    chatCollapsed.value = true
+    document.activeElement?.blur?.()
+  }
   geoPopup.value = item
   nextTick(updateGeoPopupPos)
 }
@@ -747,6 +813,10 @@ const planRangeText = computed(() => {
 })
 
 onMounted(async () => {
+  updateKeyboardInset()
+  window.visualViewport?.addEventListener('resize', updateKeyboardInset)
+  window.visualViewport?.addEventListener('scroll', updateKeyboardInset)
+  window.addEventListener('resize', updateKeyboardInset)
   initMap()
   try {
     const mapsResp = await mapApi.list()
@@ -770,6 +840,9 @@ onMounted(async () => {
 onUnmounted(() => {
   abortController?.abort()
   offMapViewport?.()
+  window.visualViewport?.removeEventListener('resize', updateKeyboardInset)
+  window.visualViewport?.removeEventListener('scroll', updateKeyboardInset)
+  window.removeEventListener('resize', updateKeyboardInset)
 })
 
 watch(plan, async (value) => {
@@ -1019,6 +1092,12 @@ function composeContent() {
     content += `\n（默认出行偏好：${label}，仅在本条正文未指定方式时使用；正文明确的步行、驾车等要求优先。如耗时只能估算，请明确说明。）`
   }
   return content
+}
+
+function onComposerKeydown(event) {
+  if (event.isComposing || event.keyCode === 229) return
+  event.preventDefault()
+  send()
 }
 
 async function send() {
@@ -1360,6 +1439,10 @@ function stopTimeText(stop) {
   border-radius: var(--ui-radius-xl);
   background: var(--ui-surface);
   box-shadow: var(--ui-shadow-2);
+}
+
+.chat-grabber {
+  display: none;
 }
 
 .chat-head {
@@ -2031,12 +2114,79 @@ function stopTimeText(stop) {
     right: 0;
     bottom: 0;
     width: auto;
-    height: 54dvh;
+    height: 62dvh;
     border-radius: var(--ui-radius-xl) var(--ui-radius-xl) 0 0;
+  }
+  .chat-col:not(.is-collapsed):has(.input-row :focus) {
+    height: 100%;
+  }
+  .chat-grabber {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    height: 44px;
+    flex-shrink: 0;
+    margin-top: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--ui-ink-3);
+    cursor: pointer;
+  }
+  .chat-grabber__chev {
+    transition: transform var(--ui-dur) var(--ui-ease);
+  }
+  .chat-grabber.is-collapsed .chat-grabber__chev {
+    transform: rotate(180deg);
+  }
+  .chat-grabber:focus-visible {
+    outline: 2px solid var(--ui-accent);
+    outline-offset: 2px;
+    border-radius: 999px;
+  }
+  .chat-grabber__bar {
+    width: 36px;
+    height: 4px;
+    border-radius: 999px;
+    background: var(--ui-surface-3);
+  }
+  .chat-col.is-collapsed {
+    height: 72px;
+  }
+  .chat-col.is-collapsed .chat-scroll,
+  .chat-col.is-collapsed .draft-toggle,
+  .chat-col.is-collapsed .input-note,
+  .chat-col.is-collapsed .transport-row,
+  .chat-col.is-collapsed .input-row,
+  .chat-col.is-collapsed .chat-head__ref,
+  .chat-col.is-collapsed .chat-head > .el-dropdown,
+  .chat-col.is-collapsed .chat-head > .el-button {
+    display: none;
+  }
+  .chat-col.is-collapsed .chat-head {
+    padding-top: 0;
+    padding-bottom: 8px;
+    border-bottom: 0;
   }
   .assistant-map-controls {
     right: 12px;
-    bottom: calc(54dvh + 12px);
+    bottom: calc(62dvh + 12px);
+  }
+  .assistant-page.is-chat-collapsed .assistant-map-controls {
+    bottom: 84px;
+  }
+  .assistant-page.is-keyboard .chat-head__ref,
+  .assistant-page.is-keyboard .chat-head > .el-dropdown,
+  .assistant-page.is-keyboard .chat-head > .el-button,
+  .assistant-page.is-keyboard .draft-toggle,
+  .assistant-page.is-keyboard .transport-row,
+  .assistant-page.is-keyboard .input-note {
+    display: none;
+  }
+  .input-row {
+    padding-bottom: calc(14px + env(safe-area-inset-bottom, 0));
   }
   .transport-row {
     flex-wrap: wrap;
