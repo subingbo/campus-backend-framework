@@ -1,25 +1,25 @@
-/* 腾讯蓝视觉主题：白底、大留白、圆角与轻阴影。
-   引入顺序必须在 element-plus/dist/index.css 之后，覆盖才生效。 */
+/* 阶段 6：UI v2 token 为唯一品牌源。
+   旧变量保留为兼容别名，主要给尚未迁移的页面；迁移页面使用 tokens.css / ui-v2.css。 */
 
 :root {
-  /* 品牌色板 */
-  --app-page-bg: #f3f6fb;
-  --brand-blue: #0052d9;
-  --brand-blue-pressed: #003cab;
-  --brand-blue-light: #f2f3ff;
-  --app-text-primary: rgba(0, 0, 0, 0.9);
-  --app-text-secondary: rgba(0, 0, 0, 0.55);
-  --app-card-shadow: 0 2px 12px rgba(31, 56, 88, 0.06);
-  --app-card-shadow-hover: 0 8px 24px rgba(31, 56, 88, 0.1);
+  /* 兼容别名 → UI v2 */
+  --app-page-bg: var(--ui-bg);
+  --brand-blue: var(--ui-accent);
+  --brand-blue-pressed: var(--ui-accent-hover);
+  --brand-blue-light: var(--ui-accent-tint);
+  --app-text-primary: var(--ui-ink);
+  --app-text-secondary: var(--ui-ink-2);
+  --app-card-shadow: var(--ui-shadow-1);
+  --app-card-shadow-hover: var(--ui-shadow-2);
 
-  /* Element Plus 主色 → 腾讯蓝 */
-  --el-color-primary: #0052d9;
-  --el-color-primary-light-3: #4d86e4;
-  --el-color-primary-light-5: #80a9ec;
-  --el-color-primary-light-7: #b3cbf4;
-  --el-color-primary-light-8: #ccddf7;
-  --el-color-primary-light-9: #f2f3ff;
-  --el-color-primary-dark-2: #003cab;
+  /* Element Plus 主色 → UI v2 雾蓝 */
+  --el-color-primary: var(--ui-accent);
+  --el-color-primary-light-3: #6c93c9;
+  --el-color-primary-light-5: #9bb7da;
+  --el-color-primary-light-7: #c5d5e9;
+  --el-color-primary-light-8: #d9e4f1;
+  --el-color-primary-light-9: var(--ui-accent-tint);
+  --el-color-primary-dark-2: var(--ui-accent-hover);
 
   /* 成功绿沿用 TDesign */
   --el-color-success: #2ba471;
@@ -36,23 +36,20 @@
   --el-border-radius-small: 6px;
 
   /* 文字层级 */
-  --el-text-color-primary: rgba(0, 0, 0, 0.9);
-  --el-text-color-regular: rgba(0, 0, 0, 0.72);
-  --el-text-color-secondary: rgba(0, 0, 0, 0.55);
+  --el-text-color-primary: var(--ui-ink);
+  --el-text-color-regular: var(--ui-ink-2);
+  --el-text-color-secondary: var(--ui-ink-3);
 }
 
-/* 主按钮轻阴影；文字/朴素按钮不加 */
-.el-button--primary:not(.is-plain):not(.is-text):not(.is-link):not(.is-disabled) {
-  box-shadow: 0 2px 8px rgba(0, 82, 217, 0.18);
-}
-
-/* 输入框聚焦时主色描边加一圈浅蓝光晕 */
+/* 输入框聚焦时使用雾蓝描边与浅色光晕 */
 .el-input__wrapper.is-focus {
-  box-shadow: 0 0 0 1px var(--el-color-primary) inset, 0 0 0 3px rgba(0, 82, 217, 0.08);
+  box-shadow: 0 0 0 1px var(--ui-accent) inset, 0 0 0 3px rgba(61, 111, 180, 0.1);
 }
 .el-textarea__inner:focus {
-  box-shadow: 0 0 0 1px var(--el-color-primary) inset, 0 0 0 3px rgba(0, 82, 217, 0.08);
+  box-shadow: 0 0 0 1px var(--ui-accent) inset, 0 0 0 3px rgba(61, 111, 180, 0.1);
 }
+
+/* 主按钮不再使用旧蓝色投影；阴影只属于浮层 */
 
 /* 卡片：白底、16px 圆角、极轻蓝灰阴影 */
 .el-card {
