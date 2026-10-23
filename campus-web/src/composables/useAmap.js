@@ -20,6 +20,28 @@ export function createMarkerContent(name, isActive = false) {
   </div>`
 }
 
+/**
+ * 生成可点击的标记 DOM。AMap 的 marker.on('click') 在部分环境/自定义
+ * content 下不稳定，直接给内容绑定点击并阻止冒泡，避免误触发地图点击。
+ */
+export function createPlaceMarkerElement(place, isActive = false, onSelect = null) {
+  const el = document.createElement('div')
+  el.className = `campus-place-marker${isActive ? ' campus-place-marker--active' : ''}`
+  const dot = document.createElement('span')
+  dot.className = 'campus-place-marker__dot'
+  const label = document.createElement('span')
+  label.className = 'campus-place-marker__label'
+  label.textContent = place?.name || '地点'
+  el.append(dot, label)
+  if (typeof onSelect === 'function') {
+    el.addEventListener('click', (event) => {
+      event.stopPropagation()
+      onSelect(place)
+    })
+  }
+  return el
+}
+
 export function createMyLocationContent() {
   return `<div class="campus-my-location-marker">
     <span class="campus-my-location-marker__dot"></span>
@@ -146,7 +168,7 @@ export function createPlaceMarkerController(AMap, map, onMarkerClick) {
   let myLocationMarker = null
 
   function applyMarkerStyle(marker, place, isActive) {
-    marker.setContent(createMarkerContent(place.name, isActive))
+    marker.setContent(createPlaceMarkerElement(place, isActive, onMarkerClick))
     marker.setzIndex(isActive ? 200 : 100)
   }
 
@@ -166,8 +188,18 @@ export function createPlaceMarkerController(AMap, map, onMarkerClick) {
     map.add(myLocationMarker)
   }
 
-  function render(places, { fitView = false } = {}) {
-    map.clearMap()
+  /**
+   * @param {object} options
+   * @param {boolean} options.fitView 是否自动缩放到全部地点
+   * @param {boolean} options.preserveOtherOverlays 只移除本控制器创建的标记，
+   *   不调用 clearMap()；首页地图由单一组件独占时使用，避免清掉非本组件覆盖物。
+   */
+  function render(places, { fitView = false, preserveOtherOverlays = false } = {}) {
+    if (preserveOtherOverlays) {
+      if (markers.length) map.remove(markers)
+    } else {
+      map.clearMap()
+    }
     markers = []
     markerById.clear()
     placeById.clear()
@@ -176,13 +208,9 @@ export function createPlaceMarkerController(AMap, map, onMarkerClick) {
       const isActive = activePlaceId === place.id
       const marker = new AMap.Marker({
         position: [Number(place.longitude), Number(place.latitude)],
-        content: createMarkerContent(place.name, isActive),
+        content: createPlaceMarkerElement(place, isActive, onMarkerClick),
         anchor: 'bottom-center',
         zIndex: isActive ? 200 : 100
-      })
-      marker.on('click', () => {
-        // 视图可以不关心点击（如助手页早期版本传 null）；空回调时点标记不抛错
-        if (onMarkerClick) onMarkerClick(place)
       })
       markerById.set(place.id, marker)
       placeById.set(place.id, place)
