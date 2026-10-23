@@ -1,347 +1,624 @@
 <template>
-  <div class="workspace" v-loading="pageLoading">
-    <aside class="sidebar">
-      <h2>{{ detail?.name || '加载中' }}</h2>
-      <p class="desc">{{ detail?.description }}</p>
-      <div class="stats">
-        <span>成员 {{ detail?.memberCount ?? 0 }}</span>
-        <span>地点 {{ detail?.placeCount ?? 0 }}</span>
-        <el-tag size="small">{{ detail?.myRole }}</el-tag>
-      </div>
-      <div v-if="detail?.inviteCode" class="invite">
-        <span>邀请码</span>
-        <el-tag type="success" @click="copyInvite">{{ detail.inviteCode }}</el-tag>
-      </div>
+  <div class="workspace ui-v2">
+    <div ref="mapRef" class="map-canvas" />
 
-      <el-divider />
-      <div class="member-head">
-        <strong>成员</strong>
+    <div v-if="pageLoading" class="workspace-loading">
+      <div class="workspace-loading__inner">
+        <span class="ui-spinner" />
+        <span>正在加载地图…</span>
       </div>
-      <div v-for="m in detail?.members || []" :key="m.userId" class="member-row">
-        <span>{{ m.nickname || m.username }}</span>
-        <el-select
-          v-if="detail?.myRole === 'OWNER' && m.role !== 'OWNER'"
-          :model-value="m.role"
-          size="small"
-          style="width: 96px"
-          @change="(val) => changeRole(m.userId, val)"
-        >
-          <el-option label="编辑" value="EDITOR" />
-          <el-option label="查看" value="VIEWER" />
-        </el-select>
-        <el-tag v-else size="small">{{ m.role }}</el-tag>
-      </div>
+    </div>
 
-      <el-divider />
-      <el-button
-        v-if="canEdit"
-        type="primary"
-        style="width: 100%"
-        :plain="addMode"
-        @click="toggleAddMode"
-      >
-        {{ addMode ? '取消选点' : '添加地点' }}
-      </el-button>
-      <el-button
-        v-if="canEdit && mapError"
-        style="width: 100%; margin-top: 8px"
-        @click="openAddWithDefaultCenter"
-      >
-        地图未加载：手动添加（默认中心）
-      </el-button>
-      <p v-if="!canEdit" class="hint">当前为查看权限，无法添加或编辑地点</p>
-      <p v-if="addMode" class="hint">在地图上点击选择位置</p>
+    <!-- 桌面端：地点列表面板 -->
+    <FloatingPanel
+      v-if="!isMobile && panelOpen"
+      class="place-panel"
+      as="aside"
+    >
+      <template #header>
+        <div class="place-panel__head">
+          <button class="ui-icon-btn" type="button" aria-label="返回我的地图" @click="goHome">
+            <AppIcon name="arrow-left" :size="18" />
+          </button>
+          <button class="place-panel__group" type="button" @click="openGroup">
+            <span class="place-panel__group-name">{{ detail?.name || '加载中' }}</span>
+            <span class="place-panel__group-sub">
+              {{ detail?.memberCount ?? 0 }} 位成员 · {{ detail?.placeCount ?? 0 }} 个地点
+            </span>
+          </button>
+          <button class="ui-icon-btn" type="button" aria-label="地图群聊" @click="openChat">
+            <AppIcon name="message" :size="18" />
+          </button>
+          <button class="ui-icon-btn" type="button" aria-label="收起地点列表" @click="panelOpen = false">
+            <AppIcon name="panel" :size="18" />
+          </button>
+        </div>
 
-      <el-divider />
-      <div class="locate-actions">
-        <el-button :loading="locating" :disabled="!mapReady" @click="locateMe">定位到我</el-button>
-        <el-button v-if="canEdit" :loading="locating" :disabled="!mapReady" @click="locateAndPick">
-          以我的位置选点
-        </el-button>
-        <el-button v-if="canEdit" :loading="locating" :disabled="!mapReady" @click="locateAndMark">
-          标记我的位置
-        </el-button>
-      </div>
-      <p v-if="myLocationSummary" class="hint">我的位置：{{ myLocationSummary }}</p>
+        <SearchBar
+          v-model="placeSearchQuery"
+          class="place-panel__search"
+          placeholder="搜索名称、地址或分类"
+        />
 
-      <el-divider />
-      <el-button style="width: 100%" @click="openChat">聊天</el-button>
+        <div class="ui-chips place-panel__chips">
+          <button
+            class="ui-chip"
+            :class="{ 'is-active': !categoryFilter }"
+            type="button"
+            @click="categoryFilter = ''"
+          >
+            全部
+          </button>
+          <button
+            v-for="cat in placeCategoryFilters"
+            :key="cat"
+            class="ui-chip"
+            :class="{ 'is-active': categoryFilter === cat }"
+            type="button"
+            @click="toggleCategoryFilter(cat)"
+          >
+            {{ cat }}
+          </button>
+        </div>
 
-      <!-- 首次进入的三步引导（关闭后记住） -->
-      <el-alert v-if="showGuide" class="guide" type="info" :closable="true" @close="dismissGuide">
-        <template #title>三步上手</template>
-        <p>① 点左侧地点（或地图上的标记）查看详情与评论</p>
-        <p>② 在地点面板底部「安排活动」发起，或点已有活动的「报名」</p>
-        <p>③ 活动开始前 15 分钟至开始后 15 分钟内输码签到；「活动日程」页也能报名与签到</p>
-      </el-alert>
+        <div class="place-panel__meta">
+          <span>地点</span>
+          <span>{{ filteredPlaces.length }} / {{ places.length }}</span>
+        </div>
+      </template>
 
-      <el-divider />
-      <div class="place-head">
-        <strong>地点列表</strong>
-        <span v-if="places.length" class="hint">{{ filteredPlaces.length }}/{{ places.length }}</span>
-      </div>
-      <el-input
-        v-model="placeSearchQuery"
-        clearable
-        size="small"
-        placeholder="搜索名称、地址、分类"
-        class="place-search"
-      />
-      <div v-if="placeCategoryFilters.length" class="category-chips">
-        <el-tag
-          size="small"
-          :type="!categoryFilter ? 'primary' : 'info'"
-          effect="plain"
-          class="chip"
-          @click="categoryFilter = ''"
-        >
-          全部
-        </el-tag>
-        <el-tag
-          v-for="cat in placeCategoryFilters"
-          :key="cat"
-          size="small"
-          :type="categoryFilter === cat ? 'primary' : 'info'"
-          effect="plain"
-          class="chip"
-          @click="toggleCategoryFilter(cat)"
-        >
-          {{ cat }}
-        </el-tag>
-      </div>
       <div ref="placeListRef" class="place-list">
-        <p v-if="places.length === 0" class="hint empty-hint">暂无地点，可在地图上添加</p>
-        <p v-else-if="filteredPlaces.length === 0" class="hint empty-hint">无匹配结果</p>
-        <button
+        <PlaceListItem
           v-for="p in filteredPlaces"
           :key="p.id"
-          type="button"
-          class="place-item"
-          :class="{ active: selectedPlace?.id === p.id }"
+          :place="p"
           :data-place-id="p.id"
-          @click="selectPlaceFromList(p)"
+          :active="selectedPlace?.id === p.id"
+          @select="selectPlaceFromList"
+        />
+        <EmptyState
+          v-if="!places.length"
+          icon="pin"
+          title="还没有地点"
+          description="点击地图添加第一个地点，或使用右上角的添加按钮。"
+        />
+        <EmptyState
+          v-else-if="!filteredPlaces.length"
+          icon="search"
+          title="没有匹配的地点"
+          description="换个关键词，或清除分类筛选。"
+          action="清除筛选"
+          @action="clearFilters"
+        />
+      </div>
+
+      <template #footer>
+        <div class="place-panel__foot">
+          <button class="ui-text-action" type="button" :disabled="!canEdit || !mapReady" @click="startAdd">
+            <AppIcon name="plus" :size="14" />
+            添加地点
+          </button>
+          <button class="ui-text-action ui-text-action--muted" type="button" :disabled="!mapReady" @click="locateMe">
+            <AppIcon name="crosshair" :size="14" />
+            定位
+          </button>
+        </div>
+      </template>
+    </FloatingPanel>
+
+    <!-- 列表收起后的群组胶囊 -->
+    <div v-if="!isMobile && !panelOpen && !groupOpen" class="group-pill" :class="{ 'is-guarded': pillGuard }">
+      <button class="ui-icon-btn" type="button" aria-label="返回我的地图" @click="goHome">
+        <AppIcon name="arrow-left" :size="18" />
+      </button>
+      <button class="group-pill__main" type="button" @click="openGroup">
+        <span class="group-pill__name">{{ detail?.name || '共享地图' }}</span>
+        <span class="group-pill__sub">
+          {{ detail?.memberCount ?? 0 }} 位成员 · {{ detail?.placeCount ?? 0 }} 个地点
+        </span>
+      </button>
+      <button class="group-pill__places" type="button" @click="openPanelFromPill">
+        <AppIcon name="panel" :size="14" />
+        地点 <span class="ui-count">{{ places.length }}</span>
+      </button>
+      <button class="ui-icon-btn" type="button" aria-label="地图群聊" @click="openChat">
+        <AppIcon name="message" :size="18" />
+      </button>
+    </div>
+
+    <!-- 桌面端：地点详情抽屉 -->
+    <DetailDrawer
+      v-if="!isMobile"
+      :model-value="placeDrawer"
+      label="地点详情"
+      @update:model-value="onPlaceDrawerToggle"
+    >
+      <PlaceDetailPanel
+        v-if="selectedPlace"
+        :place="selectedPlaceDetail || selectedPlace"
+        :comments="comments"
+        :activities="placeActivities"
+        :other-maps="otherMaps"
+        :can-edit="canEdit"
+        :comment-text="commentText"
+        @update:comment-text="commentText = $event"
+        @close="closePlace"
+        @edit="openEdit"
+        @remove="removeFromMap"
+        @chat="openPlaceChat(selectedPlace)"
+        @navigate="navigateSelectedPlace"
+        @share="shareToMap"
+        @submit-comment="submitComment"
+        @create-activity="openActivityForm(null)"
+        @edit-activity="openActivityForm"
+        @activity-updated="replaceActivity"
+        @activity-cancelled="onActivityCancelled"
+      />
+    </DetailDrawer>
+
+    <!-- 桌面端：添加地点抽屉 -->
+    <DetailDrawer
+      v-if="!isMobile"
+      :model-value="addDialog"
+      label="添加地点"
+      @update:model-value="onAddDrawerToggle"
+    >
+      <AddPlaceForm
+        v-if="addDialog"
+        :form="addForm"
+        :categories="categories"
+        :map-name="detail?.name || ''"
+        :submitting="submitting"
+        :locating="locating"
+        :map-ready="mapReady"
+        @cancel="cancelAdd"
+        @submit="submitAdd"
+        @fill-location="fillFormWithLocation"
+        @locate-pick="locateAndPick"
+        @repick="repick"
+      />
+    </DetailDrawer>
+
+    <!-- 桌面端：群组信息 -->
+    <div v-if="!isMobile && groupOpen" class="ui-popover-backdrop" @click="closeGroup" />
+    <FloatingPanel
+      v-if="!isMobile && groupOpen"
+      class="group-panel-ui"
+      as="aside"
+      :scroll="false"
+    >
+      <GroupInfoPanel
+        v-if="detail"
+        :detail="detail"
+        :can-manage="detail.myRole === 'OWNER'"
+        :show-guide="showGuide"
+        @close="closeGroup"
+        @copy-invite="copyInvite"
+        @change-role="changeRole"
+        @dismiss-guide="dismissGuide"
+      />
+    </FloatingPanel>
+
+    <!-- 桌面端：聊天浮层 -->
+    <FloatingPanel
+      v-if="!isMobile && chatVisible"
+      class="chat-panel-ui"
+      as="aside"
+      :scroll="false"
+    >
+      <template #header>
+        <h2 class="chat-panel-ui__title">聊天</h2>
+        <button class="ui-icon-btn" type="button" aria-label="关闭聊天" @click="chatVisible = false">
+          <AppIcon name="x" :size="18" />
+        </button>
+      </template>
+
+      <div class="ui-tabs">
+        <button
+          class="ui-tab"
+          :class="{ 'is-active': chatTab === 'map' }"
+          type="button"
+          @click="chatTab = 'map'"
         >
-          <span class="place-item__name">{{ p.name }}</span>
-          <span v-if="p.categoryName" class="place-item__cat">{{ p.categoryName }}</span>
-          <span v-if="p.address" class="place-item__addr">{{ p.address }}</span>
+          地图群聊
+        </button>
+        <button
+          class="ui-tab"
+          :class="{ 'is-active': chatTab === 'place' }"
+          type="button"
+          @click="chatTab = 'place'"
+        >
+          地点聊天
         </button>
       </div>
-    </aside>
 
-    <main class="map-panel">
-      <div ref="mapRef" class="map-container"></div>
-      <el-alert
-        v-if="mapError"
-        :title="mapError"
-        type="warning"
-        show-icon
-        class="map-alert"
-      />
-      <!-- 手机端：锚定选中标记的小浮窗，替代全屏宽抽屉 -->
-      <div
-        v-if="isMobile && selectedPlace"
-        ref="placePopRef"
-        class="place-pop"
-        :class="{ 'place-pop--free': !popAnchored }"
-        :style="popStyle"
+      <select
+        v-if="chatTab === 'place'"
+        v-model="chatPlaceId"
+        class="ui-select chat-place-select"
+        aria-label="选择地点进入聊天室"
+        @change="onChatPlaceChange(chatPlaceId)"
       >
-        <div class="place-pop__head">
-          <span class="place-pop__name">{{ selectedPlace.name }}</span>
-          <el-tag v-if="selectedPlace.categoryName" size="small" effect="plain">
-            {{ selectedPlace.categoryName }}
-          </el-tag>
-          <button type="button" class="place-pop__close" @click="closePlacePop">×</button>
-        </div>
-        <p v-if="selectedPlace.address" class="place-pop__addr">{{ selectedPlace.address }}</p>
-        <p v-if="selectedPlace.description" class="place-pop__desc">{{ selectedPlace.description }}</p>
-        <div class="place-pop__actions">
-          <el-button size="small" :type="popCommentsOpen ? 'primary' : ''" @click="popCommentsOpen = !popCommentsOpen">
-            评论{{ comments.length ? `（${comments.length}）` : '' }}
-          </el-button>
-          <el-button size="small" :type="popActivitiesOpen ? 'primary' : ''" @click="togglePopActivities">
-            活动{{ placeActivities.length ? `（${placeActivities.length}）` : '' }}
-          </el-button>
-          <el-button v-if="canEdit" size="small" @click="openEdit">编辑</el-button>
-          <el-button v-if="canEdit" size="small" type="danger" plain @click="removeFromMap">移除</el-button>
-          <el-button size="small" @click="openPlaceChat(selectedPlace)">聊天</el-button>
-          <el-button size="small" @click="navigateSelectedPlace">🧭 导航</el-button>
-          <el-dropdown v-if="otherMaps.length" @command="shareToMap">
-            <el-button size="small">分享</el-button>
-            <template #dropdown>
-              <el-dropdown-menu>
-                <el-dropdown-item v-for="m in otherMaps" :key="m.id" :command="m.id">
-                  {{ m.name }}
-                </el-dropdown-item>
-              </el-dropdown-menu>
-            </template>
-          </el-dropdown>
-        </div>
-        <template v-if="popCommentsOpen">
-          <div class="place-pop__comments">
-            <p v-if="!comments.length" class="hint">还没有评论</p>
-            <div v-for="c in comments" :key="c.id" class="comment">
-              <strong>{{ c.nickname }}</strong>
-              <p>{{ c.content }}</p>
-            </div>
-          </div>
-          <div class="place-pop__input">
-            <el-input v-model="commentText" size="small" placeholder="写下评论" @keyup.enter="submitComment" />
-            <el-button type="primary" size="small" @click="submitComment">发送</el-button>
-          </div>
-        </template>
-        <template v-if="popActivitiesOpen">
-          <div class="place-pop__comments">
-            <p v-if="!placeActivities.length" class="hint">这个地点还没有安排活动</p>
-            <ActivityEntryCard
-              v-for="a in placeActivities"
-              :key="a.id"
-              :activity="a"
-              compact
-              @updated="replaceActivity"
-              @cancelled="onActivityCancelled"
-              @edit="openActivityForm"
-            />
-            <el-button size="small" style="width: 100%" @click="openActivityForm(null)">在此安排活动</el-button>
-          </div>
-        </template>
+        <option :value="null">选择地点进入聊天室</option>
+        <option v-for="p in places" :key="p.id" :value="p.id">{{ p.name }}</option>
+      </select>
+
+      <div class="chat-panel-ui__body">
+        <ChatPanel v-if="chatTab === 'map' && mapConversation" :conversation="mapConversation" />
+        <ChatPanel v-else-if="chatTab === 'place' && chatPlaceConversation" :conversation="chatPlaceConversation" />
+        <p v-else class="ui-detail-hint">
+          {{ chatTab === 'map' ? '正在打开群聊…' : '选择地点后进入聊天室' }}
+        </p>
       </div>
+    </FloatingPanel>
 
-      <!-- 聊天浮层：桌面贴右侧，手机为视口底部停靠面板 -->
-      <div v-if="chatVisible" class="chat-float">
-        <div class="chat-float__head">
-          <strong>聊天</strong>
-          <button type="button" class="chat-float__close" @click="chatVisible = false">×</button>
-        </div>
-        <el-tabs v-model="chatTab" class="chat-float__tabs">
-          <el-tab-pane label="地图群聊" name="map">
-            <ChatPanel v-if="mapConversation" :conversation="mapConversation" />
-          </el-tab-pane>
-          <el-tab-pane label="地点聊天" name="place">
-            <el-select
-              v-model="chatPlaceId"
-              filterable
-              size="small"
-              placeholder="选择地点进入聊天室"
-              style="width: 100%; margin-bottom: 8px"
-              @change="onChatPlaceChange"
-            >
-              <el-option v-for="p in places" :key="p.id" :value="p.id" :label="p.name" />
-            </el-select>
-            <ChatPanel v-if="chatPlaceConversation" :conversation="chatPlaceConversation" />
-          </el-tab-pane>
-        </el-tabs>
+    <!-- 桌面端：地图控件与提示 -->
+    <div
+      v-if="!isMobile"
+      class="map-controls-ui"
+      :class="{ 'is-shifted': placeDrawer || addDialog || chatVisible }"
+    >
+      <MapActionButton icon="crosshair" label="定位到我" @click="locateMe" />
+      <MapActionButton icon="plus" label="放大" @click="zoomIn" />
+      <MapActionButton icon="minus" label="缩小" @click="zoomOut" />
+    </div>
+
+    <div
+      v-if="!isMobile && !mapError"
+      class="map-hint-ui"
+      :class="{ 'is-shifted': panelOpen }"
+    >
+      <AppIcon name="layers" :size="14" />
+      {{ places.length }} 个地点 · 点击标记查看详情
+    </div>
+
+    <!-- 选点提示 -->
+    <div v-if="addMode" class="pick-hint">
+      <AppIcon name="crosshair" :size="15" />
+      点击地图选择位置
+      <button class="ui-text-action" type="button" @click="toggleAddMode">取消</button>
+    </div>
+
+    <!-- 地图加载失败 -->
+    <div v-if="mapError" class="map-error-ui">
+      <span class="map-error-ui__icon">
+        <AppIcon name="alert-circle" :size="20" />
+      </span>
+      <strong>地图没能加载</strong>
+      <p>{{ mapError }}</p>
+      <div class="map-error-ui__actions">
+        <button v-if="canEdit" class="ui-btn ui-btn--primary" type="button" @click="openAddWithDefaultCenter">
+          手动添加
+        </button>
+        <button class="ui-btn ui-btn--ghost" type="button" @click="retryMap">重试</button>
       </div>
-    </main>
+    </div>
 
-    <el-drawer v-model="placeDrawer" :title="selectedPlace?.name || '地点'" size="380px">
-      <template v-if="selectedPlace">
-        <p>{{ selectedPlace.description || '暂无介绍' }}</p>
-        <p><small>{{ selectedPlace.address || '暂无地址' }}</small></p>
+    <!-- 移动端：紧凑顶栏 -->
+    <header v-if="isMobile" class="mobile-topbar-ui">
+      <button class="ui-icon-btn" type="button" aria-label="返回我的地图" @click="goHome">
+        <AppIcon name="arrow-left" :size="18" />
+      </button>
+      <button class="mobile-topbar__title" type="button" @click="openGroup">
+        {{ detail?.name || '共享地图' }}
+      </button>
+      <button class="ui-icon-btn" type="button" aria-label="搜索地点" @click="openMobileSearch">
+        <AppIcon name="search" :size="18" />
+      </button>
+      <button class="ui-icon-btn" type="button" aria-label="地图群聊" @click="openChat">
+        <AppIcon name="message" :size="18" />
+      </button>
+    </header>
 
-        <div class="drawer-actions">
-          <el-button v-if="canEdit" size="small" @click="openEdit">编辑</el-button>
-          <el-button v-if="canEdit" size="small" type="danger" plain @click="removeFromMap">从地图移除</el-button>
-          <el-button size="small" @click="openPlaceChat(selectedPlace)">地点聊天</el-button>
-          <el-button size="small" @click="navigateSelectedPlace">🧭 高德导航</el-button>
-          <el-dropdown v-if="otherMaps.length" @command="shareToMap">
-            <el-button size="small">分享到其他地图</el-button>
-            <template #dropdown>
-              <el-dropdown-menu>
-                <el-dropdown-item v-for="m in otherMaps" :key="m.id" :command="m.id">
-                  {{ m.name }}
-                </el-dropdown-item>
-              </el-dropdown-menu>
-            </template>
-          </el-dropdown>
-        </div>
+    <!-- 移动端：底部触发条与 FAB -->
+    <template v-if="isMobile && !mobileSheetOpen && !mapError">
+      <button class="mobile-place-trigger" type="button" @click="openMobileList()">
+        <span class="mobile-place-trigger__icon">
+          <AppIcon name="panel" :size="18" />
+        </span>
+        <span class="mobile-place-trigger__main">
+          <span class="mobile-place-trigger__title">地点 · {{ places.length }}</span>
+          <span class="mobile-place-trigger__sub">查看附近地点与筛选</span>
+        </span>
+        <AppIcon name="chevron-down" :size="16" class="mobile-place-trigger__chev" />
+      </button>
 
-        <el-divider>本地点活动</el-divider>
-        <p v-if="!placeActivities.length" class="hint">这个地点还没有安排活动</p>
-        <ActivityEntryCard
-          v-for="a in placeActivities"
-          :key="a.id"
-          :activity="a"
-          @updated="replaceActivity"
-          @cancelled="onActivityCancelled"
-          @edit="openActivityForm"
+      <div class="mobile-fabs">
+        <button class="ui-fab" type="button" aria-label="定位到我" @click="locateMe">
+          <AppIcon name="crosshair" :size="20" />
+        </button>
+        <button v-if="canEdit" class="ui-fab ui-fab--primary" type="button" aria-label="添加地点" @click="startAdd">
+          <AppIcon name="plus" :size="22" />
+        </button>
+      </div>
+    </template>
+
+    <!-- 移动端：地点列表 Sheet -->
+    <BottomSheet
+      v-if="isMobile"
+      v-model="mobileListOpen"
+      label="地点列表"
+      height="68dvh"
+      :teleport="false"
+      :animated="false"
+      panel-class="ui-v2"
+    >
+      <div class="ui-mobile-list">
+        <header class="ui-mobile-list__head">
+          <div class="ui-mobile-list__head-main">
+            <p class="ui-eyebrow">地点</p>
+            <h2 class="ui-mobile-list__title">{{ detail?.name || '共享地图' }}</h2>
+            <p class="ui-mobile-list__sub">
+              {{ filteredPlaces.length }} 个地点 · {{ detail?.memberCount ?? 0 }} 位成员
+            </p>
+          </div>
+          <button class="ui-icon-btn" type="button" aria-label="关闭地点列表" @click="mobileListOpen = false">
+            <AppIcon name="x" :size="18" />
+          </button>
+        </header>
+
+        <SearchBar
+          v-model="placeSearchQuery"
+          class="ui-mobile-list__search"
+          size="lg"
+          placeholder="搜索名称、地址或分类"
+          :autofocus="mobileSearchFocus"
         />
-        <el-button style="width: 100%; margin-top: 8px" @click="openActivityForm(null)">
-          在「{{ selectedPlace.name }}」安排活动
-        </el-button>
 
-        <el-divider>评论</el-divider>
-        <div v-for="c in comments" :key="c.id" class="comment">
-          <strong>{{ c.nickname }}</strong>
-          <p>{{ c.content }}</p>
+        <div class="ui-chips ui-mobile-list__chips">
+          <button
+            class="ui-chip"
+            :class="{ 'is-active': !categoryFilter }"
+            type="button"
+            @click="categoryFilter = ''"
+          >
+            全部
+          </button>
+          <button
+            v-for="cat in placeCategoryFilters"
+            :key="cat"
+            class="ui-chip"
+            :class="{ 'is-active': categoryFilter === cat }"
+            type="button"
+            @click="toggleCategoryFilter(cat)"
+          >
+            {{ cat }}
+          </button>
         </div>
-        <el-input v-model="commentText" type="textarea" rows="2" placeholder="写下评论" />
-        <el-button type="primary" size="small" style="margin-top: 8px" @click="submitComment">发送</el-button>
-      </template>
-    </el-drawer>
 
-    <el-dialog v-model="addDialog" title="添加地点" width="min(460px, 94vw)">
-      <el-form :model="addForm" label-width="72px">
-        <el-form-item label="名称"><el-input v-model="addForm.name" /></el-form-item>
-        <el-form-item label="分类">
-          <el-select v-model="addForm.categoryId" style="width: 100%">
-            <el-option v-for="c in categories" :key="c.id" :label="c.name" :value="c.id" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="描述"><el-input v-model="addForm.description" type="textarea" /></el-form-item>
-        <el-form-item label="文字地址">
-          <el-input v-model="addForm.address" placeholder="选填，如：广外北门附近" />
-        </el-form-item>
-        <el-form-item label="坐标">
-          <div class="coord-row">
-            <el-input-number v-model="addForm.longitude" :precision="6" :step="0.0001" controls-position="right" />
-            <el-input-number v-model="addForm.latitude" :precision="6" :step="0.0001" controls-position="right" />
-          </div>
-          <div class="coord-actions">
-            <el-button size="small" :loading="locating" :disabled="!mapReady" @click="fillFormWithLocation">
-              填入当前位置
-            </el-button>
-            <span class="hint">可地图选点，或直接修改经纬度</span>
-          </div>
-        </el-form-item>
-      </el-form>
+        <div class="ui-mobile-list__body">
+          <PlaceListItem
+            v-for="p in filteredPlaces"
+            :key="p.id"
+            :place="p"
+            :data-place-id="p.id"
+            :active="selectedPlace?.id === p.id"
+            @select="selectPlaceFromList"
+          />
+          <EmptyState
+            v-if="!places.length"
+            icon="pin"
+            title="还没有地点"
+            description="点击地图添加第一个地点。"
+          />
+          <EmptyState
+            v-else-if="!filteredPlaces.length"
+            icon="search"
+            title="没有匹配的地点"
+            description="换个关键词，或清除分类筛选。"
+            action="清除筛选"
+            @action="clearFilters"
+          />
+        </div>
+
+        <footer class="ui-mobile-list__foot">
+          <button class="ui-text-action" type="button" :disabled="!canEdit || !mapReady" @click="startAddFromMobile">
+            <AppIcon name="plus" :size="14" />
+            添加地点
+          </button>
+          <button class="ui-text-action ui-text-action--muted" type="button" :disabled="!mapReady" @click="locateMe">
+            <AppIcon name="crosshair" :size="14" />
+            定位
+          </button>
+        </footer>
+      </div>
+    </BottomSheet>
+
+    <!-- 移动端：地点详情 Sheet -->
+    <BottomSheet
+      v-if="isMobile"
+      v-model="placeDrawer"
+      label="地点详情"
+      height="72dvh"
+      :teleport="false"
+      :animated="false"
+      panel-class="ui-v2"
+    >
+      <PlaceDetailPanel
+        v-if="selectedPlace"
+        :place="selectedPlaceDetail || selectedPlace"
+        :comments="comments"
+        :activities="placeActivities"
+        :other-maps="otherMaps"
+        :can-edit="canEdit"
+        :compact="true"
+        :comment-text="commentText"
+        @update:comment-text="commentText = $event"
+        @close="closePlace"
+        @edit="openEdit"
+        @remove="removeFromMap"
+        @chat="openPlaceChat(selectedPlace)"
+        @navigate="navigateSelectedPlace"
+        @share="shareToMap"
+        @submit-comment="submitComment"
+        @create-activity="openActivityForm(null)"
+        @edit-activity="openActivityForm"
+        @activity-updated="replaceActivity"
+        @activity-cancelled="onActivityCancelled"
+      />
+    </BottomSheet>
+
+    <!-- 移动端：添加地点 Sheet -->
+    <BottomSheet
+      v-if="isMobile"
+      v-model="addDialog"
+      label="添加地点"
+      height="88dvh"
+      :teleport="false"
+      :animated="false"
+      panel-class="ui-v2"
+    >
+      <AddPlaceForm
+        v-if="addDialog"
+        :form="addForm"
+        :categories="categories"
+        :map-name="detail?.name || ''"
+        :submitting="submitting"
+        :locating="locating"
+        :map-ready="mapReady"
+        @cancel="cancelAdd"
+        @submit="submitAdd"
+        @fill-location="fillFormWithLocation"
+        @locate-pick="locateAndPick"
+        @repick="repick"
+      />
+    </BottomSheet>
+
+    <!-- 移动端：群组信息 Sheet -->
+    <BottomSheet
+      v-if="isMobile"
+      v-model="groupOpen"
+      label="群组信息"
+      height="70dvh"
+      :teleport="false"
+      :animated="false"
+      panel-class="ui-v2"
+    >
+      <GroupInfoPanel
+        v-if="detail"
+        :detail="detail"
+        :can-manage="detail.myRole === 'OWNER'"
+        :show-guide="showGuide"
+        @close="closeGroup"
+        @copy-invite="copyInvite"
+        @change-role="changeRole"
+        @dismiss-guide="dismissGuide"
+      />
+    </BottomSheet>
+
+    <!-- 移动端：聊天 Sheet -->
+    <BottomSheet
+      v-if="isMobile"
+      v-model="chatVisible"
+      label="聊天"
+      height="88dvh"
+      :teleport="false"
+      :animated="false"
+      panel-class="ui-v2"
+    >
+      <div class="ui-chat-shell">
+        <header class="ui-chat-head">
+          <h2 class="ui-chat-head__title">聊天</h2>
+          <button class="ui-icon-btn" type="button" aria-label="关闭聊天" @click="chatVisible = false">
+            <AppIcon name="x" :size="18" />
+          </button>
+        </header>
+
+        <div class="ui-tabs">
+          <button
+            class="ui-tab"
+            :class="{ 'is-active': chatTab === 'map' }"
+            type="button"
+            @click="chatTab = 'map'"
+          >
+            地图群聊
+          </button>
+          <button
+            class="ui-tab"
+            :class="{ 'is-active': chatTab === 'place' }"
+            type="button"
+            @click="chatTab = 'place'"
+          >
+            地点聊天
+          </button>
+        </div>
+
+        <select
+          v-if="chatTab === 'place'"
+          v-model="chatPlaceId"
+          class="ui-select chat-place-select"
+          aria-label="选择地点进入聊天室"
+          @change="onChatPlaceChange(chatPlaceId)"
+        >
+          <option :value="null">选择地点进入聊天室</option>
+          <option v-for="p in places" :key="p.id" :value="p.id">{{ p.name }}</option>
+        </select>
+
+        <div class="ui-chat-body">
+          <ChatPanel v-if="chatTab === 'map' && mapConversation" :conversation="mapConversation" />
+          <ChatPanel v-else-if="chatTab === 'place' && chatPlaceConversation" :conversation="chatPlaceConversation" />
+          <p v-else class="ui-detail-hint">
+            {{ chatTab === 'map' ? '正在打开群聊…' : '选择地点后进入聊天室' }}
+          </p>
+        </div>
+      </div>
+    </BottomSheet>
+
+    <!-- 添加地点：重复检测 -->
+    <el-dialog v-model="dupDialog" class="ui-dialog" title="附近已有相近地点" width="min(480px, 94vw)">
+      <p class="ui-dialog__hint">是否补充已有地点，避免重复？</p>
+      <div class="ui-radio-list">
+        <label v-for="c in dupCandidates" :key="c.id" class="ui-radio">
+          <input v-model="dupChoice" type="radio" :value="c.id">
+          <span>{{ c.name }}（约 {{ c.distanceMeters?.toFixed(1) }}m）</span>
+        </label>
+        <label class="ui-radio">
+          <input v-model="dupChoice" type="radio" :value="-1">
+          <span>仍要新建地点</span>
+        </label>
+      </div>
       <template #footer>
-        <el-button @click="addDialog = false">取消</el-button>
-        <el-button type="primary" :loading="submitting" @click="() => submitAdd()">提交</el-button>
+        <button class="ui-btn ui-btn--ghost" type="button" @click="cancelDuplicate">取消</button>
+        <button class="ui-btn ui-btn--primary" type="button" @click="confirmDuplicate">确定</button>
       </template>
     </el-dialog>
 
-    <el-dialog v-model="dupDialog" title="附近已有相近地点" width="min(480px, 94vw)">
-      <p>是否补充已有地点，避免重复？</p>
-      <el-radio-group v-model="dupChoice">
-        <el-radio v-for="c in dupCandidates" :key="c.id" :value="c.id">
-          {{ c.name }}（约 {{ c.distanceMeters?.toFixed(1) }}m）
-        </el-radio>
-        <el-radio :value="-1">仍要新建地点</el-radio>
-      </el-radio-group>
+    <!-- 编辑地点 -->
+    <el-dialog v-model="editDialog" class="ui-dialog" title="编辑地点" width="min(460px, 94vw)">
+      <form class="ui-dialog-form" @submit.prevent="saveEdit">
+        <label class="ui-dialog-field">
+          <span>名称</span>
+          <input v-model="editForm.name" class="ui-input" type="text" maxlength="80">
+        </label>
+        <label class="ui-dialog-field">
+          <span>分类</span>
+          <select v-model="editForm.categoryId" class="ui-select">
+            <option v-for="c in categories" :key="c.id" :value="c.id">{{ c.name }}</option>
+          </select>
+        </label>
+        <label class="ui-dialog-field">
+          <span>描述</span>
+          <textarea v-model="editForm.description" class="ui-textarea" rows="3" maxlength="500" />
+        </label>
+        <label class="ui-dialog-field">
+          <span>地址</span>
+          <input v-model="editForm.address" class="ui-input" type="text" maxlength="200">
+        </label>
+      </form>
       <template #footer>
-        <el-button @click="dupDialog = false">取消</el-button>
-        <el-button type="primary" @click="confirmDuplicate">确定</el-button>
+        <button class="ui-btn ui-btn--ghost" type="button" @click="editDialog = false">取消</button>
+        <button class="ui-btn ui-btn--primary" type="button" @click="saveEdit">保存</button>
       </template>
     </el-dialog>
 
-    <el-dialog v-model="editDialog" title="编辑地点" width="min(460px, 94vw)">
-      <el-form :model="editForm" label-width="72px">
-        <el-form-item label="名称"><el-input v-model="editForm.name" /></el-form-item>
-        <el-form-item label="分类">
-          <el-select v-model="editForm.categoryId" style="width: 100%">
-            <el-option v-for="c in categories" :key="c.id" :label="c.name" :value="c.id" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="描述"><el-input v-model="editForm.description" type="textarea" /></el-form-item>
-        <el-form-item label="地址"><el-input v-model="editForm.address" /></el-form-item>
-      </el-form>
+    <el-dialog v-model="removeDialog" class="ui-dialog" title="从地图移除" width="min(400px, 94vw)">
+      <p class="ui-dialog__hint">仅从当前地图移除，不会删除地点本体。</p>
       <template #footer>
-        <el-button @click="editDialog = false">取消</el-button>
-        <el-button type="primary" @click="saveEdit">保存</el-button>
+        <button class="ui-btn ui-btn--ghost" type="button" @click="removeDialog = false">取消</button>
+        <button class="ui-btn ui-btn--danger" type="button" @click="confirmRemove">移除</button>
       </template>
     </el-dialog>
 
-    <!-- 活动创建/编辑表单：与活动日程页共用同一弹窗组件 -->
     <ActivityFormDialog
       v-model="activityDialogOpen"
       :mode="activityDialogMode"
@@ -356,19 +633,30 @@
 
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { useRoute, useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import { createAmapLocationProvider, createPlaceMarkerController, loadAmap } from '../composables/useAmap'
 import { useLocation } from '../composables/useLocation'
 import { activityApi, chatApi, mapApi, placeApi } from '../api'
 import { on } from '../composables/useChatSocket'
-import ChatPanel from '../components/ChatPanel.vue'
-import ActivityEntryCard from '../components/ActivityEntryCard.vue'
-import ActivityFormDialog from '../components/ActivityFormDialog.vue'
 import { toDate } from '../utils/format'
 import { openAmapNavigation } from '../utils/amapNavigation'
+import ChatPanel from '../components/ChatPanel.vue'
+import ActivityFormDialog from '../components/ActivityFormDialog.vue'
+import AppIcon from '../components/ui/AppIcon.vue'
+import FloatingPanel from '../components/ui/FloatingPanel.vue'
+import SearchBar from '../components/ui/SearchBar.vue'
+import MapActionButton from '../components/ui/MapActionButton.vue'
+import PlaceListItem from '../components/ui/PlaceListItem.vue'
+import DetailDrawer from '../components/ui/DetailDrawer.vue'
+import BottomSheet from '../components/ui/BottomSheet.vue'
+import EmptyState from '../components/ui/EmptyState.vue'
+import PlaceDetailPanel from '../components/place/PlaceDetailPanel.vue'
+import AddPlaceForm from '../components/place/AddPlaceForm.vue'
+import GroupInfoPanel from '../components/place/GroupInfoPanel.vue'
 
 const route = useRoute()
+const router = useRouter()
 const mapId = computed(() => Number(route.params.id))
 const defaultLng = Number(import.meta.env.VITE_MAP_CENTER_LNG || 113.384128)
 const defaultLat = Number(import.meta.env.VITE_MAP_CENTER_LAT || 23.045678)
@@ -384,11 +672,16 @@ const mapReady = ref(false)
 let amapCtx = null
 let markerController = null
 let locationProvider = null
-let offViewportChange = null
+let addPreviewMarker = null
 
 const placeSearchQuery = ref('')
 const categoryFilter = ref('')
 const placeListRef = ref(null)
+const panelOpen = ref(true)
+const groupOpen = ref(false)
+const mobileListOpen = ref(false)
+const mobileSearchFocus = ref(false)
+const selectedPlaceDetail = ref(null)
 
 const addMode = ref(false)
 const addDialog = ref(false)
@@ -403,6 +696,7 @@ const addForm = reactive({
 const submitting = ref(false)
 
 const placeDrawer = ref(false)
+const removeDialog = ref(false)
 const selectedPlace = ref(null)
 const comments = ref([])
 const commentText = ref('')
@@ -412,7 +706,6 @@ const placeActivities = ref([])
 const activityDialogOpen = ref(false)
 const activityDialogMode = ref('create')
 const activityEditTarget = ref(null)
-const popActivitiesOpen = ref(false)
 
 /** 首次进入的三步引导：可关闭，关闭后记住 */
 const GUIDE_KEY = 'campus.guide.workspace.v1'
@@ -429,17 +722,11 @@ const mapConversation = ref(null)
 const chatPlaceConversation = ref(null)
 let chatRemovers = []
 
-/** 手机端（≤768px，与工作台断点一致）用锚定标记的小浮窗替代抽屉 */
 const mobileMedia = window.matchMedia('(max-width: 768px)')
+const compactMedia = window.matchMedia('(max-width: 1279px)')
 const isMobile = ref(mobileMedia.matches)
-const popCommentsOpen = ref(false)
-const popAnchored = ref(false)
-const popStyle = ref({})
-const placePopRef = ref(null)
-function onMediaChange(e) {
-  isMobile.value = e.matches
-}
-mobileMedia.addEventListener('change', onMediaChange)
+const isCompact = ref(compactMedia.matches)
+if (isCompact.value) panelOpen.value = false
 
 const dupDialog = ref(false)
 const dupCandidates = ref([])
@@ -451,6 +738,18 @@ const editForm = reactive({ name: '', description: '', address: '', categoryId: 
 
 const canEdit = computed(() => ['OWNER', 'EDITOR'].includes(detail.value?.myRole))
 const otherMaps = computed(() => allMaps.value.filter((m) => m.id !== mapId.value))
+let restorePanelOnGroupClose = false
+const pillGuard = ref(false)
+let pillGuardTimer = null
+
+const mobileSheetOpen = computed(
+  () =>
+    mobileListOpen.value ||
+    placeDrawer.value ||
+    addDialog.value ||
+    groupOpen.value ||
+    chatVisible.value
+)
 
 const {
   locating,
@@ -482,11 +781,27 @@ function toggleCategoryFilter(cat) {
   categoryFilter.value = categoryFilter.value === cat ? '' : cat
 }
 
+function clearFilters() {
+  placeSearchQuery.value = ''
+  categoryFilter.value = ''
+}
+
 function scrollPlaceIntoView(placeId) {
   const root = placeListRef.value
   if (!root || !placeId) return
   const el = root.querySelector(`[data-place-id="${placeId}"]`)
   el?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+}
+
+function openPanelFromPill() {
+  if (chatVisible.value) chatVisible.value = false
+  if (isCompact.value) closePlace()
+  panelOpen.value = true
+}
+
+function refreshAddPreview() {
+  if ((!addDialog.value && !addMode.value) || addForm.longitude == null || addForm.latitude == null) return
+  setAddPreview(Number(addForm.longitude), Number(addForm.latitude))
 }
 
 function syncMarkers(fitView = false) {
@@ -498,9 +813,21 @@ function syncMarkers(fitView = false) {
       selectedPlace.value = still
       markerController.setHighlight(still.id)
     } else {
-      selectedPlace.value = null
-      markerController.setHighlight(null)
+      closePlace()
     }
+  }
+  refreshAddPreview()
+}
+
+async function loadSelectedPlaceDetail(id) {
+  if (!id) {
+    selectedPlaceDetail.value = null
+    return
+  }
+  try {
+    selectedPlaceDetail.value = await placeApi.get(id)
+  } catch {
+    selectedPlaceDetail.value = null
   }
 }
 
@@ -508,12 +835,38 @@ async function refresh() {
   detail.value = await mapApi.detail(mapId.value)
   places.value = await mapApi.listPlaces(mapId.value)
   syncMarkers(false)
+  if (selectedPlace.value) {
+    await loadSelectedPlaceDetail(selectedPlace.value.id)
+  }
 }
 
 async function selectPlaceFromList(place) {
   markerController?.focusPlace(place)
   await openPlace(place)
-  scrollPlaceIntoView(place.id)
+}
+
+async function initMap() {
+  if (!mapRef.value) return
+  if (amapCtx?.map) {
+    amapCtx.map.destroy()
+    amapCtx = null
+    markerController = null
+    mapReady.value = false
+  }
+  mapError.value = ''
+  try {
+    amapCtx = await loadAmap(mapRef.value, onMapClick, { controls: false })
+    markerController = createPlaceMarkerController(amapCtx.AMap, amapCtx.map, openPlace)
+    locationProvider = createAmapLocationProvider(amapCtx.geolocation)
+    mapReady.value = true
+    syncMarkers(true)
+  } catch (e) {
+    mapError.value = e.message
+  }
+}
+
+async function retryMap() {
+  await initMap()
 }
 
 async function initPage() {
@@ -522,6 +875,7 @@ async function initPage() {
     categories.value = await placeApi.categories()
     allMaps.value = await mapApi.list()
     await refresh()
+    await initMap()
     // 活动日程“去现场”跳转：/maps/:id?place=<placeId> 自动打开该地点的面板
     const wantPlace = Number(route.query.place)
     if (wantPlace) {
@@ -533,18 +887,6 @@ async function initPage() {
     // 消息中心深链：/maps/:id?chat=1 直接打开本图群聊
     if (route.query.chat === '1') {
       await openChat()
-    }
-    try {
-      amapCtx = await loadAmap(mapRef.value, onMapClick)
-      markerController = createPlaceMarkerController(amapCtx.AMap, amapCtx.map, openPlace)
-      locationProvider = createAmapLocationProvider(amapCtx.geolocation)
-      offViewportChange = markerController.onViewportChange(() => {
-        if (isMobile.value && selectedPlace.value) updatePopPos()
-      })
-      mapReady.value = true
-      syncMarkers(true)
-    } catch (e) {
-      mapError.value = e.message
     }
   } catch (e) {
     ElMessage.error(e.message)
@@ -559,6 +901,30 @@ function toggleAddMode() {
     return
   }
   addMode.value = !addMode.value
+  if (!addMode.value) clearAddPreview()
+}
+
+function startAdd() {
+  if (!canEdit.value) {
+    ElMessage.warning('需要编辑或群主权限才能添加地点')
+    return
+  }
+  if (!mapReady.value) {
+    ElMessage.warning('地图还没准备好，请稍后再试')
+    return
+  }
+  addMode.value = true
+  placeDrawer.value = false
+  addDialog.value = false
+  mobileListOpen.value = false
+  groupOpen.value = false
+  chatVisible.value = false
+  clearAddPreview()
+}
+
+function startAddFromMobile() {
+  mobileListOpen.value = false
+  startAdd()
 }
 
 function openAddWithDefaultCenter() {
@@ -567,15 +933,61 @@ function openAddWithDefaultCenter() {
   addForm.categoryId = categories.value[0]?.id ?? null
   addDialog.value = true
   addMode.value = false
+  setAddPreview(defaultLng, defaultLat)
 }
 
 function onMapClick(lng, lat) {
   if (!addMode.value) return
   addForm.longitude = lng
   addForm.latitude = lat
-  addForm.categoryId = categories.value[0]?.id ?? null
+  if (!addForm.categoryId) addForm.categoryId = categories.value[0]?.id ?? null
+  setAddPreview(lng, lat)
   addDialog.value = true
   addMode.value = false
+}
+
+function setAddPreview(lng, lat) {
+  if (!amapCtx?.AMap || !amapCtx.map) return
+  if (!addPreviewMarker) {
+    addPreviewMarker = new amapCtx.AMap.Marker({
+      position: [lng, lat],
+      content: '<div class="campus-add-preview"><span></span></div>',
+      anchor: 'center',
+      zIndex: 400,
+      bubble: false
+    })
+    amapCtx.map.add(addPreviewMarker)
+  } else {
+    addPreviewMarker.setPosition([lng, lat])
+  }
+}
+
+function clearAddPreview() {
+  if (addPreviewMarker && amapCtx?.map) {
+    amapCtx.map.remove(addPreviewMarker)
+  }
+  addPreviewMarker = null
+}
+
+function cancelAdd() {
+  addDialog.value = false
+  addMode.value = false
+  clearAddPreview()
+}
+
+function repick() {
+  addDialog.value = false
+  addMode.value = true
+  clearAddPreview()
+}
+
+function resetAddForm() {
+  addForm.name = ''
+  addForm.description = ''
+  addForm.address = ''
+  addForm.categoryId = null
+  addForm.longitude = null
+  addForm.latitude = null
 }
 
 /** 定位 → 标出「我的位置」→ 提示精度；失败时说明原因并返回 null */
@@ -612,9 +1024,11 @@ async function navigateSelectedPlace() {
 }
 
 async function locateAndPick() {
+  addDialog.value = false
   const result = await locateToMap({ actionText: '已定位，请在地图上点击您附近的位置' })
   if (!result) return
   addMode.value = true
+  clearAddPreview()
 }
 
 async function locateAndMark() {
@@ -623,12 +1037,14 @@ async function locateAndMark() {
   applyMyLocationToAddForm(result)
   addMode.value = false
   addDialog.value = true
+  setAddPreview(result.lng, result.lat)
 }
 
 async function fillFormWithLocation() {
   const result = await locateToMap({ recenter: false, actionText: '已填入当前位置' })
   if (!result) return
   applyMyLocationToAddForm(result)
+  setAddPreview(result.lng, result.lat)
 }
 
 /** 定位结果填入添加表单，不覆盖用户已选的分类 */
@@ -669,14 +1085,19 @@ async function submitAdd(extra = {}) {
     }
     const res = await mapApi.addPlace(mapId.value, payload)
     if (res.duplicatePending) {
-      dupCandidates.value = res.candidates || []
-      dupChoice.value = dupCandidates.value[0]?.id
       pendingAddPayload.value = payload
+      dupCandidates.value = res.candidates || []
+      dupChoice.value = dupCandidates.value[0]?.id ?? -1
+      addDialog.value = false
+      addMode.value = false
       dupDialog.value = true
       return
     }
     ElMessage.success('已添加')
     addDialog.value = false
+    addMode.value = false
+    clearAddPreview()
+    resetAddForm()
     await refresh()
   } catch (e) {
     ElMessage.error(e.message)
@@ -696,84 +1117,62 @@ async function confirmDuplicate() {
   }
 }
 
+function cancelDuplicate() {
+  dupDialog.value = false
+  addDialog.value = true
+  if (addForm.longitude != null && addForm.latitude != null) {
+    setAddPreview(Number(addForm.longitude), Number(addForm.latitude))
+  }
+}
+
+function onPlaceDrawerToggle(value) {
+  if (value) {
+    placeDrawer.value = true
+  } else {
+    closePlace()
+  }
+}
+
+function onAddDrawerToggle(value) {
+  if (value) {
+    addDialog.value = true
+  } else {
+    cancelAdd()
+  }
+}
+
 async function openPlace(place) {
   selectedPlace.value = place
+  selectedPlaceDetail.value = null
+  commentText.value = ''
+  comments.value = []
+  placeActivities.value = []
   markerController?.setHighlight(place.id)
-  placeDrawer.value = !isMobile.value
-  comments.value = await mapApi.listComments(mapId.value, place.id)
-  await loadPlaceActivities()
-  scrollPlaceIntoView(place.id)
-  if (isMobile.value) {
-    // 手机端单列布局下侧栏占满首屏，选中地点后把地图（连同浮窗）带进视野
-    mapRef.value?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
-  }
-}
-
-/** 浮窗锚定选中标记；地图未就绪时退化为地图区底部居中 */
-function updatePopPos() {
-  const place = selectedPlace.value
-  if (!isMobile.value || !place) return
-  const mapEl = mapRef.value
-  const pt = markerController?.projectToContainer?.(place)
-  if (!mapEl || !pt) {
-    popAnchored.value = false
-    popStyle.value = {}
-    return
-  }
-  popAnchored.value = true
-  const w = placePopRef.value?.offsetWidth || 280
-  const h = placePopRef.value?.offsetHeight || 140
-  const cw = mapEl.clientWidth
-  const ch = mapEl.clientHeight
-  // 标记锚点在点位上，上方先让出点＋标签约 48px；放不下则翻到点位下方
-  const below = pt.y - 48 - h < 8
-  const x = cw > w + 16 ? Math.min(Math.max(pt.x, w / 2 + 8), cw - w / 2 - 8) : cw / 2
-  const top = below ? Math.min(pt.y + 12, Math.max(ch - h - 8, 8)) : pt.y - 48
-  popStyle.value = {
-    left: `${Math.round(x)}px`,
-    top: `${Math.round(Math.max(top, 8))}px`,
-    transform: below ? 'translate(-50%, 0)' : 'translate(-50%, -100%)'
-  }
-}
-
-async function openChat() {
-  chatVisible.value = true
-  if (!mapConversation.value) {
-    try {
-      mapConversation.value = await chatApi.forMap(mapId.value)
-    } catch (e) {
-      ElMessage.error(e.message)
-    }
-  }
-}
-
-async function onChatPlaceChange(placeId) {
-  await loadPlaceConversation(placeId)
-}
-
-async function loadPlaceConversation(placeId) {
+  placeDrawer.value = true
+  mobileListOpen.value = false
+  addDialog.value = false
+  groupOpen.value = false
+  chatVisible.value = false
+  if (isCompact.value && !isMobile.value) panelOpen.value = false
+  nextTick(() => scrollPlaceIntoView(place.id))
   try {
-    chatPlaceConversation.value = await chatApi.forPlace(placeId)
+    comments.value = await mapApi.listComments(mapId.value, place.id)
   } catch (e) {
     ElMessage.error(e.message)
   }
+  await loadPlaceActivities()
+  loadSelectedPlaceDetail(place.id)
 }
 
-function openPlaceChat(place) {
-  if (!place) return
-  chatVisible.value = true
-  chatTab.value = 'place'
-  chatPlaceId.value = place.id
-  loadPlaceConversation(place.id)
-}
-
-function closePlacePop() {
+function closePlace() {
   selectedPlace.value = null
+  selectedPlaceDetail.value = null
+  placeDrawer.value = false
   markerController?.setHighlight(null)
-  popCommentsOpen.value = false
 }
 
 function openEdit() {
+  if (!selectedPlace.value) return
   editForm.name = selectedPlace.value.name
   editForm.description = selectedPlace.value.description
   editForm.address = selectedPlace.value.address
@@ -782,23 +1181,29 @@ function openEdit() {
 }
 
 async function saveEdit() {
+  if (!selectedPlace.value) return
   try {
     await placeApi.update(selectedPlace.value.id, { ...editForm })
     ElMessage.success('已更新')
     editDialog.value = false
     await refresh()
-    selectedPlace.value = places.value.find((p) => p.id === selectedPlace.value.id)
   } catch (e) {
     ElMessage.error(e.message)
   }
 }
 
-async function removeFromMap() {
-  await ElMessageBox.confirm('仅从当前地图移除，不会删除地点本体', '确认')
+function removeFromMap() {
+  if (!selectedPlace.value) return
+  removeDialog.value = true
+}
+
+async function confirmRemove() {
+  if (!selectedPlace.value) return
   try {
     await mapApi.removePlace(mapId.value, selectedPlace.value.id)
     ElMessage.success('已移除')
-    placeDrawer.value = false
+    removeDialog.value = false
+    closePlace()
     await refresh()
   } catch (e) {
     ElMessage.error(e.message)
@@ -819,9 +1224,10 @@ async function shareToMap(targetMapId) {
 }
 
 async function submitComment() {
-  if (!commentText.value.trim()) return
+  const content = commentText.value.trim()
+  if (!content || !selectedPlace.value) return
   try {
-    await mapApi.addComment(mapId.value, selectedPlace.value.id, { content: commentText.value })
+    await mapApi.addComment(mapId.value, selectedPlace.value.id, { content })
     commentText.value = ''
     comments.value = await mapApi.listComments(mapId.value, selectedPlace.value.id)
   } catch (e) {
@@ -836,13 +1242,6 @@ async function loadPlaceActivities() {
     placeActivities.value = await activityApi.listByPlace(selectedPlace.value.id)
   } catch (e) {
     ElMessage.error(e.message)
-  }
-}
-
-function togglePopActivities() {
-  popActivitiesOpen.value = !popActivitiesOpen.value
-  if (popActivitiesOpen.value) {
-    loadPlaceActivities()
   }
 }
 
@@ -885,19 +1284,174 @@ function copyInvite() {
   ElMessage.success('已复制邀请码')
 }
 
-watch([selectedPlace, popCommentsOpen], () => nextTick(updatePopPos))
-watch(isMobile, (mobile) => {
-  if (!selectedPlace.value) return
-  if (mobile) {
-    placeDrawer.value = false
-    nextTick(updatePopPos)
-  } else {
-    placeDrawer.value = true
+async function openChat() {
+  placeDrawer.value = false
+  mobileListOpen.value = false
+  addDialog.value = false
+  groupOpen.value = false
+  panelOpen.value = false
+  chatVisible.value = true
+  if (!mapConversation.value) {
+    try {
+      mapConversation.value = await chatApi.forMap(mapId.value)
+    } catch (e) {
+      ElMessage.error(e.message)
+    }
   }
+}
+
+async function onChatPlaceChange(placeId) {
+  if (placeId == null) {
+    chatPlaceConversation.value = null
+    return
+  }
+  await loadPlaceConversation(placeId)
+}
+
+async function loadPlaceConversation(placeId) {
+  chatPlaceConversation.value = null
+  try {
+    chatPlaceConversation.value = await chatApi.forPlace(placeId)
+  } catch (e) {
+    ElMessage.error(e.message)
+  }
+}
+
+function openPlaceChat(place) {
+  if (!place) return
+  placeDrawer.value = false
+  mobileListOpen.value = false
+  addDialog.value = false
+  groupOpen.value = false
+  panelOpen.value = false
+  chatVisible.value = true
+  chatTab.value = 'place'
+  chatPlaceId.value = place.id
+  loadPlaceConversation(place.id)
+}
+
+function openGroup() {
+  placeDrawer.value = false
+  mobileListOpen.value = false
+  addDialog.value = false
+  chatVisible.value = false
+  restorePanelOnGroupClose = panelOpen.value
+  panelOpen.value = false
+  groupOpen.value = true
+}
+
+function closeGroup() {
+  groupOpen.value = false
+  if (restorePanelOnGroupClose) {
+    panelOpen.value = true
+  }
+  restorePanelOnGroupClose = false
+}
+
+function openMobileList({ focusSearch = false } = {}) {
+  placeDrawer.value = false
+  addDialog.value = false
+  groupOpen.value = false
+  chatVisible.value = false
+  mobileSearchFocus.value = focusSearch
+  mobileListOpen.value = true
+}
+
+function openMobileSearch() {
+  openMobileList({ focusSearch: true })
+}
+
+function goHome() {
+  router.push('/')
+}
+
+function zoomIn() {
+  amapCtx?.map?.zoomIn?.()
+}
+
+function zoomOut() {
+  amapCtx?.map?.zoomOut?.()
+}
+
+function onKeydown(event) {
+  if (event.defaultPrevented) return
+  if (removeDialog.value || editDialog.value || dupDialog.value || activityDialogOpen.value) return
+  if (event.key !== 'Escape') return
+  if (addMode.value) {
+    toggleAddMode()
+  } else if (addDialog.value) {
+    cancelAdd()
+  } else if (dupDialog.value) {
+    cancelDuplicate()
+  } else if (groupOpen.value) {
+    closeGroup()
+  } else if (chatVisible.value) {
+    chatVisible.value = false
+  } else if (placeDrawer.value) {
+    closePlace()
+  } else if (!isMobile.value && panelOpen.value && isCompact.value) {
+    panelOpen.value = false
+  }
+}
+
+function onMediaChange(e) {
+  isMobile.value = e.matches
+  if (e.matches) {
+    panelOpen.value = false
+    placeDrawer.value = false
+    addDialog.value = false
+    groupOpen.value = false
+    chatVisible.value = false
+    mobileListOpen.value = false
+  } else {
+    mobileListOpen.value = false
+    panelOpen.value = !isCompact.value
+  }
+}
+
+function onCompactChange(e) {
+  isCompact.value = e.matches
+  if (e.matches) {
+    panelOpen.value = false
+  } else {
+    panelOpen.value = true
+  }
+}
+
+watch(panelOpen, (open, wasOpen) => {
+  if (!open && wasOpen) {
+    pillGuard.value = true
+    clearTimeout(pillGuardTimer)
+    pillGuardTimer = setTimeout(() => {
+      pillGuard.value = false
+    }, 300)
+  }
+})
+
+watch(
+  () => selectedPlace.value?.id,
+  () => {
+    commentText.value = ''
+  }
+)
+
+watch(placeDrawer, (open) => {
+  if (!open && selectedPlace.value) {
+    selectedPlace.value = null
+    selectedPlaceDetail.value = null
+    markerController?.setHighlight(null)
+  }
+})
+
+watch(addDialog, (open) => {
+  if (!open) clearAddPreview()
 })
 
 onMounted(() => {
   initPage()
+  mobileMedia.addEventListener('change', onMediaChange)
+  compactMedia.addEventListener('change', onCompactChange)
+  window.addEventListener('keydown', onKeydown)
   chatRemovers = [
     on('PLACE_CHANGED', (frame) => {
       ElMessage.info(`${frame.actorNickname} ${frame.summary}「${frame.placeName}」`)
@@ -922,341 +1476,14 @@ onMounted(() => {
     })
   ]
 })
+
 onUnmounted(() => {
   for (const off of chatRemovers) off()
   mobileMedia.removeEventListener('change', onMediaChange)
-  offViewportChange?.()
+  compactMedia.removeEventListener('change', onCompactChange)
+  window.removeEventListener('keydown', onKeydown)
+  clearTimeout(pillGuardTimer)
+  clearAddPreview()
   amapCtx?.map?.destroy()
 })
 </script>
-
-<style scoped>
-.workspace {
-  display: grid;
-  grid-template-columns: 320px 1fr;
-  height: 100%;
-}
-.sidebar {
-  background: #fff;
-  border-right: 1px solid #e5e7eb;
-  padding: 16px;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  max-height: 100%;
-}
-.place-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 8px;
-}
-.place-search {
-  margin-bottom: 8px;
-}
-.category-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-bottom: 8px;
-}
-.category-chips .chip {
-  cursor: pointer;
-}
-.place-list {
-  flex: 1;
-  min-height: 120px;
-  max-height: 42vh;
-  overflow-y: auto;
-  margin: 0 -4px;
-  padding: 0 4px;
-}
-.empty-hint {
-  text-align: center;
-  padding: 12px 0;
-}
-.place-item {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  width: 100%;
-  margin-bottom: 6px;
-  padding: 10px 10px;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  background: #fafafa;
-  cursor: pointer;
-  text-align: left;
-  font: inherit;
-  color: inherit;
-  transition: border-color 0.15s, background 0.15s;
-}
-.place-item:hover {
-  border-color: var(--el-color-primary);
-  background: var(--el-color-primary-light-9);
-}
-.place-item.active {
-  border-color: var(--el-color-primary);
-  background: var(--el-color-primary-light-9);
-  box-shadow: 0 0 0 1px rgba(0, 82, 217, 0.2);
-}
-.place-item__name {
-  font-weight: 600;
-  font-size: 0.9rem;
-  line-height: 1.3;
-}
-.place-item__cat {
-  margin-top: 4px;
-  font-size: 11px;
-  color: var(--el-color-primary);
-}
-.place-item__addr {
-  margin-top: 2px;
-  font-size: 11px;
-  color: #888;
-  line-height: 1.3;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-.locate-actions {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-top: 8px;
-}
-.locate-actions .el-button + .el-button {
-  margin-left: 0;
-}
-.coord-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 4px;
-}
-.desc {
-  color: #666;
-  font-size: 0.9rem;
-}
-.stats {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  margin-top: 8px;
-}
-.invite {
-  margin-top: 12px;
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-.member-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 8px;
-  font-size: 0.9rem;
-}
-.map-panel {
-  position: relative;
-}
-.map-container {
-  width: 100%;
-  height: 100%;
-}
-.map-alert {
-  position: absolute;
-  top: 12px;
-  left: 12px;
-  right: 12px;
-  z-index: 10;
-}
-.drawer-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin: 12px 0;
-}
-.place-pop {
-  position: absolute;
-  z-index: 30;
-  box-sizing: border-box;
-  width: min(300px, calc(100vw - 24px));
-  padding: 10px 12px;
-  background: #fff;
-  border-radius: 12px;
-  box-shadow: 0 8px 24px rgba(31, 56, 88, 0.18);
-  font-size: 13px;
-}
-.place-pop--free {
-  right: 12px;
-  bottom: 16px;
-}
-.place-pop__head {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.place-pop__name {
-  flex: 1;
-  min-width: 0;
-  font-weight: 600;
-  font-size: 14px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.place-pop__close {
-  border: none;
-  background: none;
-  padding: 2px 4px;
-  font-size: 18px;
-  line-height: 1;
-  color: rgba(0, 0, 0, 0.45);
-  cursor: pointer;
-}
-.place-pop__addr {
-  margin: 4px 0 0;
-  font-size: 12px;
-  color: rgba(0, 0, 0, 0.55);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.place-pop__desc {
-  margin: 4px 0 0;
-  color: rgba(0, 0, 0, 0.72);
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-.place-pop__actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 8px;
-}
-.place-pop__actions .el-button + .el-button {
-  margin-left: 0;
-}
-.place-pop__comments {
-  max-height: 30vh;
-  overflow-y: auto;
-  margin-top: 8px;
-  padding-top: 6px;
-  border-top: 1px solid #f0f0f0;
-}
-.place-pop__input {
-  display: flex;
-  align-items: flex-start;
-  gap: 6px;
-  margin-top: 8px;
-}
-.place-pop__input .el-input {
-  flex: 1;
-}
-.chat-float {
-  position: absolute;
-  top: 12px;
-  right: 12px;
-  bottom: 12px;
-  z-index: 31;
-  display: flex;
-  flex-direction: column;
-  width: min(340px, calc(100% - 24px));
-  padding: 10px 12px;
-  background: #fff;
-  border-radius: 12px;
-  box-shadow: 0 8px 24px rgba(31, 56, 88, 0.18);
-}
-.chat-float__head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding-bottom: 6px;
-}
-.chat-float__close {
-  border: none;
-  background: none;
-  padding: 2px 6px;
-  font-size: 18px;
-  line-height: 1;
-  color: rgba(0, 0, 0, 0.45);
-  cursor: pointer;
-}
-.chat-float__tabs {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-.chat-float__tabs :deep(.el-tabs__content) {
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
-}
-.chat-float__tabs :deep(.el-tab-pane) {
-  height: 100%;
-}
-/* 手机端：脱离地图容器改为视口停靠，不随页面滚动、不被裁切；
-   用媒体查询而非 JS 断点，窗口跨断点即时生效 */
-@media (max-width: 768px) {
-  .chat-float {
-    position: fixed;
-    top: auto;
-    left: 12px;
-    right: 12px;
-    bottom: 12px;
-    width: auto;
-    height: 62vh;
-    height: 62dvh;
-  }
-}
-.comment {
-  margin-bottom: 10px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid #eee;
-}
-.hint {
-  font-size: 12px;
-  color: #888;
-}
-.coord-row {
-  display: flex;
-  gap: 8px;
-  width: 100%;
-}
-.coord-row .el-input-number {
-  flex: 1;
-}
-@media (max-width: 768px) {
-  .workspace {
-    grid-template-columns: 1fr;
-    height: auto;
-    min-height: 100%;
-  }
-  .sidebar {
-    border-right: none;
-    border-bottom: 1px solid #e5e7eb;
-    max-height: none;
-  }
-  .place-list {
-    max-height: 28vh;
-  }
-  .map-container {
-    height: 60vh;
-  }
-}
-
-/* ===== 工作台三步引导卡 ===== */
-.guide {
-  margin-bottom: 8px;
-}
-.guide :deep(p) {
-  margin: 2px 0;
-  font-size: 12px;
-  line-height: 1.7;
-}
-</style>

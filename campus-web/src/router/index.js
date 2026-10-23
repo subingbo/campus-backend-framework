@@ -19,7 +19,7 @@ const router = createRouter({
       meta: { auth: true },
       children: [
         { path: '', component: MapListView },
-        { path: 'maps/:id', component: MapWorkspaceView },
+        { path: 'maps/:id', component: MapWorkspaceView, meta: { immersive: true } },
         { path: 'messages', component: () => import('../views/MessagesView.vue') },
         { path: 'friends', component: FriendsView },
         { path: 'activities', component: ActivitiesView },

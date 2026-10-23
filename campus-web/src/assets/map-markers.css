@@ -1,50 +1,59 @@
-/*
- * AMap 自定义覆盖物的全局样式。
- * 标记 HTML 由 composables/useAmap.js 的 createMarkerContent/createMyLocationContent 生成，
- * 覆盖物不经过 Vue 渲染管线，样式必须全局可用（工作台/助手页等任何地图容器共用）。
- */
+/* AMap 自定义覆盖物：由 useAmap 注入 HTML，必须保持全局样式。 */
+
 .campus-place-marker {
   display: flex;
   flex-direction: column;
   align-items: center;
+  gap: 4px;
   cursor: pointer;
+  user-select: none;
+  pointer-events: auto;
 }
+
 .campus-place-marker__dot {
-  width: 14px;
-  height: 14px;
+  width: 11px;
+  height: 11px;
   border-radius: 50%;
-  background: var(--el-color-primary);
-  border: 2px solid #fff;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
-  flex-shrink: 0;
+  background: var(--ui-accent, #3d6fb4);
+  box-shadow: 0 0 0 2.5px #fff, 0 1px 4px rgba(28, 30, 25, 0.24);
+  transition: width 160ms var(--ui-ease, ease), height 160ms var(--ui-ease, ease),
+    box-shadow 160ms var(--ui-ease, ease);
 }
-.campus-place-marker--active .campus-place-marker__dot {
-  width: 18px;
-  height: 18px;
-  background: #f56c6c;
-  border-width: 3px;
-}
+
 .campus-place-marker__label {
-  margin-top: 2px;
   max-width: 120px;
-  padding: 2px 6px;
-  font-size: 11px;
-  line-height: 1.2;
-  color: #303133;
-  background: rgba(255, 255, 255, 0.95);
-  border: 1px solid #dcdfe6;
-  border-radius: 4px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+  padding: 2px 7px;
+  border-radius: 6px;
+  background: #fff;
+  color: var(--ui-ink-2, #5a5d55);
+  font-family: var(--ui-font-sans, 'PingFang SC', 'Microsoft YaHei', sans-serif);
+  font-size: 10.5px;
+  line-height: 1.45;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  box-shadow: 0 1px 4px rgba(28, 30, 25, 0.12);
 }
+
+.campus-place-marker--active {
+  z-index: 2;
+}
+
+.campus-place-marker--active .campus-place-marker__dot {
+  width: 14px;
+  height: 14px;
+  box-shadow: 0 0 0 3px #fff, 0 0 0 7px rgba(61, 111, 180, 0.12),
+    0 2px 6px rgba(28, 30, 25, 0.24);
+}
+
 .campus-place-marker--active .campus-place-marker__label {
-  color: #fff;
-  background: var(--el-color-primary);
-  border-color: var(--el-color-primary);
+  background: var(--ui-accent-tint, #edf2fa);
+  color: var(--ui-accent, #3d6fb4);
   font-weight: 600;
+  box-shadow: 0 1px 4px rgba(61, 111, 180, 0.16);
 }
+
+/* 我的位置：保持圆点中心对准坐标，标签在下方 */
 .campus-my-location-marker {
   position: relative;
   display: flex;
@@ -52,29 +61,52 @@
   justify-content: center;
   width: 18px;
   height: 18px;
+  pointer-events: none;
 }
+
 .campus-my-location-marker__dot {
-  width: 14px;
-  height: 14px;
+  width: 12px;
+  height: 12px;
   border-radius: 50%;
-  background: #07c160;
-  border: 2px solid #fff;
-  box-shadow: 0 0 0 6px rgba(7, 193, 96, 0.22), 0 1px 4px rgba(0, 0, 0, 0.35);
+  background: #447052;
+  box-shadow: 0 0 0 3px #fff, 0 0 0 9px rgba(68, 112, 82, 0.16),
+    0 1px 4px rgba(28, 30, 25, 0.2);
   flex-shrink: 0;
 }
+
 .campus-my-location-marker__label {
   position: absolute;
   top: 100%;
   left: 50%;
   transform: translateX(-50%);
   margin-top: 4px;
-  padding: 2px 6px;
-  font-size: 11px;
-  line-height: 1.2;
-  font-weight: 600;
-  color: #fff;
-  background: #07c160;
-  border-radius: 4px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  padding: 2px 7px;
+  border-radius: 6px;
+  background: #edf4ef;
+  color: #447052;
+  font-family: var(--ui-font-sans, 'PingFang SC', 'Microsoft YaHei', sans-serif);
+  font-size: 10.5px;
+  line-height: 1.45;
   white-space: nowrap;
+  box-shadow: 0 1px 4px rgba(28, 30, 25, 0.1);
+}
+
+/* 选点预览：白心 + 淡光环，确认坐标已落到地图上 */
+.campus-add-preview {
+  position: relative;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--ui-accent, #3d6fb4);
+  border: 3px solid #fff;
+  box-shadow: 0 0 0 2px rgba(61, 111, 180, 0.24),
+    0 2px 8px rgba(28, 30, 25, 0.22);
+}
+
+.campus-add-preview::after {
+  content: '';
+  position: absolute;
+  inset: -9px;
+  border-radius: 50%;
+  border: 1px solid rgba(61, 111, 180, 0.24);
 }

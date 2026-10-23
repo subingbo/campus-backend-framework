@@ -3,7 +3,7 @@
     :model-value="modelValue"
     :title="dialogTitle"
     :width="showVenuePicker ? 'min(560px, 94vw)' : 'min(500px, 94vw)'"
-    class="activity-form-dialog"
+    class="activity-form-dialog ui-dialog"
     @update:model-value="(v) => emit('update:modelValue', v)"
     @closed="onDialogClosed"
   >

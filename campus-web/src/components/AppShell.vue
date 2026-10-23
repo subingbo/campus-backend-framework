@@ -1,25 +1,33 @@
 <template>
-  <div class="app-shell">
+  <div class="app-shell" :class="{ 'app-shell--immersive': isImmersive }">
     <header class="app-topbar">
-      <router-link to="/" class="app-topbar__brand">Campus Map</router-link>
-      <nav class="app-topbar__nav">
-        <router-link to="/" class="nav-item" :class="{ active: isActive('/') }">地图</router-link>
-        <span class="nav-badge-wrap">
-          <router-link to="/messages" class="nav-item" :class="{ active: isActive('/messages') }">
-            消息
-          </router-link>
-          <span v-if="summary.total" class="nav-badge" aria-label="未读消息">
-            {{ summary.total > 99 ? '99+' : summary.total }}
+      <div class="app-topbar__left">
+        <router-link to="/" class="app-topbar__brand">
+          <span v-if="isImmersive" class="app-topbar__mark">
+            <AppIcon name="pin" :size="15" />
           </span>
-        </span>
-        <router-link to="/activities" class="nav-item" :class="{ active: isActive('/activities') }">日程</router-link>
-        <router-link to="/assistant" class="nav-item" :class="{ active: isActive('/assistant') }">AI 助手</router-link>
-      </nav>
+          <span class="app-topbar__brand-text">Campus Map</span>
+        </router-link>
+        <nav class="app-topbar__nav">
+          <router-link to="/" class="nav-item" :class="{ active: isActive('/') }">地图</router-link>
+          <span class="nav-badge-wrap">
+            <router-link to="/messages" class="nav-item" :class="{ active: isActive('/messages') }">
+              消息
+            </router-link>
+            <span v-if="summary.total" class="nav-badge" aria-label="未读消息">
+              {{ summary.total > 99 ? '99+' : summary.total }}
+            </span>
+          </span>
+          <router-link to="/activities" class="nav-item" :class="{ active: isActive('/activities') }">日程</router-link>
+          <router-link to="/assistant" class="nav-item" :class="{ active: isActive('/assistant') }">AI 助手</router-link>
+        </nav>
+      </div>
       <div class="app-topbar__right">
         <el-dropdown trigger="click" @command="onAccountCommand">
           <button type="button" class="account-trigger">
             <span class="account-avatar">{{ avatarText }}</span>
             <span class="account-name">{{ displayName }}</span>
+            <AppIcon v-if="isImmersive" name="chevron-down" :size="14" class="account-chevron" />
           </button>
           <template #dropdown>
             <el-dropdown-menu>
@@ -46,9 +54,11 @@ import { userApi } from '../api'
 import { clearSession, getAccessClaims } from '../api/authSession'
 import { clearOutboxForCurrentUser, connect, disconnect, on } from '../composables/useChatSocket'
 import { useMessageSummary } from '../composables/useMessageSummary'
+import AppIcon from './ui/AppIcon.vue'
 
 const route = useRoute()
 const router = useRouter()
+const isImmersive = computed(() => route.meta.immersive === true)
 const { summary, refresh: refreshSummary, refreshSoon, reset: resetSummary } = useMessageSummary()
 const profile = ref({ username: '', nickname: '' })
 const username = computed(() => profile.value.username)
@@ -133,12 +143,31 @@ onUnmounted(() => {
   background: #fff;
   border-bottom: 1px solid rgba(31, 56, 88, 0.08);
 }
+.app-topbar__left {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
 .app-topbar__brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
   font-weight: 700;
   letter-spacing: 0.02em;
   color: var(--el-color-primary);
   text-decoration: none;
   white-space: nowrap;
+}
+.app-topbar__mark {
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: var(--ui-accent);
+  color: #fff;
 }
 .app-topbar__nav {
   flex: 1;
@@ -147,6 +176,13 @@ onUnmounted(() => {
   align-items: center;
   gap: 20px;
   overflow-x: auto;
+  scrollbar-width: none;
+}
+.app-topbar__nav::-webkit-scrollbar {
+  display: none;
+}
+.account-chevron {
+  color: var(--el-text-color-secondary);
 }
 .nav-badge-wrap {
   position: relative;
@@ -213,11 +249,113 @@ onUnmounted(() => {
   white-space: nowrap;
   font-size: 13px;
 }
+
+/* ===== 地图沉浸模式：左右两个悬浮胶囊，中间留给地图 ===== */
+.app-shell--immersive .app-topbar {
+  position: absolute;
+  z-index: 30;
+  top: 12px;
+  left: 0;
+  right: 0;
+  height: 52px;
+  padding: 0 12px;
+  gap: 12px;
+  justify-content: space-between;
+  background: transparent;
+  border-bottom: 0;
+  pointer-events: none;
+}
+.app-shell--immersive .app-topbar__left {
+  flex: 0 1 auto;
+  height: 52px;
+  padding: 0 14px;
+  gap: 18px;
+  background: var(--ui-surface);
+  border-radius: 16px;
+  box-shadow: var(--ui-shadow-1);
+  pointer-events: auto;
+}
+.app-shell--immersive .app-topbar__brand {
+  color: var(--ui-ink);
+}
+.app-shell--immersive .app-topbar__nav {
+  flex: 0 1 auto;
+  gap: 2px;
+  overflow: visible;
+}
+.app-shell--immersive .nav-item {
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 10px;
+  border-radius: 8px;
+  color: var(--ui-ink-2);
+  font-size: 13px;
+}
+.app-shell--immersive .nav-item:hover {
+  background: var(--ui-surface-2);
+  color: var(--ui-ink);
+}
+.app-shell--immersive .nav-item.active {
+  background: var(--ui-surface-2);
+  color: var(--ui-ink);
+  font-weight: 600;
+}
+.app-shell--immersive .nav-badge-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.app-shell--immersive .nav-badge {
+  position: static;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--ui-accent);
+  font-size: 10px;
+  line-height: 16px;
+}
+.app-shell--immersive .app-topbar__right {
+  pointer-events: auto;
+}
+.app-shell--immersive .account-trigger {
+  height: 44px;
+  padding: 3px 12px 3px 4px;
+  background: var(--ui-surface);
+  border-radius: 999px;
+  box-shadow: var(--ui-shadow-1);
+  color: var(--ui-ink-2);
+}
+.app-shell--immersive .account-trigger:hover {
+  background: var(--ui-surface-2);
+}
+.app-shell--immersive .account-avatar {
+  background: var(--ui-accent-tint);
+  color: var(--ui-accent);
+}
+.app-shell--immersive .account-name {
+  font-size: 12.5px;
+}
+.app-shell--immersive .app-shell__main {
+  flex: 1;
+  height: 100vh;
+  overflow: hidden;
+}
+
 /* 主区接管滚动：页面与工作台都按 100% 高度自适应 */
 .app-shell__main {
   flex: 1;
   min-height: 0;
   overflow: auto;
+}
+@media (max-width: 768px) {
+  .app-shell--immersive .app-topbar {
+    display: none;
+  }
+  .app-shell--immersive .app-shell__main {
+    height: 100dvh;
+  }
 }
 @media (max-width: 600px) {
   .app-topbar {

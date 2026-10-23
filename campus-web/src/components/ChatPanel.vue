@@ -2,13 +2,13 @@
   <div class="chat-panel">
     <div ref="listRef" class="chat-panel__list">
       <p v-if="!messages.length && !loading" class="chat-panel__empty">还没有消息，打个招呼吧</p>
-      <div v-for="m in messages" :key="m.id" class="chat-msg" :class="{ mine: m.senderId === me }">
+      <div v-for="m in messages" :key="m.id" class="chat-msg" :class="{ mine: m.senderId === me && m.type !== 'AGENT' }">
         <span v-if="conversation.type !== 'PRIVATE' && m.senderId !== me" class="chat-msg__nick">
           {{ m.senderNickname }}
         </span>
         <div class="chat-msg__bubble" :class="{ agent: m.type === 'AGENT' }">
           <template v-if="m.type === 'AGENT'">
-            <span class="chat-msg__ai">🤖</span>
+            <span class="chat-msg__ai"><AppIcon name="sparkles" :size="14" /></span>
             <MarkdownText :text="m.content" />
           </template>
           <template v-else>{{ m.content }}</template>
@@ -92,6 +92,7 @@ import { mergeMessages } from '../composables/chatOutbox'
 import { useMessageSummary } from '../composables/useMessageSummary'
 import MarkdownText from './MarkdownText.vue'
 import GroupPlanCard from './GroupPlanCard.vue'
+import AppIcon from './ui/AppIcon.vue'
 
 const props = defineProps({
   conversation: { type: Object, required: true }

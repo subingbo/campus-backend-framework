@@ -27,24 +27,33 @@ export function createMyLocationContent() {
   </div>`
 }
 
-export async function loadAmap(container, onClick) {
+export async function loadAmap(container, onClick, options = {}) {
+  const {
+    controls = true,
+    mapStyle = import.meta.env.VITE_MAP_STYLE || 'amap://styles/fresh'
+  } = options
   const key = import.meta.env.VITE_AMAP_KEY
   if (!key) {
     throw new Error('请在 campus-web/.env 中配置 VITE_AMAP_KEY')
   }
   window._AMapSecurityConfig = { securityJsCode: import.meta.env.VITE_AMAP_SECURITY || '' }
+  const plugins = ['AMap.Geolocation']
+  if (controls) plugins.push('AMap.Scale', 'AMap.ToolBar')
   const AMap = await AMapLoader.load({
     key,
     version: '2.0',
-    plugins: ['AMap.Scale', 'AMap.ToolBar', 'AMap.Geolocation']
+    plugins
   })
   const map = new AMap.Map(container, {
     zoom: 16,
     center: [centerLng, centerLat],
-    viewMode: '2D'
+    viewMode: '2D',
+    mapStyle
   })
-  map.addControl(new AMap.Scale())
-  map.addControl(new AMap.ToolBar({ position: 'RB' }))
+  if (controls) {
+    map.addControl(new AMap.Scale())
+    map.addControl(new AMap.ToolBar({ position: 'RB' }))
+  }
   if (onClick) {
     map.on('click', (e) => onClick(e.lnglat.getLng(), e.lnglat.getLat()))
   }
