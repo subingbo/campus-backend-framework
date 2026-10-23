@@ -1,8 +1,11 @@
 <template>
-  <div class="assistant-page">
+  <div class="assistant-page ui-v2">
     <aside class="chat-col">
       <header class="chat-head">
-        <span class="chat-head__title">AI 规划助手</span>
+        <span class="chat-head__title">
+          <AppIcon name="sparkles" :size="15" />
+          AI 规划助手
+        </span>
         <el-dropdown trigger="click" @visible-change="onSessionsVisible" @command="switchConversation">
           <el-button size="small" :disabled="busy">会话 ▾</el-button>
           <template #dropdown>
@@ -50,6 +53,10 @@
             <div class="bubble bubble--user">{{ msg.content }}</div>
           </div>
           <div v-else class="msg msg--assistant">
+            <span class="msg__ai">
+              <AppIcon name="sparkles" :size="12" />
+              AI 助手
+            </span>
             <div class="bubble bubble--assistant">
               <div v-if="msg.status" class="msg__status">
                 <span class="spin-dot"></span>{{ msg.status }}
@@ -325,10 +332,15 @@
           <el-button v-if="geoPopup.mapId" size="small" type="primary" @click="openInMap(geoPopup)">在共建地图打开</el-button>
         </div>
       </div>
+
+      <div class="assistant-map-controls">
+        <MapActionButton icon="plus" label="放大" @click="zoomInMap" />
+        <MapActionButton icon="minus" label="缩小" @click="zoomOutMap" />
+      </div>
     </section>
 
     <!-- 用户点击预览时打开；生成草稿不打断聊天。 -->
-    <el-dialog v-model="planDialogVisible" title="📅 活动预览" width="380px" append-to-body class="plan-dialog">
+    <el-dialog v-model="planDialogVisible" title="📅 活动预览" width="min(380px, 94vw)" append-to-body class="ui-dialog plan-dialog">
       <template v-if="plan">
         <p class="plan-dialog__name">{{ plan.title }}</p>
         <p class="hint">🕐 {{ planRangeText }} · {{ (plan.stops || []).length }} 站
@@ -361,6 +373,8 @@ import { loadAmap, createPlaceMarkerController, createRouteLineController, creat
 import { useLocation } from '../composables/useLocation'
 import AssistantReply from '../components/AssistantReply.vue'
 import AmapRouteLinks from '../components/AmapRouteLinks.vue'
+import AppIcon from '../components/ui/AppIcon.vue'
+import MapActionButton from '../components/ui/MapActionButton.vue'
 import { fmt } from '../utils/format'
 import { buildAmapNavigationUrl, openAmapNavigation } from '../utils/amapNavigation'
 
@@ -608,8 +622,12 @@ function updateGeoPopupPos() {
   const h = geoPopRef.value?.offsetHeight || 120
   const cw = mapRef.value.clientWidth
   const ch = mapRef.value.clientHeight
+  const chatEl = document.querySelector('.chat-col')
+  const leftGuard = !isMobile() && chatEl ? chatEl.getBoundingClientRect().right + 8 : 8
   const below = pt.y - 48 - h < 8
-  const x = cw > w + 16 ? Math.min(Math.max(pt.x, w / 2 + 8), cw - w / 2 - 8) : cw / 2
+  const minX = leftGuard + w / 2
+  const maxX = cw - w / 2 - 8
+  const x = maxX > minX ? Math.min(Math.max(pt.x, minX), maxX) : (leftGuard + cw) / 2
   const top = below ? Math.min(pt.y + 12, Math.max(ch - h - 8, 8)) : pt.y - 48
   geoPopupStyle.value = {
     left: `${Math.round(x)}px`,
@@ -763,7 +781,7 @@ watch(plan, async (value) => {
 })
 
 function initMap() {
-  loadAmap(mapRef.value, onMapClick).then(({ AMap, map, geolocation }) => {
+  loadAmap(mapRef.value, onMapClick, { controls: false }).then(({ AMap, map, geolocation }) => {
     markerCtrl = createPlaceMarkerController(AMap, map, onMarkerClick)
     routeCtrl = createRouteLineController(AMap, map)
     mapApi_ = { AMap, map }
@@ -783,6 +801,14 @@ function initMap() {
   }).catch((e) => {
     mapError.value = e?.message || '地图加载失败'
   })
+}
+
+function zoomInMap() {
+  mapApi_?.map?.zoomIn?.()
+}
+
+function zoomOutMap() {
+  mapApi_?.map?.zoomOut?.()
 }
 
 /** 草稿站点并入统一标记集合（键 stop-N），与对话 geo 点位共存于同一张地图 */
@@ -1314,22 +1340,26 @@ function stopTimeText(stop) {
 }
 
 .assistant-page {
-  display: grid;
-  grid-template-columns: 400px 1fr;
-  /* 全局导航壳的主区已定高，这里撑满壳内可视区 */
+  position: relative;
   height: 100%;
-  background: #f5f7fa;
+  overflow: hidden;
+  background: var(--ui-bg);
 }
 
 .chat-col {
+  position: absolute;
+  z-index: 20;
+  top: 80px;
+  left: 16px;
+  bottom: 16px;
+  width: 400px;
   display: flex;
   flex-direction: column;
-  height: 100%;
   min-height: 0;
-  min-width: 0;
   overflow: hidden;
-  border-right: 1px solid #e8eaee;
-  background: #fff;
+  border-radius: var(--ui-radius-xl);
+  background: var(--ui-surface);
+  box-shadow: var(--ui-shadow-2);
 }
 
 .chat-head {
@@ -1337,15 +1367,22 @@ function stopTimeText(stop) {
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  padding: 10px 14px;
-  border-bottom: 1px solid #f0f0f2;
+  padding: 14px 16px 10px;
+  border-bottom: 1px solid var(--ui-line);
   flex-shrink: 0;
 }
 .chat-head__title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   white-space: nowrap;
   margin-right: auto;
+  font-size: 14px;
   font-weight: 600;
-  color: var(--brand-blue, #0052d9);
+  color: var(--ui-ink);
+}
+.chat-head__title :deep(svg) {
+  color: var(--ui-accent);
 }
 .chat-head__ref {
   width: 100%;
@@ -1360,27 +1397,48 @@ function stopTimeText(stop) {
   scrollbar-gutter: stable;
 }
 .msg-list {
-  padding: 14px;
+  padding: 16px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 16px;
 }
 .msg-empty {
-  text-align: center;
-  color: rgba(0, 0, 0, 0.45);
-  padding: 40px 12px;
+  text-align: left;
+  color: var(--ui-ink-2);
+  padding: 20px 2px;
   font-size: 13px;
-  line-height: 1.8;
+  line-height: 1.75;
 }
 .msg-empty h3 {
-  color: rgba(0, 0, 0, 0.85);
-  margin-bottom: 6px;
+  color: var(--ui-ink);
+  margin: 0 0 6px;
+  font-size: 15px;
+  font-weight: 600;
+}
+.msg-empty p {
+  margin: 0 0 6px;
 }
 .msg {
   display: flex;
 }
 .msg--user {
   justify-content: flex-end;
+}
+.msg--assistant {
+  flex-direction: column;
+  gap: 6px;
+}
+.msg__ai {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--ui-ink-3);
+}
+.msg__ai :deep(svg) {
+  color: var(--ui-accent);
 }
 .bubble {
   max-width: 86%;
@@ -1392,65 +1450,103 @@ function stopTimeText(stop) {
   white-space: pre-wrap;
 }
 .bubble--user {
-  background: var(--brand-blue, #0052d9);
+  background: var(--ui-accent);
   color: #fff;
   border-bottom-right-radius: 4px;
 }
 .bubble--assistant {
-  background: #f3f5f8;
-  color: rgba(0, 0, 0, 0.85);
-  border-bottom-left-radius: 4px;
+  max-width: 100%;
+  padding: 0;
+  background: transparent;
+  color: var(--ui-ink);
+  border-radius: 0;
+  font-size: 13.5px;
+  line-height: 1.72;
+  white-space: normal;
+}
+.bubble--assistant :deep(.route-links) {
+  gap: 0;
+  margin-top: 12px;
+  border-top: 1px solid var(--ui-line);
+}
+.bubble--assistant :deep(.route-link) {
+  padding: 9px 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--ui-ink-2);
+}
+.bubble--assistant :deep(.route-link + .route-link) {
+  border-top: 1px solid var(--ui-line);
+}
+.bubble--assistant :deep(.route-link:hover) {
+  background: transparent;
+}
+.bubble--assistant :deep(.route-link__route) {
+  color: var(--ui-ink);
+  font-size: 12.5px;
+}
+.bubble--assistant :deep(.route-link__detail) {
+  color: var(--ui-ink-3);
+}
+.bubble--assistant :deep(.route-link__action) {
+  color: var(--ui-accent);
 }
 .msg__status {
   display: flex;
   align-items: center;
   gap: 6px;
+  margin-bottom: 4px;
   font-size: 12px;
-  color: var(--brand-blue, #0052d9);
+  color: var(--ui-accent);
 }
 .spin-dot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: var(--brand-blue, #0052d9);
+  background: var(--ui-accent);
   animation: pulse 1s infinite ease-in-out;
 }
 @keyframes pulse {
   50% { opacity: 0.3; transform: scale(0.8); }
 }
 .plan-card {
-  margin: 8px 14px;
-  padding: 12px 14px;
-  border-radius: 16px;
-  border: 1px solid #eef1f6;
-  background: linear-gradient(180deg, #f7faff, #fff);
-  box-shadow: 0 2px 10px rgba(0, 82, 217, 0.06);
+  margin: 4px 16px 16px;
+  padding: 14px 16px;
+  border-radius: var(--ui-radius-xl);
+  border: 0;
+  background: var(--ui-surface);
+  box-shadow: var(--ui-shadow-1);
 }
 .plan-card__header { display: flex; gap: 8px; align-items: flex-start; }
 .plan-card__header h3 { flex: 1; min-width: 0; flex-wrap: wrap; }
-.plan-card__toggle { flex-shrink: 0; padding: 3px 0 3px 8px; border: 0; background: transparent; color: #0052d9; cursor: pointer; }
-.plan-card__summary { color: #69758a; font-size: 12px; margin: 4px 0 0; line-height: 1.6; }
-.draft-toggle { display: flex; justify-content: space-between; gap: 8px; flex-shrink: 0; margin: 6px 14px 2px; padding: 8px 10px; border: 1px solid #dbe6fa; border-radius: 8px; color: #0052d9; background: #f7faff; cursor: pointer; font-size: 12px; }
-.draft-toggle:focus-visible, .plan-card__toggle:focus-visible { outline: 2px solid #0052d9; outline-offset: 2px; }
+.plan-card__toggle { flex-shrink: 0; padding: 3px 0 3px 8px; border: 0; background: transparent; color: var(--ui-ink-3); font-size: 12px; cursor: pointer; }
+.plan-card__toggle:hover { color: var(--ui-ink); }
+.plan-card__summary { color: var(--ui-ink-3); font-size: 12px; margin: 4px 0 0; line-height: 1.6; }
+.draft-toggle { display: flex; justify-content: space-between; gap: 8px; flex-shrink: 0; margin: 8px 16px 2px; padding: 8px 10px; border: 0; border-radius: var(--ui-radius-md); color: var(--ui-ink-2); background: var(--ui-surface-2); cursor: pointer; font-size: 12px; }
+.draft-toggle:hover { background: var(--ui-surface-3); color: var(--ui-ink); }
+.draft-toggle:focus-visible, .plan-card__toggle:focus-visible { outline: 2px solid var(--ui-accent); outline-offset: 2px; }
 .plan-card__title {
   margin: 0 0 8px;
-  font-size: 14px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ui-ink);
   display: flex;
   align-items: center;
-  gap: 8px;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 .plan-seg {
-  font-size: 12px;
-  color: rgba(0, 0, 0, 0.45);
-  padding: 4px 0 0 24px;
+  font-size: 11.5px;
+  color: var(--ui-ink-3);
+  padding: 6px 0 0 28px;
 }
 .plan-stop {
   display: flex;
   gap: 10px;
-  padding: 6px 0 6px 10px;
-  border-left: 2px solid var(--brand-blue-light-7, #d6e4ff);
-  margin-left: 8px;
-  padding-left: 14px;
+  padding: 7px 0 7px 15px;
+  border-left: 1px solid var(--ui-line);
+  margin-left: 9px;
   cursor: pointer;
 }
 .plan-stop__dot {
@@ -1458,14 +1554,17 @@ function stopTimeText(stop) {
   width: 20px;
   height: 20px;
   border-radius: 50%;
-  background: var(--brand-blue, #0052d9);
+  background: var(--ui-accent);
   color: #fff;
-  font-size: 12px;
+  font-size: 11px;
+  font-weight: 600;
   line-height: 20px;
   text-align: center;
-  margin: 1px 0 0 -22px;
+  box-shadow: 0 0 0 3px var(--ui-surface);
+  margin: 1px 0 0 -25px;
 }
 .plan-stop__main {
+  flex: 1;
   min-width: 0;
 }
 .plan-stop__head {
@@ -1474,26 +1573,27 @@ function stopTimeText(stop) {
   align-items: baseline;
   flex-wrap: wrap;
   font-size: 13px;
+  color: var(--ui-ink);
 }
 .plan-stop__nav {
   text-decoration: none;
   margin-left: auto;
-  border: 1px solid rgba(0, 82, 217, 0.25);
-  background: #fff;
-  color: var(--brand-blue, #0052d9);
+  border: 0;
+  background: var(--ui-surface-2);
+  color: var(--ui-accent);
   border-radius: 999px;
   font-size: 11px;
   line-height: 18px;
-  padding: 1px 8px;
+  padding: 2px 8px;
   cursor: pointer;
 }
 .plan-stop__nav:hover {
-  background: rgba(0, 82, 217, 0.08);
+  background: var(--ui-surface-3);
 }
 .plan-people {
-  margin: 8px 0 2px;
-  border-top: 1px dashed #e6ebf5;
-  padding-top: 8px;
+  margin: 10px 0 2px;
+  border-top: 1px solid var(--ui-line);
+  padding-top: 10px;
 }
 .plan-people__toggle {
   width: 100%;
@@ -1505,15 +1605,15 @@ function stopTimeText(stop) {
   padding: 2px 0;
   cursor: pointer;
   font-size: 12px;
-  color: rgba(0, 0, 0, 0.65);
+  color: var(--ui-ink-2);
 }
 .plan-people__conflict {
-  color: #d4380d;
+  color: var(--ui-danger);
   font-weight: 600;
 }
 .plan-people__chevron {
   margin-left: auto;
-  color: var(--brand-blue, #0052d9);
+  color: var(--ui-accent);
 }
 .plan-people__body {
   margin-top: 6px;
@@ -1530,8 +1630,8 @@ function stopTimeText(stop) {
   font-size: 11px;
   padding: 2px 8px;
   border-radius: 999px;
-  background: rgba(0, 82, 217, 0.08);
-  color: #1d39c4;
+  background: var(--ui-accent-tint);
+  color: var(--ui-accent);
 }
 .plan-member em {
   font-style: normal;
@@ -1540,45 +1640,46 @@ function stopTimeText(stop) {
   font-size: 10px;
 }
 .plan-member.is-unknown {
-  background: rgba(0, 0, 0, 0.05);
-  color: rgba(0, 0, 0, 0.55);
+  background: var(--ui-surface-2);
+  color: var(--ui-ink-3);
 }
 .plan-conflict {
-  background: #fff7e6;
-  border: 1px solid #ffe0a3;
-  border-radius: 8px;
-  padding: 6px 8px;
+  background: var(--ui-warning-tint);
+  border: 0;
+  border-radius: var(--ui-radius-md);
+  padding: 8px 10px;
 }
 .plan-conflict__line {
   margin: 0;
   font-size: 12px;
-  color: #ad4e00;
+  color: var(--ui-warning);
 }
 .plan-conflict__suggestion {
   margin: 2px 0 0;
   font-size: 11px;
-  color: #874d00;
+  color: var(--ui-warning);
+  opacity: 0.8;
 }
 .hint {
   margin: 2px 0 0;
-  color: rgba(0, 0, 0, 0.45);
+  color: var(--ui-ink-3);
   font-size: 12px;
 }
 .plan-card__range {
-  margin: 8px 0 10px;
+  margin: 10px 0;
   font-size: 13px;
-  color: rgba(0, 0, 0, 0.75);
+  color: var(--ui-ink-2);
 }
 .plan-card__save {
   width: 100%;
-  border-radius: 10px;
+  border-radius: var(--ui-radius-md);
 }
 
 .input-row {
   display: flex;
   gap: 8px;
-  padding: 10px 14px;
-  border-top: 1px solid #f0f0f2;
+  padding: 12px 16px 14px;
+  border-top: 1px solid var(--ui-line);
 }
 .input-row :deep(.el-textarea__inner) {
   border-radius: 10px;
@@ -1603,8 +1704,9 @@ function stopTimeText(stop) {
 }
 .quick-replies {
   display: flex;
-  gap: 8px;
-  padding: 4px 16px 8px;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 16px 8px;
 }
 /* 行程站序号角标：主色圆底白字 */
 .geo-chip__seq {
@@ -1619,21 +1721,26 @@ function stopTimeText(stop) {
   font-weight: 700;
   line-height: 1;
   color: #fff;
-  background: var(--el-color-primary);
+  background: var(--ui-accent);
   border-radius: 999px;
 }
 .quick-reply {
-  padding: 5px 14px;
+  padding: 6px 12px;
   font-size: 12px;
-  color: var(--el-color-primary);
-  background: var(--el-color-primary-light-9);
-  border: 1px solid var(--el-color-primary-light-7);
+  color: var(--ui-ink-2);
+  background: var(--ui-surface-2);
+  border: 0;
   border-radius: 999px;
   cursor: pointer;
-  transition: background 0.15s;
+  transition: background var(--ui-dur) var(--ui-ease), color var(--ui-dur) var(--ui-ease);
 }
 .quick-reply:hover {
-  background: var(--el-color-primary-light-8);
+  background: var(--ui-surface-3);
+  color: var(--ui-ink);
+}
+.quick-reply:focus-visible {
+  outline: 2px solid var(--ui-accent);
+  outline-offset: 2px;
 }
 .plan-dialog .plan-dialog__name {
   margin: 0 0 6px;
@@ -1645,58 +1752,58 @@ function stopTimeText(stop) {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin-top: 8px;
+  margin-top: 10px;
 }
 .geo-chip {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 2px 8px;
+  padding: 3px 9px;
   border-radius: 999px;
-  font-size: 12px;
+  font-size: 11.5px;
   line-height: 20px;
   cursor: pointer;
-  background: var(--el-color-primary-light-9);
-  color: var(--el-color-primary);
-  border: 1px solid transparent;
-  transition: border-color 0.15s;
+  background: var(--ui-surface-2);
+  color: var(--ui-ink-2);
+  border: 0;
+  transition: background var(--ui-dur) var(--ui-ease);
 }
 .geo-chip:hover {
-  border-color: currentColor;
+  background: var(--ui-surface-3);
 }
 .geo-chip__badge {
-  opacity: 0.75;
-  font-size: 11px;
+  opacity: 0.65;
+  font-size: 10.5px;
 }
 .geo-chip--group_map {
-  background: var(--el-color-success-light-9);
-  color: var(--el-color-success);
+  background: var(--ui-accent-tint);
+  color: var(--ui-accent);
 }
 .geo-chip--personal_map {
-  background: var(--el-color-primary-light-9);
-  color: var(--el-color-primary);
+  background: var(--ui-accent-tint);
+  color: var(--ui-accent);
 }
 .geo-chip--campus_lib {
-  background: var(--el-color-warning-light-9);
-  color: var(--el-color-warning);
+  background: var(--ui-warning-tint);
+  color: var(--ui-warning);
 }
 .geo-chip--amap_poi {
-  background: #f4f4f5;
-  color: #909399;
+  background: var(--ui-surface-2);
+  color: var(--ui-ink-3);
 }
 .geo-chip--user_location {
-  background: rgba(7, 193, 96, 0.12);
-  color: #07a552;
+  background: var(--ui-success-tint);
+  color: var(--ui-success);
 }
 .geo-pop {
   position: absolute;
-  z-index: 30;
+  z-index: 200;
   box-sizing: border-box;
   width: min(280px, calc(100vw - 24px));
-  padding: 10px 12px;
-  background: #fff;
-  border-radius: 12px;
-  box-shadow: 0 8px 24px rgba(31, 56, 88, 0.18);
+  padding: 12px 14px;
+  background: var(--ui-surface);
+  border-radius: var(--ui-radius-lg);
+  box-shadow: var(--ui-shadow-2);
   font-size: 13px;
   text-align: left;
   white-space: normal;
@@ -1711,55 +1818,69 @@ function stopTimeText(stop) {
   min-width: 0;
   font-weight: 600;
   font-size: 14px;
+  color: var(--ui-ink);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .geo-pop__src {
   flex-shrink: 0;
-  padding: 0 6px;
-  border-radius: 4px;
-  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 10.5px;
   color: #fff;
-  background: var(--el-color-primary);
+  background: var(--ui-accent);
 }
 .geo-pop__close {
   flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
   border: none;
+  border-radius: 8px;
   background: none;
-  padding: 2px 4px;
   font-size: 18px;
   line-height: 1;
-  color: rgba(0, 0, 0, 0.45);
+  color: var(--ui-ink-3);
   cursor: pointer;
+}
+.geo-pop__close:hover {
+  background: var(--ui-surface-2);
+  color: var(--ui-ink);
 }
 .geo-pop__line {
   margin: 4px 0 0;
   font-size: 12px;
-  color: rgba(0, 0, 0, 0.65);
+  color: var(--ui-ink-2);
 }
 .geo-pop__note {
   margin: 6px 0 0;
-  padding: 4px 8px;
-  border-radius: 6px;
-  background: #f7f8fa;
+  padding: 5px 8px;
+  border-radius: 8px;
+  background: var(--ui-surface-2);
   font-size: 12px;
-  color: rgba(0, 0, 0, 0.55);
+  color: var(--ui-ink-2);
 }
 .geo-pop__actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
-  margin-top: 8px;
+  margin-top: 10px;
+}
+.geo-pop__actions :deep(.el-button) {
+  margin-left: 0;
 }
 .input-note {
-  padding: 6px 14px 0;
+  padding: 8px 16px 0;
   font-size: 11px;
-  color: rgba(0, 0, 0, 0.45);
+  color: var(--ui-ink-3);
 }
 
 .map-col {
-  position: relative;
-  height: 100%;
+  position: absolute;
+  inset: 0;
+  z-index: 0;
   min-height: 0;
 }
 .map-canvas {
@@ -1768,23 +1889,42 @@ function stopTimeText(stop) {
 }
 .map-fallback {
   position: absolute;
-  inset: 0;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
   z-index: 2;
+  width: min(320px, calc(100% - 32px));
+  padding: 18px 20px;
+  border-radius: var(--ui-radius-xl);
+  background: var(--ui-surface);
+  box-shadow: var(--ui-shadow-2);
+  color: var(--ui-ink-2);
+  font-size: 13px;
+  text-align: center;
+}
+.assistant-map-controls {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  z-index: 200;
   display: flex;
-  align-items: center;
-  justify-content: center;
-  color: rgba(0, 0, 0, 0.45);
-  background: #f5f7fa;
+  flex-direction: column;
+  gap: 8px;
 }
 
 /* —— 阶段 F：草稿编辑态 —— */
 .plan-card__actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
-  margin-top: 8px;
+  margin-top: 10px;
 }
 .plan-card__actions :deep(.el-button) {
-  flex: 1;
+  flex: 1 1 calc(50% - 4px);
+  margin-left: 0;
+}
+.plan-card__actions .plan-card__save {
+  flex-basis: 100%;
 }
 .plan-ver {
   margin-left: 4px;
@@ -1804,10 +1944,10 @@ function stopTimeText(stop) {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  padding: 8px 10px;
-  background: rgba(64, 158, 255, 0.07);
-  border: 1px dashed rgba(64, 158, 255, 0.25);
-  border-radius: 10px;
+  padding: 10px;
+  background: var(--ui-surface-2);
+  border: 0;
+  border-radius: var(--ui-radius-md);
 }
 .plan-edit__stophead {
   display: flex;
@@ -1828,13 +1968,17 @@ function stopTimeText(stop) {
   opacity: 0.85;
 }
 .dt {
-  height: 24px;
-  border: 1px solid rgba(0, 0, 0, 0.12);
-  background: rgba(255, 255, 255, 0.65);
-  border-radius: 6px;
-  padding: 2px 6px;
+  height: 32px;
+  border: 0;
+  background: var(--ui-surface-2);
+  border-radius: 8px;
+  padding: 0 8px;
   font-size: 12px;
-  color: inherit;
+  color: var(--ui-ink);
+}
+.dt:focus {
+  outline: 0;
+  box-shadow: 0 0 0 1px var(--ui-accent) inset, 0 0 0 3px var(--ui-accent-ring);
 }
 .plan-edit__when {
   display: flex;
@@ -1848,11 +1992,11 @@ function stopTimeText(stop) {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 4px 14px 0;
+  padding: 6px 16px 0;
 }
 .transport-row__label {
   font-size: 12px;
-  color: rgba(0, 0, 0, 0.55);
+  color: var(--ui-ink-3);
   flex: none;
 }
 .transport-row__select {
@@ -1862,20 +2006,37 @@ function stopTimeText(stop) {
   margin: 0;
 }
 
+@media (max-width: 1099px) and (min-width: 769px) {
+  .chat-col {
+    width: 380px;
+  }
+}
+
 @media (max-width: 768px) {
   .assistant-page {
-    grid-template-columns: 1fr;
-    height: auto;
-    min-height: 100%;
+    height: 100%;
+    overflow: hidden;
   }
   .map-col {
-    order: 2;
+    position: absolute;
+    inset: 0;
     height: auto;
-    min-height: 46vh;
+    min-height: 0;
   }
   .chat-col {
-    height: 54vh;
-    border-right: none;
+    position: absolute;
+    z-index: 20;
+    top: auto;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: auto;
+    height: 54dvh;
+    border-radius: var(--ui-radius-xl) var(--ui-radius-xl) 0 0;
+  }
+  .assistant-map-controls {
+    right: 12px;
+    bottom: calc(54dvh + 12px);
   }
   .transport-row {
     flex-wrap: wrap;
