@@ -23,8 +23,11 @@ function coordOf(point) {
   if (!point) return null
   const lng = point.lng ?? point.longitude
   const lat = point.lat ?? point.latitude
-  if (lng == null || lat == null) return null
-  return { lng: Number(lng), lat: Number(lat) }
+  if (lng == null || lat == null || String(lng).trim() === '' || String(lat).trim() === '') return null
+  const coord = { lng: Number(lng), lat: Number(lat) }
+  if (!Number.isFinite(coord.lng) || !Number.isFinite(coord.lat)
+      || Math.abs(coord.lng) > 180 || Math.abs(coord.lat) > 90) return null
+  return coord
 }
 
 function placeText(point, fallback) {
@@ -51,4 +54,38 @@ export function openAmapNavigation(options) {
   const url = buildAmapNavigationUrl(options)
   if (url) window.open(url, '_blank', 'noopener')
   return url
+}
+
+/** Only structured route events supply coordinates/mode; reply prose is never parsed. */
+export function buildGeoRouteLinks(events = []) {
+  const places = events.flatMap((event) => event?.places || [])
+  const seen = new Set()
+  const links = []
+  const pointOf = (pair) => Array.isArray(pair) ? coordOf({ lng: pair[0], lat: pair[1] }) : null
+  const nameOf = (point, fallback) => places.find((place) => {
+    const coord = coordOf(place)
+    return coord && Math.abs(coord.lng - point.lng) < 0.000001 && Math.abs(coord.lat - point.lat) < 0.000001
+  })?.name || fallback
+  for (const event of events) {
+    if (event?.type !== 'ROUTE' || !event.route) continue
+    const route = event.route
+    const from = pointOf(route.from)
+    const to = pointOf(route.to)
+    if (!from || !to) continue
+    const mode = route.mode || 'WALK'
+    const key = `${from.lng},${from.lat}:${to.lng},${to.lat}:${mode}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    from.name = nameOf(from, '路线起点')
+    to.name = nameOf(to, '路线终点')
+    links.push({
+      key, fromName: from.name, toName: to.name,
+      modeLabel: AMAP_MODE_LABEL[mode] || '步行',
+      minutes: route.durationSeconds > 0 ? Math.ceil(route.durationSeconds / 60) : null,
+      distanceMeters: route.distanceMeters > 0 ? Math.round(route.distanceMeters) : null,
+      estimated: route.estimated === true || route.provider === 'estimate',
+      url: buildAmapNavigationUrl({ from, to, mode })
+    })
+  }
+  return links
 }

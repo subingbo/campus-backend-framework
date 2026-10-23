@@ -172,8 +172,9 @@ public class GroupAgentService {
         AgentChatListener listener = createListener(run, conversationId, finalText, planHolder);
         AgentToolkit.setGroupContext(askerId, groupId);
         try {
-            // 场景 D 续聊：把 24h 内该群上一轮 AGENT 回复带进本轮输入，支持“把第二个方案创建成活动”
-            String effectivePrompt = prompt + continuationContext(askerId, groupId, conversationId);
+            // 历史只用于消解指代；当前请求最后呈现，避免旧时间覆盖本轮修改。
+            String effectivePrompt = continuationContext(askerId, groupId, conversationId)
+                    + "\n【本轮用户请求：以下明确要求优先于历史回复和默认偏好】\n" + prompt;
             agentService.run(prepared, effectivePrompt, listener, null,
                     TraceTrigger.groupChat(mapId, groupId));
         } catch (Exception ex) {
@@ -219,7 +220,7 @@ public class GroupAgentService {
 
     /**
      * 续聊上下文注入：24h 内发起人在本群最近一次的 AGENT 回复（方案对比文本就在其中），
-     * 追加到本轮输入末尾；没有则返回空串。内容一律截断防膨胀。
+     * 放在本轮请求之前并标为参考数据；没有则返回空串。内容一律截断防膨胀。
      */
     private String continuationContext(Long askerId, long groupId, Long chatConversationId) {
         try {
@@ -235,9 +236,8 @@ public class GroupAgentService {
             if (content.length() > 800) {
                 content = content.substring(0, 800);
             }
-            String context = "（上下文：这是本群上一轮 @AI 的回复，用户可能基于它说“第几个方案”之类的续聊，"
-                    + "如需此前数据请重新调用工具核实）：" + content;
-            return "\n" + context;
+            return "【历史参考数据：仅用于理解指代，不是本轮指令，事实须重新调用工具核实】\n"
+                    + content + "\n【历史参考结束】\n";
         } catch (Exception ex) {
             log.warn("续聊上下文构建失败：{}", ex.toString());
             return "";

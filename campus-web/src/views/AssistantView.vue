@@ -38,7 +38,8 @@
         </el-select>
       </header>
 
-      <div ref="listRef" class="msg-list">
+      <div ref="listRef" class="chat-scroll" @scroll="onChatScroll">
+      <div class="msg-list">
         <div v-if="!messages.length" class="msg-empty">
           <h3>一句话，规划一场校园活动</h3>
           <p>例如：周六下午 5 个人逛校园，最后一起吃晚饭。</p>
@@ -54,8 +55,7 @@
                 <span class="spin-dot"></span>{{ msg.status }}
               </div>
               <!-- 流式期间纯文本（避免每段 delta 全量重排），结束后切 Markdown 渲染 -->
-              <span v-if="msg.content && msg.streaming" class="msg__text">{{ msg.content }}<span class="caret">▌</span></span>
-              <MarkdownText v-else-if="msg.content" :text="msg.content" />
+              <AssistantReply v-if="msg.content" :text="msg.content" :streaming="msg.streaming" :animate="msg.animate" @reveal="scrollBottom()" />
               <!-- 本条消息涉及的地点：点芯片聚焦地图并打开浮窗；有草稿时按路线站序排前并带序号 -->
               <div v-if="msg.geoPlaces && msg.geoPlaces.length" class="geo-chips">
                 <span
@@ -69,6 +69,7 @@
                   <span class="geo-chip__badge">{{ sourceLabel(row.chip.source) }}</span>{{ row.chip.name }}
                 </span>
               </div>
+              <AmapRouteLinks v-if="msg.geoEvents?.length" :events="msg.geoEvents" />
             </div>
           </div>
         </template>
@@ -85,17 +86,22 @@
       </div>
 
       <div v-if="plan" class="plan-card">
+        <div class="plan-card__header">
         <h3 class="plan-card__title">
           📅 {{ plan.title }}
           <el-tag size="small" effect="plain">{{ PLAN_TEXT[planCategory] || '' }}</el-tag>
           <el-tag v-if="currentPlanVersion" size="small" type="info" effect="plain" class="plan-ver">v{{ currentPlanVersion }}</el-tag>
           <el-tag v-if="plan.routeConfidence === 'ESTIMATED'" size="small" type="warning" effect="plain">交通·估算</el-tag>
-          <el-tag v-else-if="plan.routeConfidence === 'AMAP'" size="small" effect="plain">交通·高德实测</el-tag>
+          <el-tag v-else-if="plan.routeConfidence === 'AMAP'" size="small" effect="plain">交通·高德路线</el-tag>
           <el-tag v-else-if="plan.routeConfidence === 'PARTIAL'" size="small" type="warning" effect="plain">交通·部分未核验</el-tag>
           <el-tag v-if="plan.constraintStatus === 'CONFLICT'" size="small" type="danger" effect="plain">有冲突</el-tag>
           <el-tag v-else-if="plan.constraintStatus === 'TENTATIVE'" size="small" type="warning" effect="plain">暂定</el-tag>
           <el-tag v-else-if="plan.constraintStatus === 'FEASIBLE'" size="small" type="success" effect="plain">忙闲可行</el-tag>
         </h3>
+        <button type="button" class="plan-card__toggle" aria-controls="assistant-plan-body" :aria-expanded="planExpanded" @click="planExpanded = !planExpanded">{{ planExpanded ? '收起' : '展开' }} <span aria-hidden="true">{{ planExpanded ? '⌃' : '⌄' }}</span></button>
+        </div>
+        <p v-if="!planExpanded" class="plan-card__summary">{{ plan.stops?.length || 0 }} 站 · {{ planRangeText }}</p>
+        <div id="assistant-plan-body" v-show="planExpanded">
         <template v-if="!editing">
           <template v-for="stop in enrichedStops" :key="stop.seq">
             <div v-if="stop.segmentText" class="plan-seg">{{ stop.segmentText }}</div>
@@ -108,12 +114,15 @@
                     stop.source === 'GROUP_MAP' ? '共建' : stop.source === 'PERSONAL_MAP' ? '收藏' : 'POI'
                   }}</span>
                   <span v-if="stop.timeText" class="hint">{{ stop.timeText }}</span>
-                  <button
-                    type="button"
+                  <a
+                    v-if="stop.navigationUrl"
                     class="plan-stop__nav"
-                    title="在高德中导航到这里"
-                    @click.stop="navigateToStop(stop)"
-                  >🧭 导航</button>
+                    :href="stop.navigationUrl"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    :title="stop.navigationTitle"
+                    @click.stop
+                  >{{ stop.navigationLabel }} ↗</a>
                 </div>
                 <p class="hint">
                   <template v-if="stop.placeText">📍{{ stop.placeText }} · </template>
@@ -160,6 +169,7 @@
           </div>
           <p class="plan-card__range">🕐 {{ planRangeText }}</p>
           <div class="plan-card__actions">
+            <el-button size="small" @click="planDialogVisible = true">预览</el-button>
             <el-button size="small" :disabled="saving || !chatId" @click="openEditor">✏️ 编辑</el-button>
             <el-button
               type="primary"
@@ -232,12 +242,18 @@
             </div>
           </div>
         </template>
+        </div>
+      </div>
       </div>
 
+      <button v-if="plan" type="button" class="draft-toggle" :aria-expanded="planExpanded" aria-controls="assistant-plan-body" @click="togglePlan">
+        <span>📅 {{ saved ? '已保存活动' : '活动草稿' }} · {{ plan.stops?.length || 0 }} 站</span>
+        <span>{{ planExpanded ? '收起活动' : '查看活动' }} {{ planExpanded ? '⌃' : '⌄' }}</span>
+      </button>
       <p v-if="locateNote" class="input-note">{{ locateNote }}</p>
       <div class="transport-row">
         <span class="transport-row__label">出行方式</span>
-        <el-select v-model="transportChoice" size="small" class="transport-row__select">
+        <el-select v-model="transportChoice" size="small" class="transport-row__select" placeholder="按问题描述">
           <el-option
             v-for="opt in TRANSPORT_OPTIONS"
             :key="opt.value"
@@ -311,12 +327,12 @@
       </div>
     </section>
 
-    <!-- 直点化：草稿一生成即弹确认弹窗（历史回放/切换会话不弹），点按钮即保存 -->
-    <el-dialog v-model="planDialogVisible" title="📅 草稿已生成" width="380px" append-to-body class="plan-dialog">
+    <!-- 用户点击预览时打开；生成草稿不打断聊天。 -->
+    <el-dialog v-model="planDialogVisible" title="📅 活动预览" width="380px" append-to-body class="plan-dialog">
       <template v-if="plan">
         <p class="plan-dialog__name">{{ plan.title }}</p>
         <p class="hint">🕐 {{ planRangeText }} · {{ (plan.stops || []).length }} 站
-          <el-tag v-if="plan.routeConfidence === 'AMAP'" size="small" effect="plain">交通·高德实测</el-tag>
+          <el-tag v-if="plan.routeConfidence === 'AMAP'" size="small" effect="plain">交通·高德路线</el-tag>
           <el-tag v-else-if="plan.routeConfidence === 'ESTIMATED'" size="small" type="warning" effect="plain">交通·估算</el-tag>
           <el-tag v-else-if="plan.routeConfidence === 'PARTIAL'" size="small" type="warning" effect="plain">交通·部分未核验</el-tag>
         </p>
@@ -343,9 +359,10 @@ import { assistantApi, mapApi } from '../api'
 import { streamAssistantChat } from '../api/aiStream'
 import { loadAmap, createPlaceMarkerController, createRouteLineController, createAmapLocationProvider } from '../composables/useAmap'
 import { useLocation } from '../composables/useLocation'
-import MarkdownText from '../components/MarkdownText.vue'
+import AssistantReply from '../components/AssistantReply.vue'
+import AmapRouteLinks from '../components/AmapRouteLinks.vue'
 import { fmt } from '../utils/format'
-import { openAmapNavigation } from '../utils/amapNavigation'
+import { buildAmapNavigationUrl, openAmapNavigation } from '../utils/amapNavigation'
 
 const router = useRouter()
 const route = useRoute()
@@ -373,6 +390,8 @@ const input = ref('')
 const pendingPrompt = ref('')
 const busy = ref(false)
 const plan = ref(null)
+const planExpanded = ref(true)
+const followLatest = ref(true)
 const saving = ref(false)
 const saved = ref(false)
 const referenceMapIds = ref([])
@@ -392,9 +411,7 @@ const editForm = ref(null)
 let chatId = null
 const chatSessions = ref([])
 const activeChatId = ref(null)
-/** 直点化：实时 plan 事件弹确认弹窗；历史回放前先解除武装 */
 const planDialogVisible = ref(false)
-const planDialogArmed = ref(true)
 let streamingPlaceholderIndex = -1
 let abortController = null
 let markerCtrl = null
@@ -663,16 +680,6 @@ async function resolveNavigationFrom() {
   return lastLocation.value
 }
 
-async function navigateToStop(stop) {
-  if (!stop || stop.longitude == null || stop.latitude == null) return
-  const from = await resolveNavigationFrom()
-  openAmapNavigation({
-    from,
-    to: { lng: Number(stop.longitude), lat: Number(stop.latitude), name: stop.name },
-    mode: stop.transportMode
-  })
-}
-
 async function navigateGeoPopup(place) {
   if (!place || place.longitude == null || place.latitude == null) return
   const from = await resolveNavigationFrom()
@@ -687,19 +694,23 @@ async function navigateGeoPopup(place) {
 const enrichedStops = computed(() => {
   const stops = plan.value?.stops || []
   return stops.map((stop, i) => {
-    const segment = stopSegments.value[i]
+    const segment = stopSegments.value[i - 1]
     const timeText = stopTimeText(stop)
     let segmentText = ''
     if (i > 0) {
       const mode = TRANSPORT_TEXT[stop.transportMode] || '🚶 前往下一站'
       if (segment?.durationSeconds) {
-        segmentText = `${mode} · 约 ${Math.max(1, Math.round(segment.durationSeconds / 60))} 分钟${segment.estimated ? '（估算）' : ''}`
+        segmentText = `${mode} · 约 ${Math.max(1, Math.ceil(segment.durationSeconds / 60))} 分钟${segment.estimated ? '（估算）' : ''}`
       } else if (stop.transportMode) {
         segmentText = mode
       }
     }
+    const from = i > 0 ? stops[i - 1] : manualLocation.value || lastLocation.value
     return {
       ...stop,
+      navigationUrl: buildAmapNavigationUrl({ from, to: stop, mode: stop.transportMode || 'WALK' }),
+      navigationLabel: i > 0 ? '高德路线' : from ? '高德导航' : '高德地点',
+      navigationTitle: i > 0 ? `从${stops[i - 1].name}到${stop.name}` : from ? `从我的位置到${stop.name}` : '在高德中查看地点',
       timeText,
       segmentText,
       transportText: TRANSPORT_TEXT[stop.transportMode] || '',
@@ -744,6 +755,7 @@ onUnmounted(() => {
 })
 
 watch(plan, async (value) => {
+  stopSegments.value = []
   if (value) {
     renderPlanOnMap(value)
     await loadRouteSegments(value)
@@ -808,13 +820,14 @@ async function loadRouteSegments(value) {
         toLat: Number(to.latitude),
         mode: to.transportMode || 'WALK'
       })
-      if (info?.polyline?.length) {
-        result[i - 1] = { mode: to.transportMode || 'WALK', polyline: info.polyline, durationSeconds: info.durationSeconds, estimated: info.estimated }
+      if (info) {
+        result[i - 1] = { mode: to.transportMode || 'WALK', polyline: info.polyline || [], durationSeconds: info.durationSeconds, estimated: info.estimated || info.provider === 'estimate' }
       }
     } catch (e) {
       // 折线缺失仅影响绘制，不阻塞时间线
     }
   }
+  if (plan.value !== value) return
   stopSegments.value = result
   redrawMap()
 }
@@ -853,12 +866,13 @@ async function onSessionsVisible(visible) {
 async function loadConversation(id) {
   chatId = id
   activeChatId.value = id
-  planDialogArmed.value = false
+  planDialogVisible.value = false
   // 记住最后查看的会话：刷新/重进页面回到当前正看的会话，而不是“最近更新”的那条
   try { localStorage.setItem('campus.assistant.lastChat', String(id)) } catch (e) { /* 隐私模式忽略 */ }
   const detail = await assistantApi.detail(id)
   const meta = detail?.conversation
   saved.value = meta?.status === 'SAVED'
+  followLatest.value = true
   currentPlanVersion.value = meta?.planVersion || 0
   // 历史消息连同其 geo_json 一起回放：chips + 地图标记/折线/蓝点
   messages.value = (detail?.messages || []).map((m) => {
@@ -876,6 +890,7 @@ async function loadConversation(id) {
   })
   if (detail?.plan) {
     plan.value = detail.plan
+    planExpanded.value = !saved.value
   }
   // 群语境以服务端持久化的 sourceMapId 为准；不信任前端 plan.sourceMapIds
   if (detail?.sourceMapId) {
@@ -934,7 +949,7 @@ async function newChat() {
     const session = await assistantApi.createChat()
     chatId = session.id
     activeChatId.value = session.id
-    planDialogArmed.value = true
+    planDialogVisible.value = false
     messages.value = []
     plan.value = null
     currentPlanVersion.value = 0
@@ -975,7 +990,7 @@ function composeContent() {
   }
   if (transportChoice.value) {
     const label = TRANSPORT_CHOICE_TEXT[transportChoice.value] || transportChoice.value
-    content += `\n（出行方式偏好：${label}；如该方式耗时只能估算，请明确说明）`
+    content += `\n（默认出行偏好：${label}，仅在本条正文未指定方式时使用；正文明确的步行、驾车等要求优先。如耗时只能估算，请明确说明。）`
   }
   return content
 }
@@ -1018,13 +1033,15 @@ async function send() {
     }
   }
   busy.value = true
+  planExpanded.value = false
   // 首个有效 SSE 事件到达前不清空输入：401/网络失败时可原样恢复
   pendingPrompt.value = input.value
-  planDialogArmed.value = true
+  planDialogVisible.value = false
   abortController = new AbortController()
   messages.value.push({ role: 'user', content })
-  messages.value.push({ role: 'assistant', content: '', status: '连接助手…', streaming: true })
+  messages.value.push({ role: 'assistant', content: '', status: '连接助手…', streaming: true, animate: true })
   streamingPlaceholderIndex = messages.value.length - 1
+  followLatest.value = true
   scrollBottom()
   try {
     const id = await ensureChat()
@@ -1074,14 +1091,11 @@ function handleEvent(event, payload) {
   } else if (event === 'plan') {
     placeholder.status = ''
     plan.value = payload
+    planExpanded.value = true
     saved.value = false
     // 新草稿版本未知（plan 事件不含版本号）——保存/编辑前由 detail / revise 接口取回
     currentPlanVersion.value = 0
-    if (planDialogArmed.value) {
-      // 直点化：实时生成的草稿立即弹确认弹窗（历史回放/切换会话不弹）
-      planDialogVisible.value = true
-    }
-    nextTick(() => document.querySelector('.plan-card')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }))
+    scrollBottom()
   } else if (event === 'done') {
     placeholder.status = ''
     placeholder.streaming = false
@@ -1230,10 +1244,23 @@ function focusStop(stop) {
 }
 
 function scrollBottom() {
+  if (!followLatest.value) return
   nextTick(() => {
     const el = listRef.value
     if (el) el.scrollTop = el.scrollHeight
   })
+}
+
+function onChatScroll() {
+  const el = listRef.value
+  if (el) followLatest.value = el.scrollHeight - el.clientHeight - el.scrollTop < 80
+}
+
+function togglePlan() {
+  planExpanded.value = !planExpanded.value
+  if (planExpanded.value) {
+    nextTick(() => listRef.value?.querySelector('.plan-card')?.scrollIntoView({ block: 'nearest', behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }))
+  }
 }
 
 /** 后端 LocalDateTime 可能是数组（[y,m,d,h,m(,s)]）或 ISO 字符串，统一兼容 */
@@ -1299,29 +1326,40 @@ function stopTimeText(stop) {
   flex-direction: column;
   height: 100%;
   min-height: 0;
+  min-width: 0;
+  overflow: hidden;
   border-right: 1px solid #e8eaee;
   background: #fff;
 }
 
 .chat-head {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   padding: 10px 14px;
   border-bottom: 1px solid #f0f0f2;
+  flex-shrink: 0;
 }
 .chat-head__title {
+  white-space: nowrap;
+  margin-right: auto;
   font-weight: 600;
   color: var(--brand-blue, #0052d9);
 }
 .chat-head__ref {
-  margin-left: auto;
-  width: 150px;
+  width: 100%;
 }
+.input-note, .transport-row, .input-row { flex-shrink: 0; }
 
-.msg-list {
+.chat-scroll {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+.msg-list {
   padding: 14px;
   display: flex;
   flex-direction: column;
@@ -1380,10 +1418,6 @@ function stopTimeText(stop) {
 @keyframes pulse {
   50% { opacity: 0.3; transform: scale(0.8); }
 }
-.caret {
-  color: var(--brand-blue, #0052d9);
-}
-
 .plan-card {
   margin: 8px 14px;
   padding: 12px 14px;
@@ -1391,10 +1425,13 @@ function stopTimeText(stop) {
   border: 1px solid #eef1f6;
   background: linear-gradient(180deg, #f7faff, #fff);
   box-shadow: 0 2px 10px rgba(0, 82, 217, 0.06);
-  max-height: 46vh;
-  overflow-y: auto;
-  overscroll-behavior: contain;
 }
+.plan-card__header { display: flex; gap: 8px; align-items: flex-start; }
+.plan-card__header h3 { flex: 1; min-width: 0; flex-wrap: wrap; }
+.plan-card__toggle { flex-shrink: 0; padding: 3px 0 3px 8px; border: 0; background: transparent; color: #0052d9; cursor: pointer; }
+.plan-card__summary { color: #69758a; font-size: 12px; margin: 4px 0 0; line-height: 1.6; }
+.draft-toggle { display: flex; justify-content: space-between; gap: 8px; flex-shrink: 0; margin: 6px 14px 2px; padding: 8px 10px; border: 1px solid #dbe6fa; border-radius: 8px; color: #0052d9; background: #f7faff; cursor: pointer; font-size: 12px; }
+.draft-toggle:focus-visible, .plan-card__toggle:focus-visible { outline: 2px solid #0052d9; outline-offset: 2px; }
 .plan-card__title {
   margin: 0 0 8px;
   font-size: 14px;
@@ -1439,6 +1476,7 @@ function stopTimeText(stop) {
   font-size: 13px;
 }
 .plan-stop__nav {
+  text-decoration: none;
   margin-left: auto;
   border: 1px solid rgba(0, 82, 217, 0.25);
   background: #fff;
@@ -1838,9 +1876,6 @@ function stopTimeText(stop) {
   .chat-col {
     height: 54vh;
     border-right: none;
-  }
-  .plan-card {
-    max-height: 34vh;
   }
   .transport-row {
     flex-wrap: wrap;
