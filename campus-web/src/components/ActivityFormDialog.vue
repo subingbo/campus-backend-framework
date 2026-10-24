@@ -112,9 +112,9 @@
             <el-option v-for="p in stopOptions" :key="p.id" :label="p.label" :value="p.id" />
           </el-select>
           <span class="stop-row__ops">
-            <el-button size="small" text :disabled="idx === 0" title="上移" @click="moveStop(idx, -1)">↑</el-button>
-            <el-button size="small" text :disabled="idx === stops.length - 1" title="下移" @click="moveStop(idx, 1)">↓</el-button>
-            <el-button size="small" text type="danger" title="删除" @click="stops.splice(idx, 1)">✕</el-button>
+            <button type="button" class="ui-icon-btn ui-icon-btn--sm" :disabled="idx === 0" title="上移" @click="moveStop(idx, -1)">↑</button>
+            <button type="button" class="ui-icon-btn ui-icon-btn--sm" :disabled="idx === stops.length - 1" title="下移" @click="moveStop(idx, 1)">↓</button>
+            <button type="button" class="ui-icon-btn ui-icon-btn--sm stop-row__remove" title="删除" @click="stops.splice(idx, 1)">✕</button>
           </span>
         </div>
         <div class="stop-row__line">
@@ -137,17 +137,24 @@
         </div>
         <el-input v-model="s.note" size="small" maxlength="256" placeholder="备注（可选）" class="stop-row__note" />
       </div>
-      <el-button v-if="stops.length < 8" size="small" class="stops-add" @click="addStop">＋ 添加站点</el-button>
+      <button v-if="stops.length < 8" type="button" class="ui-btn ui-btn--sm ui-btn--secondary stops-add" @click="addStop">
+        <AppIcon name="plus" :size="13" />
+        添加站点
+      </button>
       <p class="hint">站点时间须落在活动起止内、按序不倒退；时间留空则由参与者自行安排。</p>
 
       <p v-if="!isEdit" class="hint">创建后系统生成 6 位数字签到码；活动开始前 15 分钟至开始后 15 分钟内可输码签到。</p>
       <p v-else class="hint">改开始时间会顺延签到窗口；成员会在取消时收到通知。</p>
     </el-form>
     <template #footer>
-      <el-button @click="emit('update:modelValue', false)">取消</el-button>
-      <el-button type="primary" :loading="submitting" @click="submit">
-        {{ isEdit ? '保存' : '创建' }}
-      </el-button>
+      <button type="button" class="ui-btn ui-btn--ghost" :disabled="submitting" @click="emit('update:modelValue', false)">取消</button>
+      <button
+        type="button"
+        class="ui-btn ui-btn--primary"
+        :disabled="submitting"
+        :aria-busy="submitting"
+        @click="submit"
+      >{{ submitting ? '处理中…' : (isEdit ? '保存' : '创建') }}</button>
     </template>
   </el-dialog>
 </template>
@@ -158,6 +165,7 @@ import { ElMessage } from 'element-plus'
 import { activityApi, mapApi, placeApi } from '../api'
 import { loadAmap, createMarkerContent } from '../composables/useAmap'
 import { toDate, toLocalIso } from '../utils/format'
+import AppIcon from './ui/AppIcon.vue'
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
@@ -597,9 +605,12 @@ async function submit() {
 .stop-row__ops {
   margin-left: auto;
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 2px;
 }
-.stop-row__ops .el-button + .el-button {
-  margin-left: 2px;
+.stop-row__remove {
+  color: var(--ui-danger);
 }
 .stop-row__line {
   display: flex;

@@ -17,7 +17,7 @@
 
       <p v-if="!loading && !friends.length" class="hint empty">
         还没有好友可邀请。先到「好友」页添加好友，再回来。
-        <el-button size="small" text type="primary" @click="goFriends">去好友页</el-button>
+        <button type="button" class="ui-text-action" @click="goFriends">去好友页</button>
       </p>
 
       <el-checkbox-group v-if="friends.length" v-model="selectedIds" class="invite-list">
@@ -42,13 +42,14 @@
     </div>
 
     <template #footer>
-      <el-button @click="emit('update:modelValue', false)">取消</el-button>
-      <el-button
-        type="primary"
-        :loading="sending"
-        :disabled="!selectedIds.length || remaining <= 0 || isCancelled"
+      <button type="button" class="ui-btn ui-btn--ghost" :disabled="sending" @click="emit('update:modelValue', false)">取消</button>
+      <button
+        type="button"
+        class="ui-btn ui-btn--primary"
+        :disabled="sending || !selectedIds.length || remaining <= 0 || isCancelled"
+        :aria-busy="sending"
         @click="sendInvites"
-      >发送邀请{{ selectedIds.length ? `（${selectedIds.length}）` : '' }}</el-button>
+      >{{ sending ? '发送中…' : `发送邀请${selectedIds.length ? `（${selectedIds.length}）` : ''}` }}</button>
     </template>
   </el-dialog>
 </template>

@@ -202,6 +202,11 @@
     width: 100%;
   }
 
+  .ui-page-header__actions .ui-btn,
+  .ui-dialog .ui-btn {
+    min-height: var(--ui-tap);
+  }
+
   /* 移动端日期时间范围改为上下两行，避免两个 datetime 在窄屏被截断 */
   .ui-dialog .el-date-editor--datetimerange {
     display: flex;

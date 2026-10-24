@@ -19,7 +19,7 @@
       <el-tab-pane label="日历" name="calendar">
         <!-- 手机端收起 7 列月历，改为日期选择 + 当日列表 -->
         <div class="mobile-day-picker">
-          <el-date-picker v-model="calendarDate" type="date" :clearable="false" placeholder="选择日期" />
+          <el-date-picker v-model="calendarDate" type="date" :clearable="false" placeholder="选择日期" popper-class="ui-content-popper" />
         </div>
         <div v-if="loadingMine || loadingSchedules" class="activity-state">
           <span class="ui-spinner" />
@@ -85,7 +85,7 @@
                 <span class="hint">{{ entry.raw.joinedCount }}/{{ entry.raw.maxMembers }} 人</span>
               </div>
               <div class="row__actions">
-                <el-button size="small" type="primary" plain @click="openActivityDetail(entry.raw)">详情 / 去现场</el-button>
+                <button type="button" class="ui-btn ui-btn--sm ui-btn--secondary" @click="openActivityDetail(entry.raw)">详情 / 去现场</button>
               </div>
             </template>
             <template v-else>
@@ -96,8 +96,14 @@
                 <span v-if="entry.raw.note" class="hint">{{ entry.raw.note }}</span>
               </div>
               <div class="row__actions">
-                <el-button size="small" @click="openScheduleDialog(entry.raw)">编辑</el-button>
-                <el-button size="small" type="danger" plain @click="deleteSchedule(entry.raw)">删除</el-button>
+                <button type="button" class="ui-btn ui-btn--sm ui-btn--secondary" @click="openScheduleDialog(entry.raw)">编辑</button>
+                <button
+                  type="button"
+                  class="ui-btn ui-btn--sm ui-btn--danger"
+                  :disabled="isSchedulePending(entry.raw.id)"
+                  :aria-busy="isSchedulePending(entry.raw.id)"
+                  @click="deleteSchedule(entry.raw)"
+                >{{ isSchedulePending(entry.raw.id) ? '删除中…' : '删除' }}</button>
               </div>
             </template>
           </div>
@@ -161,9 +167,10 @@
         <div class="section">
           <div class="share-head">
             <h3>个人安排</h3>
-            <el-button size="small" type="primary" plain @click="openScheduleDialog(null, calendarDate)">
-              ＋ 新建个人安排
-            </el-button>
+            <button type="button" class="ui-text-action" @click="openScheduleDialog(null, calendarDate)">
+              <AppIcon name="plus" :size="13" />
+              新建个人安排
+            </button>
           </div>
           <p class="hint share-note">
             课程、会议、自习等私人安排。它们只用于自己的日历与群忙闲计算，群成员只能看到时段，看不到标题和备注。
@@ -183,8 +190,14 @@
               <span v-if="s.note" class="hint">{{ s.note }}</span>
             </div>
             <div class="row__actions">
-              <el-button size="small" @click="openScheduleDialog(s)">编辑</el-button>
-              <el-button size="small" type="danger" plain @click="deleteSchedule(s)">删除</el-button>
+              <button type="button" class="ui-btn ui-btn--sm ui-btn--secondary" @click="openScheduleDialog(s)">编辑</button>
+              <button
+                type="button"
+                class="ui-btn ui-btn--sm ui-btn--danger"
+                :disabled="isSchedulePending(s.id)"
+                :aria-busy="isSchedulePending(s.id)"
+                @click="deleteSchedule(s)"
+              >{{ isSchedulePending(s.id) ? '删除中…' : '删除' }}</button>
             </div>
           </div>
         </div>
@@ -206,8 +219,11 @@
         <div v-if="!loadingMine && !mine.length" class="empty-cta">
           <p class="hint">还没有安排或报名任何活动</p>
           <div class="empty-cta__actions">
-            <el-button type="primary" @click="$router.push('/')">去地图逛逛</el-button>
-            <el-button @click="createOpen = true">＋ 新建活动</el-button>
+            <button type="button" class="ui-btn ui-btn--secondary" @click="$router.push('/')">去地图逛逛</button>
+            <button type="button" class="ui-btn ui-btn--primary" @click="createOpen = true">
+              <AppIcon name="plus" :size="14" />
+              新建活动
+            </button>
           </div>
         </div>
       </el-tab-pane>
@@ -243,8 +259,19 @@
               <span class="hint">{{ i.inviterNickname }} 邀请你加入</span>
             </div>
             <div class="row__actions">
-              <el-button size="small" type="primary" :disabled="isInvitePending(i.id)" @click="acceptInvite(i)">接受</el-button>
-              <el-button size="small" :disabled="isInvitePending(i.id)" @click="declineInvite(i)">拒绝</el-button>
+              <button
+                type="button"
+                class="ui-btn ui-btn--sm ui-btn--primary"
+                :disabled="isInvitePending(i.id)"
+                :aria-busy="isInvitePending(i.id)"
+                @click="acceptInvite(i)"
+              >{{ isInvitePending(i.id) ? '接受中…' : '接受' }}</button>
+              <button
+                type="button"
+                class="ui-btn ui-btn--sm ui-btn--ghost"
+                :disabled="isInvitePending(i.id)"
+                @click="declineInvite(i)"
+              >拒绝</button>
             </div>
           </div>
         </div>
@@ -263,7 +290,10 @@
           </div>
           <div v-if="!loadingMine && !mineError && !createdActivities.length" class="empty-cta">
             <p class="hint">还没有创建过活动；可以手动新建，或去地图上点一个地点安排活动</p>
-            <el-button type="primary" @click="createOpen = true">＋ 新建活动</el-button>
+            <button type="button" class="ui-btn ui-btn--primary" @click="createOpen = true">
+              <AppIcon name="plus" :size="14" />
+              新建活动
+            </button>
           </div>
           <ActivityEntryCard
             v-for="a in createdActivities"
@@ -322,12 +352,20 @@
       />
     </div>
     <template #footer>
-      <el-button v-if="detailActivity" type="primary" @click="goPlace(detailActivity)">📅 去现场</el-button>
-      <el-button v-if="detailActivity" @click="navigateActivity(detailActivity)">🧭 高德导航</el-button>
-      <el-button
+      <button v-if="detailActivity" type="button" class="ui-btn ui-btn--primary" @click="goPlace(detailActivity)">
+        <AppIcon name="calendar" :size="14" />
+        去现场
+      </button>
+      <button v-if="detailActivity" type="button" class="ui-btn ui-btn--secondary" @click="navigateActivity(detailActivity)">
+        <AppIcon name="navigation" :size="14" />
+        高德导航
+      </button>
+      <button
         v-if="detailActivity && isCreatorOf(detailActivity) && detailActivity.phase !== 'CANCELLED'"
+        type="button"
+        class="ui-btn ui-btn--secondary"
         @click="openInvite(detailActivity)"
-      >邀请好友</el-button>
+      >邀请好友</button>
     </template>
   </el-dialog>
 
@@ -338,8 +376,8 @@
       </el-radio>
     </el-radio-group>
     <template #footer>
-      <el-button @click="mapPickDialog = false">取消</el-button>
-      <el-button type="primary" :disabled="!mapPickChoice" @click="confirmGoPlace">前往</el-button>
+      <button type="button" class="ui-btn ui-btn--ghost" @click="mapPickDialog = false">取消</button>
+      <button type="button" class="ui-btn ui-btn--primary" :disabled="!mapPickChoice" @click="confirmGoPlace">前往</button>
     </template>
   </el-dialog>
 
@@ -398,6 +436,7 @@ const loadingInvites = ref(false)
 const invitesError = ref('')
 const shareError = ref('')
 const pendingInviteActions = ref({})
+const pendingScheduleActions = ref({})
 const todayKey = calendarDayKey(new Date())
 let mineSeq = 0
 let scheduleSeq = 0
@@ -408,6 +447,10 @@ const myId = myUserId()
 
 function isInvitePending(id) {
   return pendingInviteActions.value[id] === true
+}
+
+function isSchedulePending(id) {
+  return pendingScheduleActions.value[id] === true
 }
 
 function isCreatorOf(a) {
@@ -557,7 +600,7 @@ async function onScheduleSaved() {
 }
 
 async function deleteSchedule(schedule) {
-  if (!schedule) return
+  if (!schedule || isSchedulePending(schedule.id)) return
   try {
     await ElMessageBox.confirm(`删除「${schedule.title}」？`, '删除个人安排', {
       type: 'warning',
@@ -567,12 +610,17 @@ async function deleteSchedule(schedule) {
   } catch {
     return
   }
+  pendingScheduleActions.value = { ...pendingScheduleActions.value, [schedule.id]: true }
   try {
     await scheduleApi.remove(schedule.id)
     ElMessage.success('已删除个人安排')
     await loadSchedules()
   } catch (e) {
     ElMessage.error(e.message || '删除失败')
+  } finally {
+    const next = { ...pendingScheduleActions.value }
+    delete next[schedule.id]
+    pendingScheduleActions.value = next
   }
 }
 
@@ -864,8 +912,8 @@ onUnmounted(() => {
 .share-section {
   padding: 14px 16px;
   border-radius: var(--ui-radius-lg);
-  border: 1px solid var(--ui-line);
-  background: var(--ui-surface);
+  border: 0;
+  background: var(--ui-surface-2);
 }
 .share-head {
   display: flex;
@@ -943,7 +991,11 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 6px;
+  flex-wrap: wrap;
   flex-shrink: 0;
+}
+.row__actions .ui-btn {
+  flex: 0 0 auto;
 }
 .hint {
   color: var(--ui-ink-3);
@@ -1008,6 +1060,13 @@ onUnmounted(() => {
     justify-content: flex-end;
     flex-wrap: wrap;
   }
+  .row__actions .ui-btn,
+  .empty-cta .ui-btn {
+    min-height: var(--ui-tap);
+  }
+  .row__actions .ui-text-action {
+    min-height: var(--ui-tap);
+  }
   .share-row {
     align-items: flex-start;
   }
@@ -1023,6 +1082,19 @@ onUnmounted(() => {
 .activity-calendar :deep(.el-calendar__header) {
   padding: 10px 14px;
   border-bottom: 1px solid var(--ui-line);
+}
+.activity-calendar :deep(.el-calendar__header .el-button) {
+  height: 32px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--ui-radius-sm);
+  background: var(--ui-surface-2);
+  color: var(--ui-ink-2);
+  font-size: 12px;
+}
+.activity-calendar :deep(.el-calendar__header .el-button:hover) {
+  background: var(--ui-surface-3);
+  color: var(--ui-ink);
 }
 .activity-calendar :deep(.el-calendar__body) {
   padding: 0 10px 10px;

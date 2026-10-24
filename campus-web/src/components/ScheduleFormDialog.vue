@@ -38,9 +38,22 @@
       <p class="hint">个人安排只用于自己的日历与群忙闲计算，不会向群成员展示标题或备注。</p>
     </el-form>
     <template #footer>
-      <el-button v-if="schedule" type="danger" plain :loading="removing" @click="remove">删除</el-button>
-      <el-button @click="emit('update:modelValue', false)">取消</el-button>
-      <el-button type="primary" :loading="saving" @click="submit">保存</el-button>
+      <button
+        v-if="schedule"
+        type="button"
+        class="ui-btn ui-btn--danger"
+        :disabled="removing || saving"
+        :aria-busy="removing"
+        @click="remove"
+      >{{ removing ? '删除中…' : '删除' }}</button>
+      <button type="button" class="ui-btn ui-btn--ghost" :disabled="saving || removing" @click="emit('update:modelValue', false)">取消</button>
+      <button
+        type="button"
+        class="ui-btn ui-btn--primary"
+        :disabled="saving || removing"
+        :aria-busy="saving"
+        @click="submit"
+      >{{ saving ? '保存中…' : '保存' }}</button>
     </template>
   </el-dialog>
 </template>

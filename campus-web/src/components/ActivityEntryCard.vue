@@ -13,17 +13,50 @@
       <template v-if="activity.joined">
         <el-tag v-if="activity.checkedIn" size="small" type="success">已签到</el-tag>
         <template v-else-if="checkinOpen">
-          <el-input v-model="code" size="small" class="checkin-input" placeholder="签到码" @keyup.enter="doCheckin" />
-          <el-button size="small" type="primary" @click="doCheckin">签到</el-button>
+          <el-input v-model="code" size="small" class="checkin-input" placeholder="签到码" :disabled="isPending('checkin')" @keyup.enter="doCheckin" />
+          <button
+            type="button"
+            class="ui-btn ui-btn--sm ui-btn--primary"
+            :disabled="isPending('checkin')"
+            :aria-busy="isPending('checkin')"
+            @click="doCheckin"
+          >{{ isPending('checkin') ? '签到中…' : '签到' }}</button>
         </template>
         <span v-else class="hint">{{ checkinHint }}</span>
-        <el-button v-if="activity.phase !== 'ENDED'" size="small" @click="leave">取消报名</el-button>
+        <button
+          v-if="activity.phase !== 'ENDED'"
+          type="button"
+          class="ui-btn ui-btn--sm ui-btn--ghost"
+          :disabled="isPending('leave')"
+          :aria-busy="isPending('leave')"
+          @click="leave"
+        >{{ isPending('leave') ? '取消中…' : '取消报名' }}</button>
       </template>
-      <el-button v-else-if="activity.phase === 'OPEN'" size="small" type="primary" @click="join">报名</el-button>
-      <el-button size="small" @click="toggleMembers">{{ compact ? '成员' : `成员（${activity.joinedCount}）` }}</el-button>
+      <button
+        v-else-if="activity.phase === 'OPEN'"
+        type="button"
+        class="ui-btn ui-btn--sm ui-btn--primary"
+        :disabled="isPending('join')"
+        :aria-busy="isPending('join')"
+        @click="join"
+      >{{ isPending('join') ? '报名中…' : '报名' }}</button>
+      <button
+        type="button"
+        class="ui-btn ui-btn--sm ui-btn--secondary"
+        :disabled="isPending('members')"
+        :aria-busy="isPending('members')"
+        @click="toggleMembers"
+      >{{ isPending('members') ? '加载中…' : compact ? '成员' : `成员（${activity.joinedCount}）` }}</button>
       <template v-if="isCreator">
-        <el-button size="small" @click="emit('edit', activity)">编辑</el-button>
-        <el-button v-if="activity.phase === 'OPEN'" size="small" type="danger" plain @click="cancel">取消活动</el-button>
+        <button type="button" class="ui-btn ui-btn--sm ui-btn--secondary" @click="emit('edit', activity)">编辑</button>
+        <button
+          v-if="activity.phase === 'OPEN'"
+          type="button"
+          class="ui-btn ui-btn--sm ui-btn--danger"
+          :disabled="isPending('cancel')"
+          :aria-busy="isPending('cancel')"
+          @click="cancel"
+        >{{ isPending('cancel') ? '取消中…' : '取消活动' }}</button>
       </template>
     </div>
     <span v-if="isCreator && activity.checkinCode && !isCancelled" class="checkin-code">
@@ -39,7 +72,13 @@
         <el-select v-model="inviteChoice" size="small" filterable placeholder="邀请好友参加" class="invite-select" popper-class="ui-content-popper">
           <el-option v-for="f in friends" :key="f.userId" :value="f.userId" :label="f.nickname || f.username" />
         </el-select>
-        <el-button size="small" type="primary" plain @click="invite">发邀请</el-button>
+        <button
+          type="button"
+          class="ui-btn ui-btn--sm ui-btn--secondary"
+          :disabled="isPending('invite')"
+          :aria-busy="isPending('invite')"
+          @click="invite"
+        >{{ isPending('invite') ? '发送中…' : '发邀请' }}</button>
       </div>
     </div>
   </div>
@@ -75,6 +114,13 @@ const membersOpen = ref(false)
 const members = ref([])
 const friends = ref([])
 const inviteChoice = ref(null)
+const pending = ref({})
+
+const isPending = (key) => pending.value[key] === true
+function setPending(key, value) {
+  if (value) pending.value[key] = true
+  else delete pending.value[key]
+}
 
 const isCreator = computed(() => myId != null && props.activity.creatorId === myId)
 const isCancelled = computed(() => props.activity.phase === 'CANCELLED')
@@ -95,33 +141,45 @@ const checkinHint = computed(() => {
 })
 
 async function join() {
+  if (isPending('join')) return
+  setPending('join', true)
   try {
     emit('updated', await activityApi.join(props.activity.id))
   } catch (e) {
     ElMessage.error(e.message)
+  } finally {
+    setPending('join', false)
   }
 }
 
 async function leave() {
+  if (isPending('leave')) return
+  setPending('leave', true)
   try {
     emit('updated', await activityApi.leave(props.activity.id))
   } catch (e) {
     ElMessage.error(e.message)
+  } finally {
+    setPending('leave', false)
   }
 }
 
 async function doCheckin() {
+  if (isPending('checkin')) return
   const value = code.value.trim()
   if (!value) {
     ElMessage.warning('请输入签到码')
     return
   }
+  setPending('checkin', true)
   try {
     emit('updated', await activityApi.checkin(props.activity.id, value))
     code.value = ''
     ElMessage.success('签到成功')
   } catch (e) {
     ElMessage.error(e.message)
+  } finally {
+    setPending('checkin', false)
   }
 }
 
@@ -130,6 +188,8 @@ async function toggleMembers() {
     membersOpen.value = false
     return
   }
+  if (isPending('members')) return
+  setPending('members', true)
   try {
     members.value = await activityApi.members(props.activity.id)
     membersOpen.value = true
@@ -139,14 +199,18 @@ async function toggleMembers() {
     inviteChoice.value = null
   } catch (e) {
     ElMessage.error(e.message)
+  } finally {
+    setPending('members', false)
   }
 }
 
 async function invite() {
+  if (isPending('invite')) return
   if (!inviteChoice.value) {
     ElMessage.warning('先选择要邀请的好友')
     return
   }
+  setPending('invite', true)
   try {
     await activityApi.invite(props.activity.id, inviteChoice.value)
     ElMessage.success('已发出召集邀请，对方接受后加入成员')
@@ -154,6 +218,8 @@ async function invite() {
     members.value = await activityApi.members(props.activity.id)
   } catch (e) {
     ElMessage.error(e.message)
+  } finally {
+    setPending('invite', false)
   }
 }
 
@@ -163,6 +229,8 @@ async function cancel() {
   } catch {
     return
   }
+  if (isPending('cancel')) return
+  setPending('cancel', true)
   try {
     await activityApi.cancel(props.activity.id)
     membersOpen.value = false
@@ -170,6 +238,8 @@ async function cancel() {
     emit('cancelled', props.activity)
   } catch (e) {
     ElMessage.error(e.message)
+  } finally {
+    setPending('cancel', false)
   }
 }
 </script>
@@ -216,8 +286,11 @@ async function cancel() {
   order: -1;
   margin: 0 0 2px;
 }
-.activity-card__actions .el-button + .el-button {
-  margin-left: 0;
+.activity-card__actions .ui-btn {
+  flex: 0 1 auto;
+}
+.activity-card__actions .ui-btn--secondary {
+  background: var(--ui-surface);
 }
 .checkin-input {
   width: 110px;
@@ -259,8 +332,9 @@ async function cancel() {
   .activity-card__actions {
     gap: 6px;
   }
-  .activity-card__actions .el-button {
+  .activity-card__actions .ui-btn {
     flex: 1 1 auto;
+    min-height: var(--ui-tap);
   }
   .checkin-input {
     width: 100%;
@@ -271,6 +345,9 @@ async function cancel() {
   .invite-select {
     flex: 1 1 100%;
     width: 100%;
+  }
+  .invite-row .ui-btn {
+    min-height: var(--ui-tap);
   }
 }
 </style>
